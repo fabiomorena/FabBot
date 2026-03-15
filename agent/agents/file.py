@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from pathlib import Path
 from langchain_anthropic import ChatAnthropic
@@ -17,17 +18,33 @@ ALLOWED_BASE_PATHS = [
     Path.home() / "Desktop",
     Path.home() / "Projects",
     Path.home() / "PythonProject",
+    Path("/Volumes/McAir SSD/fmorena"),
+    Path("/Users/fmorena"),
 ]
 
 MAX_FILE_SIZE_BYTES = 1_000_000
 
 PROMPT = """Du bist ein spezialisierter File-Agent auf einem Mac.
 
-Analysiere die Anfrage und antworte NUR mit JSON:
+Analysiere die Anfrage und antworte NUR mit reinem JSON ohne Markdown-Formatierung:
 {"action": "read|list|write", "path": "/absoluter/pfad", "content": "nur bei write"}
 
-Kein Markdown, keine Erklaerung. Wenn nicht unterstuetzt: UNSUPPORTED
+Wichtige Pfade auf diesem Mac:
+- Downloads: /Users/fmorena/Downloads
+- Documents: /Users/fmorena/Documents
+- Desktop: /Users/fmorena/Desktop
+- PythonProject: /Volumes/McAir SSD/fmorena/PythonProject
+
+Kein ```json, keine Erklaerung, nur das rohe JSON-Objekt.
+Wenn nicht unterstuetzt: UNSUPPORTED
 """
+
+
+def _extract_json(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    return text.strip()
 
 
 def is_path_allowed(path: Path) -> tuple[bool, str]:
@@ -41,8 +58,7 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
             return True, str(resolved)
         except ValueError:
             continue
-    allowed_str = ", ".join(str(p) for p in ALLOWED_BASE_PATHS)
-    return False, f"Pfad nicht erlaubt. Erlaubte Verzeichnisse: {allowed_str}"
+    return False, f"Pfad nicht erlaubt: {resolved}"
 
 
 def file_agent(state: AgentState) -> AgentState:
@@ -51,7 +67,7 @@ def file_agent(state: AgentState) -> AgentState:
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-    content = content.strip()
+    content = _extract_json(content)
 
     if content == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom File-Agent nicht unterstuetzt.")]}
@@ -61,14 +77,18 @@ def file_agent(state: AgentState) -> AgentState:
         action = parsed.get("action")
         path_str = parsed.get("path", "")
         file_content = parsed.get("content", "")
-    except (json.JSONDecodeError, AttributeError):
-        return {"messages": [AIMessage(content="Fehler: Ungueltige Antwort vom File-Agent.")]}
+    except (json.JSONDecodeError, AttributeError) as e:
+        return {"messages": [AIMessage(content=f"Fehler beim Parsen: {e}\nAntwort war: {content[:200]}")]}
+
+    if not action or not path_str:
+        return {"messages": [AIMessage(content="Ungueltige Anfrage: action oder path fehlt.")]}
 
     path = Path(path_str)
     allowed, reason = is_path_allowed(path)
     if not allowed:
         log_action("file_agent", action, reason, state.get("telegram_chat_id"), status="blocked")
-        return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
+        # Debug: zeige den tatsaechlichen Pfad
+        return {"messages": [AIMessage(content=f"Blockiert: {reason}\n(Vorgeschlagener Pfad: {path})")]}
 
     if action == "list":
         return _list_dir(path, state)
@@ -76,7 +96,7 @@ def file_agent(state: AgentState) -> AgentState:
         return _read_file(path, state)
     elif action == "write":
         return {
-            "messages": [AIMessage(content=f"__CONFIRM_FILE_WRITE__:{path}::{file_content[:200]}")],
+            "messages": [AIMessage(content=f"__CONFIRM_FILE_WRITE__:{path}::{file_content}")],
             "next_agent": None,
         }
     else:
@@ -87,12 +107,14 @@ def _list_dir(path: Path, state: AgentState) -> AgentState:
     try:
         if not path.exists():
             return {"messages": [AIMessage(content=f"Verzeichnis nicht gefunden: {path}")]}
+        if not path.is_dir():
+            return {"messages": [AIMessage(content=f"Kein Verzeichnis: {path}")]}
         entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
         lines = []
         for e in entries[:50]:
             prefix = "Datei" if e.is_file() else "Ordner"
             lines.append(f"[{prefix}] {e.name}")
-        result = f"Inhalt von {path}:\n" + "\n".join(lines)
+        result = f"Inhalt von {path}:\n\n" + "\n".join(lines)
         if len(entries) > 50:
             result += f"\n... und {len(entries) - 50} weitere"
         log_action("file_agent", "list", str(path), state.get("telegram_chat_id"), status="executed")
@@ -105,6 +127,8 @@ def _read_file(path: Path, state: AgentState) -> AgentState:
     try:
         if not path.exists():
             return {"messages": [AIMessage(content=f"Datei nicht gefunden: {path}")]}
+        if not path.is_file():
+            return {"messages": [AIMessage(content=f"Kein File: {path}")]}
         if path.stat().st_size > MAX_FILE_SIZE_BYTES:
             return {"messages": [AIMessage(content="Datei zu gross (max. 1 MB).")]}
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -118,8 +142,11 @@ def _read_file(path: Path, state: AgentState) -> AgentState:
 
 def file_agent_write(path: Path, content: str, chat_id: int) -> str:
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         log_action("file_agent", "write", str(path), chat_id, status="executed")
         return f"Datei gespeichert: {path.name}"
+    except PermissionError:
+        return f"Kein Zugriff auf: {path}"
     except Exception as e:
         return f"Fehler beim Schreiben: {e}"
