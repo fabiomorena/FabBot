@@ -9,7 +9,7 @@ A personal AI assistant that runs locally on macOS, controlled via Telegram and 
 FabBot lets you control your Mac using natural language – from anywhere, via Telegram. A supervisor agent analyzes incoming requests and routes them to the appropriate specialist agent.
 
 ```
-You → Telegram → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / ...
+You → Telegram → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / web_agent / ...
 ```
 
 ---
@@ -23,10 +23,10 @@ You → Telegram → Security Guard → Supervisor → calendar_agent / terminal
 | ✅ | Multi-agent supervisor routing |
 | ✅ | Terminal – execute shell commands |
 | ✅ | File – read, write, list files |
+| ✅ | Web – search (Tavily + Brave) and fetch URLs |
+| ✅ | Calendar – read events from Apple Calendar |
 | ✅ | Security layer – prompt injection guard, audit log, human-in-the-loop |
 | 🔜 | Computer Use – desktop control via Anthropic API |
-| 🔜 | Web – search and fetch information |
-| 🔜 | Calendar – read and create events |
 | 🔜 | macOS menubar app |
 
 ---
@@ -57,6 +57,7 @@ FabBot/
 - [Claude](https://anthropic.com) – claude-sonnet as the AI backbone
 - [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
+- [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - Python 3.11+, macOS
 
 ---
@@ -69,6 +70,8 @@ FabBot/
 - Anthropic API key
 - Telegram bot token (via [@BotFather](https://t.me/BotFather))
 - Your Telegram user ID (via [@userinfobot](https://t.me/userinfobot))
+- Tavily API key (optional, for web search)
+- Brave Search API key (optional, for web search)
 
 ### Installation
 
@@ -92,7 +95,15 @@ Edit `.env`:
 ANTHROPIC_API_KEY=sk-ant-...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_USER_IDS=123456789
+TAVILY_API_KEY=tvly-...
+BRAVE_API_KEY=BSA...
 ```
+
+### macOS Permissions
+
+For Apple Calendar access, grant Terminal and/or PyCharm automation permissions:
+
+**System Settings → Privacy & Security → Automation → Terminal → Calendar → Enable**
 
 ### Run
 
@@ -111,7 +122,8 @@ Send any natural language message to your bot on Telegram:
 | "Was steht morgen in meinem Kalender?" | `calendar_agent` |
 | "Zeig mir den Inhalt von ~/Downloads" | `file_agent` |
 | "Wie viel freier Speicher ist noch?" | `terminal_agent` |
-| "Suche nach den neuesten Python News" | `web_agent` |
+| "Suche nach den neuesten KI News" | `web_agent` |
+| "Fetch https://example.com" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
 
 **Commands:**
@@ -135,21 +147,22 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Input length limit** – maximum 2,000 characters per message
 
 ### Execution layer
-- **Terminal allowlist** – only 20 explicitly permitted read-only shell commands can be executed (`df`, `ls`, `ps`, etc.)
+- **Terminal allowlist** – only 20 explicitly permitted read-only shell commands can be executed
 - **Shell operator blocking** – `;`, `&&`, `|`, `>`, `$()` and similar operators are always rejected
 - **Path traversal guard** – `..` in arguments and paths is always blocked
 - **Dangerous argument blacklist** – `--exec`, `.ssh/id_rsa`, `/etc/passwd` and similar are always rejected
-- **File path sandbox** – file operations are restricted to explicit allowed directories (`~/Downloads`, `~/Documents`, `~/Desktop`, etc.)
-- **TOCTOU protection** – paths and commands are re-validated immediately before execution, after user confirmation
+- **File path sandbox** – file operations are restricted to explicit allowed directories
+- **SSRF protection** – web agent blocks requests to localhost and private IP ranges
+- **TOCTOU protection** – paths and commands are re-validated immediately before execution
 
 ### Confirmation layer
-- **Human-in-the-loop** – every terminal command and every file write requires explicit confirmation via Telegram inline button before execution
+- **Human-in-the-loop** – every terminal command and every file write requires explicit confirmation via Telegram inline button
 - **60-second timeout** – unconfirmed actions are automatically cancelled
 
 ### Audit layer
-- **Local audit log** – every action is logged to `~/.fabbot/audit.log` with timestamp, agent, action, and status
-- **Sensitive data redacting** – API keys, tokens, passwords, and email addresses are automatically redacted from all log entries
-- **No content logging** – file contents and command outputs are never written to the log, only metadata (path, size, status)
+- **Local audit log** – every action is logged to `~/.fabbot/audit.log`
+- **Sensitive data redacting** – API keys, tokens, passwords, and email addresses are automatically redacted
+- **No content logging** – file contents and command outputs are never written to the log
 
 ---
 
@@ -157,7 +170,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 
 - **Phase 1** ✅ Foundation – Telegram bot, LangGraph supervisor, multi-agent structure
 - **Phase 2** ✅ Core tools – Terminal agent, File agent, full security layer
-- **Phase 3** 🔜 Web & Calendar integration
+- **Phase 3** ✅ Web & Calendar – Tavily + Brave search, fetch, Apple Calendar integration
 - **Phase 4** 🔜 macOS menubar app
 - **Phase 5** 🔜 Computer Use API (desktop control)
 
