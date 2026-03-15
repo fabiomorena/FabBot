@@ -16,6 +16,17 @@ from agent.agents.file import file_agent_write
 logger = logging.getLogger(__name__)
 
 
+def _extract_content(msg) -> str:
+    """Extrahiert Text aus einer LangChain Message – egal ob str oder list."""
+    content = msg.content
+    if isinstance(content, list):
+        return " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b)
+            for b in content
+        ).strip()
+    return str(content).strip()
+
+
 @restricted
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -77,7 +88,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             "next_agent": None,
         }
         result_state = await agent_graph.ainvoke(state)
-        response_msg = result_state["messages"][-1].content
+        response_msg = _extract_content(result_state["messages"][-1])
 
         # Human-in-the-Loop: Terminal Bestaetigung
         if response_msg.startswith("__CONFIRM_TERMINAL__:"):
@@ -97,7 +108,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             path_str = parts[0].replace("__CONFIRM_FILE_WRITE__:", "")
             file_content = parts[1] if len(parts) > 1 else ""
             await thinking.delete()
-            confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe: {path_str}")
+            confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
             if confirmed:
                 output = file_agent_write(Path(path_str), file_content, chat_id)
                 await bot.send_message(chat_id=chat_id, text=output)
@@ -106,7 +117,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             return
 
         await thinking.delete()
-        await update.message.reply_text(response_msg)
+        await update.message.reply_text(response_msg or "Keine Antwort vom Agent.")
 
     except Exception as e:
         logger.error(f"Agent error: {e}", exc_info=True)
@@ -127,11 +138,7 @@ def build_bot():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("ask", cmd_ask))
     app.add_handler(CommandHandler("auditlog", cmd_auditlog))
-
-    # block=False ist kritisch – erlaubt dem CallbackQueryHandler zu laufen
-    # waehrend on_message auf die Benutzerbestaetigung wartet
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))
-
     register_confirmation_handler(app)
     return app
