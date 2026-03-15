@@ -37,7 +37,10 @@ computer_agent | terminal_agent | file_agent | web_agent | calendar_agent | FINI
 def supervisor_node(state: AgentState) -> AgentState:
     messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + state["messages"]
     response = llm.invoke(messages)
-    next_agent = response.content.strip()
+    content = response.content
+    if isinstance(content, list):
+        content = " ".join(block.get("text", "") if isinstance(block, dict) else str(block) for block in content)
+    next_agent = content.strip()
 
     valid = {"computer_agent", "terminal_agent", "file_agent", "web_agent", "calendar_agent", "FINISH"}
     if next_agent not in valid:
@@ -75,7 +78,6 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # Nach jedem Sub-Agenten zurück zum Supervisor
     for agent in ["computer_agent", "terminal_agent", "file_agent", "web_agent", "calendar_agent"]:
         graph.add_edge(agent, "supervisor")
 
@@ -83,4 +85,3 @@ def build_graph() -> StateGraph:
 
 
 agent_graph = build_graph()
-

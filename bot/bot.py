@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from langchain_core.messages import HumanMessage
 
-from telegram.auth import restricted
+from bot.auth import restricted
 from agent.supervisor import agent_graph
 
 logger = logging.getLogger(__name__)
