@@ -13,6 +13,7 @@ from agent.audit import log_action, log_blocked
 from agent.agents.terminal import terminal_agent_execute
 from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
+from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,34 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         }
         result_state = await agent_graph.ainvoke(state, {"recursion_limit": 10})
         response_msg = _extract_content(result_state["messages"][-1])
+
+        # Screenshot senden
+        if response_msg.startswith("__SCREENSHOT__:"):
+            analysis = response_msg.replace("__SCREENSHOT__:", "")
+            await thinking.delete()
+            screenshot_bytes = _screenshot_to_telegram_bytes()
+            if screenshot_bytes:
+                await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
+            else:
+                await bot.send_message(chat_id=chat_id, text=f"Screenshot-Analyse:\n{analysis}")
+            return
+
+        # Human-in-the-Loop: Computer Use Bestaetigung
+        if response_msg.startswith("__CONFIRM_COMPUTER__:"):
+            parts = response_msg.replace("__CONFIRM_COMPUTER__:", "").split(":", 3)
+            action = parts[0] if len(parts) > 0 else ""
+            x = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            y = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            text = parts[3] if len(parts) > 3 else ""
+            await thinking.delete()
+            display = f"{action}: {text}" if text else f"{action} @ ({x}, {y})"
+            confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
+            if confirmed:
+                output = computer_agent_execute(action, x, y, text, chat_id)
+                await bot.send_message(chat_id=chat_id, text=output)
+            else:
+                log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
+            return
 
         # Human-in-the-Loop: Terminal Bestaetigung
         if response_msg.startswith("__CONFIRM_TERMINAL__:"):

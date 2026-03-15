@@ -141,6 +141,17 @@ def _format_events(events: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _sanitize_applescript_string(text: str) -> str:
+    """Bereinigt Text fuer sichere Verwendung in AppleScript-Strings.
+    Entfernt Zeichen die AppleScript-Injection ermoeglichen koennten.
+    """
+    # Anführungszeichen escapen, Zeilenumbrüche entfernen
+    text = text.replace("\\", "\\\\")
+    text = text.replace('"', '\\"')
+    text = text.replace("\n", " ").replace("\r", " ")
+    return text
+
+
 def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: int) -> str:
     """Wird nach Benutzerbestaetigung aufgerufen – erstellt Event in Apple Calendar."""
     try:
@@ -155,11 +166,13 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
             dt_end = dt_start.replace(hour=dt_start.hour + 1)
             apple_end = dt_end.strftime("%d.%m.%Y %H:%M")
 
+        safe_title = _sanitize_applescript_string(title)
+
         cmd = [
             "osascript",
             "-e", 'tell application "Calendar"',
             "-e", '    tell calendar "Kalender"',
-            "-e", f'        set newEvent to make new event with properties {{summary:"{title}", start date:date "{apple_start}", end date:date "{apple_end}"}}',
+            "-e", f'        set newEvent to make new event with properties {{summary:"{safe_title}", start date:date "{apple_start}", end date:date "{apple_end}"}}',
             "-e", '    end tell',
             "-e", 'end tell',
         ]

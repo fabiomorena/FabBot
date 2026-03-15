@@ -27,7 +27,7 @@ You → Telegram → Security Guard → Supervisor → calendar_agent / terminal
 | ✅ | Calendar – read and create events (Apple Calendar) |
 | ✅ | Security layer – prompt injection guard, audit log, human-in-the-loop |
 | ✅ | macOS menubar app – start/stop bot, audit log |
-| 🔜 | Computer Use – desktop control via Anthropic API |
+| ✅ | Computer Use – screenshot + desktop control with HITL |
 
 ---
 
@@ -167,8 +167,13 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **TOCTOU protection** – paths and commands are re-validated immediately before execution
 
 ### Confirmation layer
-- **Human-in-the-loop** – every terminal command, file write, and calendar event creation requires explicit confirmation via Telegram inline button
+- **Human-in-the-loop** – every terminal command, file write, calendar event creation, and computer use action requires explicit confirmation via Telegram inline button
 - **60-second timeout** – unconfirmed actions are automatically cancelled
+- **pyautogui FAILSAFE** – moving mouse to screen corner immediately stops any computer use action
+
+### Local API
+- **Shared secret token** – local API on `127.0.0.1:8766` is secured with a token stored at `~/.fabbot/local_api_token` (chmod 600)
+- **Localhost only** – API is not reachable from outside the machine
 
 ### Audit layer
 - **Local audit log** – every action is logged to `~/.fabbot/audit.log`
@@ -183,7 +188,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Phase 2** ✅ Core tools – Terminal agent, File agent, full security layer
 - **Phase 3** ✅ Web & Calendar – Tavily + Brave search, fetch, Apple Calendar integration
 - **Phase 4** ✅ Menubar app + Calendar event creation with HITL confirmation
-- **Phase 5** 🔜 Computer Use API (desktop control)
+- **Phase 5** ✅ Computer Use – screenshot, click, type, open app with HITL confirmation
 
 ---
 
