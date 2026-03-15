@@ -9,7 +9,7 @@ A personal AI assistant that runs locally on macOS, controlled via Telegram and 
 FabBot lets you control your Mac using natural language – from anywhere, via Telegram. A supervisor agent analyzes incoming requests and routes them to the appropriate specialist agent.
 
 ```
-You → Telegram → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / web_agent / ...
+You → Telegram (text or voice) → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / web_agent / ...
 ```
 
 ---
@@ -28,6 +28,7 @@ You → Telegram → Security Guard → Supervisor → calendar_agent / terminal
 | ✅ | Security layer – prompt injection guard, audit log, human-in-the-loop |
 | ✅ | macOS menubar app – start/stop bot, audit log |
 | ✅ | Computer Use – screenshot + desktop control with HITL |
+| ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
 
 ---
 
@@ -49,15 +50,17 @@ FabBot/
 │       ├── web.py           # Web search & fetch
 │       └── calendar.py      # Calendar management
 └── bot/
-    ├── bot.py               # Telegram handlers
+    ├── bot.py               # Telegram handlers (text + voice)
     ├── auth.py              # User whitelist
-    └── confirm.py           # Human-in-the-loop confirmation
+    ├── confirm.py           # Human-in-the-loop confirmation
+    └── transcribe.py        # Local Whisper transcription
 ```
 
 **Stack:**
 - [Claude](https://anthropic.com) – claude-sonnet as the AI backbone
 - [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
+- [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - [rumps](https://github.com/jaredks/rumps) – macOS menubar app
 - Python 3.11+, macOS
@@ -74,6 +77,7 @@ FabBot/
 - Your Telegram user ID (via [@userinfobot](https://t.me/userinfobot))
 - Tavily API key (optional, for web search)
 - Brave Search API key (optional, for web search)
+- ffmpeg (required for Whisper voice transcription)
 
 ### Installation
 
@@ -83,6 +87,7 @@ cd FabBot
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+brew install ffmpeg
 ```
 
 ### Configuration
@@ -125,7 +130,7 @@ Then click "Starten" in the menubar to start the bot.
 
 ## Usage
 
-Send any natural language message to your bot on Telegram:
+Send any natural language message or voice note to your bot on Telegram:
 
 | Message | Routed to |
 |--------|-----------|
@@ -136,6 +141,7 @@ Send any natural language message to your bot on Telegram:
 | "Suche nach den neuesten KI News" | `web_agent` |
 | "Fetch https://example.com" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
+| 🎤 Voice note with any of the above | transcribed via Whisper → any agent |
 
 **Commands:**
 
@@ -145,6 +151,19 @@ Send any natural language message to your bot on Telegram:
 /ask        – Direct query
 /auditlog   – Show last 10 executed actions
 ```
+
+---
+
+## Voice Notes
+
+FabBot supports Telegram voice messages out of the box. Send a voice note instead of typing – Whisper transcribes it locally on your Mac, then the result is passed to the normal agent pipeline.
+
+**How it works:**
+```
+Voice note (OGG) → Whisper (local, ~small model) → transcribed text → Supervisor → agent
+```
+
+The transcribed text is shown as a reply before the agent response, so you always know what was understood. The Whisper `small` model (~460 MB) is downloaded on first use and cached locally. No audio data leaves your machine.
 
 ---
 
@@ -189,6 +208,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Phase 3** ✅ Web & Calendar – Tavily + Brave search, fetch, Apple Calendar integration
 - **Phase 4** ✅ Menubar app + Calendar event creation with HITL confirmation
 - **Phase 5** ✅ Computer Use – screenshot, click, type, open app with HITL confirmation
+- **Phase 6** ✅ Voice Notes – local Whisper transcription, OGG support, no external API needed
 
 ---
 

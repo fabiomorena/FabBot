@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 
 from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
+from bot.transcribe import transcribe_audio
 from agent.supervisor import agent_graph
 from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
@@ -33,7 +34,7 @@ def _extract_content(msg) -> str:
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Mac Agent bereit.\n\n"
-        "Schick mir eine Nachricht oder nutze:\n"
+        "Schick mir eine Nachricht oder Sprachnachricht, oder nutze:\n"
         "/ask <Frage> - Direkte Anfrage\n"
         "/status - Agent Status\n"
         "/auditlog - Letzte Aktionen"
@@ -68,6 +69,42 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await handle_message_text(update, ctx.bot, update.message.text)
+
+
+@restricted
+async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Empfängt Telegram Voice Messages, transkribiert via Whisper und
+    leitet den Text an die normale Agent-Pipeline weiter.
+    """
+    thinking = await update.message.reply_text("Transkribiere...")
+
+    try:
+        voice = update.message.voice
+        tg_file = await ctx.bot.get_file(voice.file_id)
+        audio_bytes = await tg_file.download_as_bytearray()
+
+        text = await transcribe_audio(bytes(audio_bytes))
+
+        if not text:
+            await thinking.edit_text(
+                "Transkription fehlgeschlagen. Bitte nochmal versuchen."
+            )
+            return
+
+        # Zeigt was erkannt wurde – gutes Feedback und leichter zu debuggen
+        await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+
+        # Weiter in den normalen Flow – exakt wie eine Text-Nachricht
+        await handle_message_text(update, ctx.bot, text)
+
+    except Exception as e:
+        logger.error(f"Voice handler error: {e}", exc_info=True)
+        try:
+            await thinking.edit_text(
+                "Fehler bei der Verarbeitung der Sprachnachricht."
+            )
+        except Exception:
+            pass
 
 
 async def handle_message_text(update: Update, bot: Bot, text: str):
@@ -185,7 +222,8 @@ def build_bot():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("auditlog", cmd_auditlog))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))
+    app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
     return app
