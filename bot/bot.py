@@ -12,6 +12,7 @@ from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
 from agent.agents.terminal import terminal_agent_execute
 from agent.agents.file import file_agent_write
+from agent.agents.calendar import calendar_event_create
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,24 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
                 log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
             return
 
+        # Human-in-the-Loop: Calendar Create Bestaetigung
+        if response_msg.startswith("__CONFIRM_CREATE_EVENT__:"):
+            parts = response_msg.replace("__CONFIRM_CREATE_EVENT__:", "").split("::")
+            title = parts[0] if len(parts) > 0 else ""
+            start_time = parts[1] if len(parts) > 1 else ""
+            end_time = parts[2] if len(parts) > 2 else ""
+            await thinking.delete()
+            confirmed = await request_confirmation(
+                bot, chat_id, "calendar_agent",
+                f"Neuer Termin: {title} am {start_time}"
+            )
+            if confirmed:
+                output = calendar_event_create(title, start_time, end_time, chat_id)
+                await bot.send_message(chat_id=chat_id, text=output)
+            else:
+                log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
+            return
+
         # Human-in-the-Loop: File Write Bestaetigung
         if response_msg.startswith("__CONFIRM_FILE_WRITE__:"):
             parts = response_msg.split("::", 1)
@@ -136,7 +155,6 @@ def build_bot():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("ask", cmd_ask))
     app.add_handler(CommandHandler("auditlog", cmd_auditlog))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))

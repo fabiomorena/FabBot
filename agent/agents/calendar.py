@@ -141,6 +141,44 @@ def _format_events(events: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: int) -> str:
+    """Wird nach Benutzerbestaetigung aufgerufen – erstellt Event in Apple Calendar."""
+    try:
+        dt_start = datetime.fromisoformat(start_time)
+        apple_start = dt_start.strftime("%d.%m.%Y %H:%M")
+
+        if end_time:
+            dt_end = datetime.fromisoformat(end_time)
+            apple_end = dt_end.strftime("%d.%m.%Y %H:%M")
+        else:
+            # Standard: 1 Stunde
+            dt_end = dt_start.replace(hour=dt_start.hour + 1)
+            apple_end = dt_end.strftime("%d.%m.%Y %H:%M")
+
+        cmd = [
+            "osascript",
+            "-e", 'tell application "Calendar"',
+            "-e", '    tell calendar "Kalender"',
+            "-e", f'        set newEvent to make new event with properties {{summary:"{title}", start date:date "{apple_start}", end date:date "{apple_end}"}}',
+            "-e", '    end tell',
+            "-e", 'end tell',
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+        if result.returncode != 0:
+            import logging
+            logging.getLogger(__name__).error(f"AppleScript create error: {result.stderr}")
+            return f"Fehler beim Erstellen des Termins: {result.stderr}"
+
+        log_action("calendar_agent", "create_event", f"title={title} start={start_time}", chat_id, status="executed")
+        return f"Termin erstellt:\n{title}\n{apple_start} bis {apple_end}"
+
+    except Exception as e:
+        return f"Fehler: {e}"
+
+
+
 async def calendar_agent(state: AgentState) -> AgentState:
     messages = [SystemMessage(content=_build_prompt())] + state["messages"]
     response = llm.invoke(messages)
@@ -178,8 +216,30 @@ async def calendar_agent(state: AgentState) -> AgentState:
         return {"messages": [AIMessage(content=f"Termine {period}:\n\n{formatted}")]}
 
     elif action == "create_event":
-        # Create kommt in einem spaeteren Update mit Bestaetigung
-        return {"messages": [AIMessage(content="Event-Erstellung kommt in Kuerze.")]}
+        title = parsed.get("title", "").strip() if isinstance(parsed, dict) else ""
+        start_time = parsed.get("start_time", "").strip() if isinstance(parsed, dict) else ""
+        end_time = parsed.get("end_time", "").strip() if isinstance(parsed, dict) else ""
+
+        if not title or not start_time:
+            return {"messages": [AIMessage(content="Fehler: Titel und Startzeit sind erforderlich.")]}
+
+        # Validierung: Zeitformat prüfen
+        try:
+            datetime.fromisoformat(start_time)
+            if end_time:
+                datetime.fromisoformat(end_time)
+        except ValueError:
+            return {"messages": [AIMessage(content=f"Fehler: Ungültiges Zeitformat. Erwartet: YYYY-MM-DDTHH:MM:SS")]}
+
+        confirm_text = f"Neuer Termin:\n{title}\n{start_time}"
+        if end_time:
+            confirm_text += f" bis {end_time}"
+
+        return {
+            "messages": [AIMessage(content=f"__CONFIRM_CREATE_EVENT__:{title}::{start_time}::{end_time}")],
+            "next_agent": None,
+            "_confirm_display": confirm_text,
+        }
 
     else:
         return {"messages": [AIMessage(content=f"Unbekannte Aktion: {action}")]}
