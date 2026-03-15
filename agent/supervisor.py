@@ -1,6 +1,6 @@
 import os
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from agent.state import AgentState, AgentName
@@ -19,27 +19,40 @@ llm = ChatAnthropic(
 
 SUPERVISOR_PROMPT = """Du bist ein Supervisor-Agent. Du koordinierst spezialisierte Sub-Agenten.
 
-Verfügbare Agenten:
-- computer_agent: Desktop steuern, Screenshots machen, Apps öffnen, UI-Interaktion
-- terminal_agent: Shell-Befehle ausführen, Scripts starten, Systeminformationen
-- file_agent: Dateien lesen, schreiben, suchen, umbenennen
-- web_agent: Im Web suchen, URLs abrufen, Informationen recherchieren
-- calendar_agent: Kalendereinträge lesen, Events erstellen, Termine verwalten
+Verfuegbare Agenten und ihre genauen Zustaendigkeiten:
+- file_agent: Dateien und Ordner LESEN, AUFLISTEN oder SCHREIBEN. Zustaendig fuer: "zeig mir Ordner X", "liste Dateien in...", "lese Datei...", "was ist in meinem Downloads-Ordner"
+- terminal_agent: Shell-Befehle, Systeminformationen wie Speicher, CPU, laufende Prozesse
+- web_agent: Im Internet suchen, Webseiten abrufen, aktuelle Nachrichten
+- calendar_agent: Kalendertermine lesen oder erstellen
+- computer_agent: NUR fuer echte Desktop-Steuerung (Klicks, Screenshots, Apps oeffnen per UI). NICHT fuer Datei-Operationen.
 
-Analysiere die Anfrage und antworte NUR mit dem Namen des passenden Agenten.
-Wenn die Aufgabe erledigt ist oder keine Weiterleitung nötig ist, antworte mit: FINISH
+Wichtig: "zeig mir meinen Downloads-Ordner" oder "liste Dateien" -> file_agent, NICHT computer_agent
 
-Antworte ausschließlich mit einem dieser Wörter:
+Regeln:
+1. Wenn die letzte Nachricht eine Antwort eines Sub-Agenten ist (enthaelt Ergebnisse/Daten), antworte mit: FINISH
+2. Waehle den passenden Agenten fuer die urspruengliche Anfrage
+3. Antworte NUR mit einem dieser Woerter:
 computer_agent | terminal_agent | file_agent | web_agent | calendar_agent | FINISH
 """
 
 
 def supervisor_node(state: AgentState) -> AgentState:
-    messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + state["messages"]
-    response = llm.invoke(messages)
+    messages = state["messages"]
+
+    # Trailing Whitespace aus letzter AI-Nachricht entfernen
+    if messages and isinstance(messages[-1], AIMessage):
+        content = messages[-1].content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        content = content.strip()
+        if not content.startswith("__CONFIRM_"):
+            return {"next_agent": "FINISH"}
+
+    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + messages
+    response = llm.invoke(all_messages)
     content = response.content
     if isinstance(content, list):
-        content = " ".join(block.get("text", "") if isinstance(block, dict) else str(block) for block in content)
+        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     next_agent = content.strip()
 
     valid = {"computer_agent", "terminal_agent", "file_agent", "web_agent", "calendar_agent", "FINISH"}

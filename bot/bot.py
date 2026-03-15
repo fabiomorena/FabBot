@@ -88,7 +88,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             "telegram_chat_id": chat_id,
             "next_agent": None,
         }
-        result_state = await agent_graph.ainvoke(state)
+        result_state = await agent_graph.ainvoke(state, {"recursion_limit": 10})
         response_msg = _extract_content(result_state["messages"][-1])
 
         # Human-in-the-Loop: Terminal Bestaetigung

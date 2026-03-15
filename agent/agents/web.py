@@ -188,6 +188,7 @@ async def web_agent(state: AgentState) -> AgentState:
             result = summary.content
             if isinstance(result, list):
                 result = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in result)
+            result = result.strip() or "Keine Zusammenfassung verfügbar."
             return {"messages": [AIMessage(content=result)]}
 
         elif action == "search":
@@ -222,6 +223,7 @@ async def web_agent(state: AgentState) -> AgentState:
             result = summary.content
             if isinstance(result, list):
                 result = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in result)
+            result = result.strip() or "Keine Zusammenfassung verfügbar."
             return {"messages": [AIMessage(content=result)]}
 
         else:

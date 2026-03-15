@@ -24,10 +24,10 @@ You → Telegram → Security Guard → Supervisor → calendar_agent / terminal
 | ✅ | Terminal – execute shell commands |
 | ✅ | File – read, write, list files |
 | ✅ | Web – search (Tavily + Brave) and fetch URLs |
-| ✅ | Calendar – read events from Apple Calendar |
+| ✅ | Calendar – read and create events (Apple Calendar) |
 | ✅ | Security layer – prompt injection guard, audit log, human-in-the-loop |
+| ✅ | macOS menubar app – start/stop bot, audit log |
 | 🔜 | Computer Use – desktop control via Anthropic API |
-| 🔜 | macOS menubar app |
 
 ---
 
@@ -36,6 +36,7 @@ You → Telegram → Security Guard → Supervisor → calendar_agent / terminal
 ```
 FabBot/
 ├── main.py                  # Entrypoint
+├── menubar.py               # macOS menubar app
 ├── agent/
 │   ├── supervisor.py        # Supervisor – routes to sub-agents
 │   ├── state.py             # LangGraph AgentState
@@ -58,6 +59,7 @@ FabBot/
 - [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
+- [rumps](https://github.com/jaredks/rumps) – macOS menubar app
 - Python 3.11+, macOS
 
 ---
@@ -107,9 +109,17 @@ For Apple Calendar access, grant Terminal and/or PyCharm automation permissions:
 
 ### Run
 
+**Bot only (Telegram):**
 ```bash
 python main.py
 ```
+
+**With menubar app:**
+```bash
+python menubar.py
+```
+
+Then click "Starten" in the menubar to start the bot.
 
 ---
 
@@ -120,6 +130,7 @@ Send any natural language message to your bot on Telegram:
 | Message | Routed to |
 |--------|-----------|
 | "Was steht morgen in meinem Kalender?" | `calendar_agent` |
+| "Erstelle einen Termin morgen um 14 Uhr: Meeting" | `calendar_agent` |
 | "Zeig mir den Inhalt von ~/Downloads" | `file_agent` |
 | "Wie viel freier Speicher ist noch?" | `terminal_agent` |
 | "Suche nach den neuesten KI News" | `web_agent` |
@@ -156,7 +167,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **TOCTOU protection** – paths and commands are re-validated immediately before execution
 
 ### Confirmation layer
-- **Human-in-the-loop** – every terminal command and every file write requires explicit confirmation via Telegram inline button
+- **Human-in-the-loop** – every terminal command, file write, and calendar event creation requires explicit confirmation via Telegram inline button
 - **60-second timeout** – unconfirmed actions are automatically cancelled
 
 ### Audit layer
@@ -171,7 +182,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Phase 1** ✅ Foundation – Telegram bot, LangGraph supervisor, multi-agent structure
 - **Phase 2** ✅ Core tools – Terminal agent, File agent, full security layer
 - **Phase 3** ✅ Web & Calendar – Tavily + Brave search, fetch, Apple Calendar integration
-- **Phase 4** 🔜 macOS menubar app
+- **Phase 4** ✅ Menubar app + Calendar event creation with HITL confirmation
 - **Phase 5** 🔜 Computer Use API (desktop control)
 
 ---
