@@ -1,5 +1,6 @@
 import os
 import re
+import ipaddress
 import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, AIMessage
@@ -17,6 +18,7 @@ BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
 MAX_FETCH_SIZE = 50_000
 MAX_RESPONSE_LENGTH = 3000
 TIMEOUT = 15
+
 
 def _build_prompt() -> str:
     from datetime import date
@@ -40,6 +42,7 @@ Kein Markdown, keine Erklaerung, nur reines JSON.
 Wenn nicht unterstuetzt: UNSUPPORTED
 """
 
+
 SUMMARIZE_PROMPT = """Du bist ein hilfreicher Assistent. 
 Fasse die folgenden Web-Inhalte praezise und auf Deutsch zusammen.
 Beantworte damit die urspruengliche Frage des Users.
@@ -52,6 +55,87 @@ def _extract_json(text: str) -> str:
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     return text.strip()
+
+
+def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
+    """
+    Prüft ob eine URL auf eine private/lokale Ressource zeigt (SSRF-Schutz).
+    Blockt: localhost, private IPs, link-local (169.254.x.x), IPv6 loopback.
+    Gibt (is_blocked, reason) zurück.
+    """
+    # Nur http/https erlaubt
+    if not url.startswith(("http://", "https://")):
+        return True, "Nur HTTP/HTTPS URLs erlaubt."
+
+    # Hostname aus URL extrahieren
+    try:
+        # Einfacher Regex für Host-Extraktion (vor Port und Pfad)
+        host_match = re.match(r"https?://([^/:@\]]+|\[[^\]]+\])", url)
+        if not host_match:
+            return True, "URL konnte nicht geparst werden."
+        host = host_match.group(1).strip("[]")  # IPv6 brackets entfernen
+    except Exception:
+        return True, "URL konnte nicht geparst werden."
+
+    # Bekannte Hostnamen direkt blockieren
+    blocked_hostnames = ["localhost", "ip6-localhost", "ip6-loopback"]
+    if host.lower() in blocked_hostnames:
+        return True, f"Lokale URL ist nicht erlaubt: {host}"
+
+    # IP-Adresse prüfen
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback:
+            return True, f"Loopback-Adresse nicht erlaubt: {host}"
+        if ip.is_private:
+            return True, f"Private IP-Adresse nicht erlaubt: {host}"
+        if ip.is_link_local:
+            return True, f"Link-local Adresse nicht erlaubt (z.B. AWS Metadata): {host}"
+        if ip.is_multicast:
+            return True, f"Multicast-Adresse nicht erlaubt: {host}"
+        if ip.is_reserved:
+            return True, f"Reservierte IP-Adresse nicht erlaubt: {host}"
+        if ip.is_unspecified:
+            return True, f"Unspecified-Adresse nicht erlaubt: {host}"
+    except ValueError:
+        # Kein gültiges IP-Format → Hostname, String-Checks
+        # Subdomains von lokalen Hosts blockieren (z.B. evil.localhost.attacker.com nicht,
+        # aber metadata.internal o.ä. schon)
+        blocked_suffixes = [".local", ".internal", ".localhost"]
+        for suffix in blocked_suffixes:
+            if host.lower().endswith(suffix):
+                return True, f"Lokaler Hostname nicht erlaubt: {host}"
+
+    return False, ""
+
+
+async def _fetch_url(url: str) -> str:
+    """Ruft den Inhalt einer URL ab."""
+    blocked, reason = _is_ssrf_blocked(url)
+    if blocked:
+        return f"Blockiert: {reason}"
+
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT,
+        follow_redirects=True,
+        headers={"User-Agent": "FabBot/1.0"},
+    ) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+
+        content_type = resp.headers.get("content-type", "")
+        if "text" not in content_type and "json" not in content_type:
+            return f"Fehler: Unterstuetzter Content-Type: {content_type}"
+
+        text = resp.text[:MAX_FETCH_SIZE]
+
+        # Einfaches HTML-Stripping
+        text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+
+        return text[:MAX_FETCH_SIZE]
 
 
 async def _search_tavily(query: str) -> list[dict]:
@@ -100,41 +184,6 @@ async def _search_brave(query: str) -> list[dict]:
         return results
 
 
-async def _fetch_url(url: str) -> str:
-    """Ruft den Inhalt einer URL ab."""
-    # Sicherheitscheck: Nur http/https erlaubt
-    if not url.startswith(("http://", "https://")):
-        return "Fehler: Nur HTTP/HTTPS URLs erlaubt."
-
-    # Lokale IPs blockieren (SSRF-Schutz)
-    blocked = ["localhost", "127.0.0.1", "0.0.0.0", "192.168.", "10.", "172.16."]
-    for b in blocked:
-        if b in url:
-            return f"Blockiert: Lokale URLs sind nicht erlaubt."
-
-    async with httpx.AsyncClient(
-        timeout=TIMEOUT,
-        follow_redirects=True,
-        headers={"User-Agent": "FabBot/1.0"},
-    ) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-
-        content_type = resp.headers.get("content-type", "")
-        if "text" not in content_type and "json" not in content_type:
-            return f"Fehler: Unterstuetzter Content-Type: {content_type}"
-
-        text = resp.text[:MAX_FETCH_SIZE]
-
-        # Einfaches HTML-Stripping
-        text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
-        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
-        text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-
-        return text[:MAX_FETCH_SIZE]
-
-
 def _format_search_results(results: list[dict], source: str) -> str:
     """Formatiert Suchergebnisse als lesbaren Text."""
     if not results:
@@ -176,8 +225,16 @@ async def web_agent(state: AgentState) -> AgentState:
         if action == "fetch":
             if not url:
                 return {"messages": [AIMessage(content="Keine URL angegeben.")]}
+
+            # SSRF-Check vor dem Logging (kein geblocker URL im Log)
+            blocked, reason = _is_ssrf_blocked(url)
+            if blocked:
+                log_action("web_agent", "fetch", f"ssrf-blocked: {reason}", state.get("telegram_chat_id"), status="blocked")
+                return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
+
             log_action("web_agent", "fetch", url[:200], state.get("telegram_chat_id"), status="executed")
             raw = await _fetch_url(url)
+
             # Inhalt mit LLM zusammenfassen
             summary_messages = [
                 SystemMessage(content=SUMMARIZE_PROMPT),

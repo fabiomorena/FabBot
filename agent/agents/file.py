@@ -12,14 +12,29 @@ llm = ChatAnthropic(
     api_key=os.getenv("ANTHROPIC_API_KEY"),
 )
 
+# Explizit erlaubte Verzeichnisse – kein breites Home-Verzeichnis
+# /Users/fmorena wurde entfernt (zu weit gefasst, erlaubte ~/.ssh etc.)
 ALLOWED_BASE_PATHS = [
     Path.home() / "Downloads",
     Path.home() / "Documents",
     Path.home() / "Desktop",
     Path.home() / "Projects",
     Path.home() / "PythonProject",
-    Path("/Volumes/McAir SSD/fmorena"),
-    Path("/Users/fmorena"),
+    Path("/Volumes/McAir SSD/fmorena/PythonProject"),
+    Path("/Volumes/McAir SSD/fmorena/Downloads"),
+    Path("/Volumes/McAir SSD/fmorena/Documents"),
+]
+
+# Pfade die explizit niemals erlaubt sind, auch wenn sie unter ALLOWED_BASE_PATHS fallen würden
+EXPLICITLY_BLOCKED_PATHS = [
+    Path.home() / ".ssh",
+    Path.home() / ".fabbot",
+    Path.home() / ".env",
+    Path.home() / ".zshrc",
+    Path.home() / ".bashrc",
+    Path.home() / ".bash_profile",
+    Path.home() / ".zprofile",
+    Path.home() / "Library",
 ]
 
 MAX_FILE_SIZE_BYTES = 1_000_000
@@ -61,12 +76,21 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
     if ".." in path.parts:
         return False, "Path-Traversal nicht erlaubt."
 
+    # Explizit blockierte Pfade prüfen (auch wenn unter allowed base)
+    for blocked in EXPLICITLY_BLOCKED_PATHS:
+        try:
+            resolved.relative_to(blocked.resolve())
+            return False, f"Zugriff auf `{blocked}` ist nicht erlaubt."
+        except ValueError:
+            continue
+
     for base in ALLOWED_BASE_PATHS:
         try:
             resolved.relative_to(base.resolve())
             return True, str(resolved)
         except ValueError:
             continue
+
     return False, f"Pfad nicht erlaubt: {resolved}"
 
 
@@ -175,4 +199,3 @@ def file_agent_write(path: Path, content: str, chat_id: int) -> str:
         return f"Kein Zugriff auf: {path}"
     except Exception as e:
         return f"Fehler beim Schreiben: {e}"
-

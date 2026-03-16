@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage
 from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import transcribe_audio
+from bot.search import search_knowledge, list_knowledge
 from agent.supervisor import agent_graph
 from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
@@ -15,6 +16,7 @@ from agent.agents.terminal import terminal_agent_execute
 from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
+from agent.agents.clip_agent import clip_agent, clip_agent_write
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Mac Agent bereit.\n\n"
         "Schick mir eine Nachricht oder Sprachnachricht, oder nutze:\n"
-        "/ask <Frage> - Direkte Anfrage\n"
-        "/status - Agent Status\n"
-        "/auditlog - Letzte Aktionen"
+        "/ask <Frage> – Direkte Anfrage\n"
+        "/clip <URL> – URL als Markdown-Notiz speichern\n"
+        "/search <Begriff> – Notizen durchsuchen\n"
+        "/search #Tag – Nach Tag suchen\n"
+        "/search – Alle Notizen auflisten\n"
+        "/status – Agent Status\n"
+        "/auditlog – Letzte Aktionen"
     )
 
 
@@ -67,6 +73,58 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
+async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Fetcht eine URL, erstellt eine Markdown-Notiz und speichert sie nach Bestätigung."""
+    if not ctx.args:
+        await update.message.reply_text(
+            "Verwendung: /clip <URL>\n"
+            "Beispiel: /clip https://example.com/artikel"
+        )
+        return
+
+    url = ctx.args[0]
+    chat_id = update.effective_chat.id
+    thinking = await update.message.reply_text(f"Lese {url} ...")
+
+    result = await clip_agent(url, chat_id)
+
+    if not result["ok"]:
+        await thinking.edit_text(f"Fehler: {result['error']}")
+        return
+
+    await thinking.edit_text(
+        f"Vorschau:\n\n{result['preview']}\n\n"
+        f"Speichern als: {result['filename']}"
+    )
+
+    confirmed = await request_confirmation(
+        ctx.bot, chat_id, "clip_agent",
+        f"Speichern: {result['filename']}"
+    )
+
+    if confirmed:
+        output = clip_agent_write(result["path"], result["content"], chat_id)
+        await ctx.bot.send_message(chat_id=chat_id, text=output)
+    else:
+        log_action("clip_agent", "write", f"user rejected: {result['filename']}", chat_id, status="rejected")
+
+
+@restricted
+async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Durchsucht gespeicherte Notizen in ~/Documents/Wissen."""
+    chat_id = update.effective_chat.id
+
+    if not ctx.args:
+        result = list_knowledge()
+    else:
+        query = " ".join(ctx.args)
+        result = search_knowledge(query)
+
+    await update.message.reply_text(result, parse_mode="Markdown")
+    log_action("search", "search_knowledge", " ".join(ctx.args or []), chat_id, status="executed")
+
+
+@restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await handle_message_text(update, ctx.bot, update.message.text)
 
@@ -91,10 +149,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Zeigt was erkannt wurde – gutes Feedback und leichter zu debuggen
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
-
-        # Weiter in den normalen Flow – exakt wie eine Text-Nachricht
         await handle_message_text(update, ctx.bot, text)
 
     except Exception as e:
@@ -223,6 +278,8 @@ def build_bot():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("auditlog", cmd_auditlog))
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))
+    app.add_handler(CommandHandler("clip", cmd_clip, block=False))
+    app.add_handler(CommandHandler("search", cmd_search, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)

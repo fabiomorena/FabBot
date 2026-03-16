@@ -21,8 +21,30 @@ ALLOWED_COMMANDS = {
 # Argumente die niemals erlaubt sind
 FORBIDDEN_ARGS = {
     "--exec", "-exec", "--delete", "-delete",
-    "/etc/passwd", "/etc/shadow", "~/.ssh", ".ssh/id_rsa",
+    "/etc/passwd", "/etc/shadow", "/etc/sudoers",
+    "~/.ssh", ".ssh/id_rsa", ".ssh/id_ed25519",
+    ".ssh/authorized_keys", ".ssh/config",
     "/private/etc", "/System", "/Library/LaunchDaemons",
+    ".fabbot/local_api_token", "local_api_token",
+    ".env", "id_rsa", "id_ed25519",
+}
+
+# Pfade die niemals als Argument übergeben werden dürfen
+FORBIDDEN_PATH_PREFIXES = (
+    "/etc/",
+    "/private/etc/",
+    "/System/",
+    "/Library/LaunchDaemons/",
+    "/Library/LaunchAgents/",
+)
+
+# Erlaubte system_profiler Datatypes (alle anderen sind zu sensitiv)
+ALLOWED_SYSTEM_PROFILER_TYPES = {
+    "SPHardwareDataType",
+    "SPSoftwareDataType",
+    "SPStorageDataType",
+    "SPMemoryDataType",
+    "SPDisplaysDataType",
 }
 
 TIMEOUT_SECONDS = 15
@@ -59,16 +81,58 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
         if char in command:
             return False, f"Operator `{char}` ist nicht erlaubt."
 
+    args = parts[1:]
+    args_str = " ".join(args).lower()
+
     # Gefaehrliche Argumente blockieren
-    args_lower = " ".join(parts[1:]).lower()
     for forbidden in FORBIDDEN_ARGS:
-        if forbidden.lower() in args_lower:
+        if forbidden.lower() in args_str:
             return False, f"Argument `{forbidden}` ist nicht erlaubt."
 
     # Path-Traversal in Argumenten blockieren
-    for part in parts[1:]:
+    for part in args:
         if ".." in part:
             return False, "Path-Traversal (..) in Argumenten nicht erlaubt."
+
+    # Verbotene Pfad-Prefixe prüfen
+    for part in args:
+        expanded = os.path.expanduser(part)
+        for prefix in FORBIDDEN_PATH_PREFIXES:
+            if expanded.startswith(prefix):
+                return False, f"Zugriff auf `{prefix}` ist nicht erlaubt."
+
+    # system_profiler: nur erlaubte Datatypes
+    if base_cmd == "system_profiler":
+        if not args:
+            return False, "system_profiler benötigt einen Datatype-Parameter."
+        if args[0] not in ALLOWED_SYSTEM_PROFILER_TYPES:
+            allowed = ", ".join(sorted(ALLOWED_SYSTEM_PROFILER_TYPES))
+            return False, f"system_profiler Datatype nicht erlaubt. Erlaubt: {allowed}"
+
+    # find: Root-Suche und sensitive Verzeichnisse blockieren
+    if base_cmd == "find":
+        if args:
+            search_path = os.path.expanduser(args[0])
+            blocked_find_paths = ("/", "/etc", "/private", "/System", "/Library",
+                                  os.path.expanduser("~/.ssh"),
+                                  os.path.expanduser("~/.fabbot"))
+            for blocked in blocked_find_paths:
+                if search_path == blocked or search_path.startswith(blocked + "/"):
+                    return False, f"find in `{args[0]}` ist nicht erlaubt."
+
+    # cat/head/tail: sensitive Dateien blockieren
+    if base_cmd in ("cat", "head", "tail"):
+        for part in args:
+            expanded = os.path.expanduser(part)
+            blocked_files = (
+                os.path.expanduser("~/.ssh/"),
+                os.path.expanduser("~/.fabbot/local_api_token"),
+                os.path.expanduser("~/.fabbot/audit.log"),
+            )
+            # Audit log darf nur via /auditlog Command gelesen werden, nicht via cat
+            for blocked in blocked_files:
+                if expanded.startswith(blocked) or expanded == blocked.rstrip("/"):
+                    return False, f"Zugriff auf `{part}` ist nicht erlaubt."
 
     return True, command
 

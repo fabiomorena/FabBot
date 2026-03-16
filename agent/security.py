@@ -1,4 +1,6 @@
 import re
+import time
+import unicodedata
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,8 +37,39 @@ DANGEROUS_SHELL_PATTERNS = [
 
 MAX_INPUT_LENGTH = 2000
 
+# Rate limiting: max Nachrichten pro Zeitfenster pro User
+_rate_limit: dict[int, list[float]] = {}
+RATE_LIMIT_MAX = 20       # max Nachrichten
+RATE_LIMIT_WINDOW = 60    # pro Sekunden
 
-def sanitize_input(text: str) -> tuple[bool, str]:
+
+def _normalize(text: str) -> str:
+    """Normalisiert Unicode auf ASCII-Basis um homoglyph-Bypässe zu verhindern.
+    Beispiel: kyrillisches 'а' → 'a', sodass Injection-Patterns greifen.
+    """
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
+def check_rate_limit(user_id: int) -> bool:
+    """Gibt True zurück wenn User im erlaubten Bereich liegt, False wenn geblockt."""
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+
+    if user_id not in _rate_limit:
+        _rate_limit[user_id] = []
+
+    # Alte Einträge außerhalb des Fensters entfernen
+    _rate_limit[user_id] = [t for t in _rate_limit[user_id] if t > window_start]
+
+    if len(_rate_limit[user_id]) >= RATE_LIMIT_MAX:
+        logger.warning(f"Rate limit exceeded: user_id={user_id}")
+        return False
+
+    _rate_limit[user_id].append(now)
+    return True
+
+
+def sanitize_input(text: str, user_id: int | None = None) -> tuple[bool, str]:
     """
     Prüft und bereinigt User-Input.
     Gibt (is_safe, reason_or_clean_text) zurück.
@@ -47,15 +80,20 @@ def sanitize_input(text: str) -> tuple[bool, str]:
     if len(text) > MAX_INPUT_LENGTH:
         return False, f"Eingabe zu lang (max. {MAX_INPUT_LENGTH} Zeichen)."
 
-    text_lower = text.lower()
+    # Rate Limiting
+    if user_id is not None and not check_rate_limit(user_id):
+        return False, f"Zu viele Nachrichten. Bitte {RATE_LIMIT_WINDOW}s warten."
+
+    # Unicode-Normalisierung für Pattern-Matching (verhindert homoglyph-Bypass)
+    text_normalized = _normalize(text.lower())
 
     for pattern in INJECTION_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        if re.search(pattern, text_normalized, re.IGNORECASE):
             logger.warning(f"Prompt Injection erkannt: pattern='{pattern}' input='{text[:100]}'")
             return False, "Ungültige Eingabe erkannt."
 
     for pattern in DANGEROUS_SHELL_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        if re.search(pattern, text_normalized, re.IGNORECASE):
             logger.warning(f"Gefährliches Shell-Muster erkannt: pattern='{pattern}' input='{text[:100]}'")
             return False, "Gefährlicher Befehl erkannt."
 

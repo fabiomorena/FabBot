@@ -29,6 +29,8 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | macOS menubar app – start/stop bot, audit log |
 | ✅ | Computer Use – screenshot + desktop control with HITL |
 | ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
+| ✅ | Knowledge Clipper – `/clip <URL>` saves articles as Markdown to Obsidian vault |
+| ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
 
 ---
 
@@ -41,19 +43,21 @@ FabBot/
 ├── agent/
 │   ├── supervisor.py        # Supervisor – routes to sub-agents
 │   ├── state.py             # LangGraph AgentState
-│   ├── security.py          # Prompt injection guard & input sanitization
+│   ├── security.py          # Prompt injection guard, rate limiting, input sanitization
 │   ├── audit.py             # Tamper-evident audit log
 │   └── agents/
 │       ├── computer.py      # Desktop control (Computer Use API)
 │       ├── terminal.py      # Shell command execution
 │       ├── file.py          # File operations
 │       ├── web.py           # Web search & fetch
-│       └── calendar.py      # Calendar management
+│       ├── calendar.py      # Calendar management
+│       └── clip_agent.py    # URL clipper – fetch, summarize, save as Markdown
 └── bot/
-    ├── bot.py               # Telegram handlers (text + voice)
+    ├── bot.py               # Telegram handlers (text, voice, commands)
     ├── auth.py              # User whitelist
     ├── confirm.py           # Human-in-the-loop confirmation
-    └── transcribe.py        # Local Whisper transcription
+    ├── transcribe.py        # Local Whisper transcription
+    └── search.py            # Local knowledge base search
 ```
 
 **Stack:**
@@ -63,6 +67,7 @@ FabBot/
 - [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - [rumps](https://github.com/jaredks/rumps) – macOS menubar app
+- [Obsidian](https://obsidian.md) – knowledge base viewer (optional)
 - Python 3.11+, macOS
 
 ---
@@ -108,7 +113,7 @@ BRAVE_API_KEY=BSA...
 
 ### macOS Permissions
 
-For Apple Calendar access, grant Terminal and/or PyCharm automation permissions:
+For Apple Calendar access, grant Terminal automation permissions:
 
 **System Settings → Privacy & Security → Automation → Terminal → Calendar → Enable**
 
@@ -146,10 +151,14 @@ Send any natural language message or voice note to your bot on Telegram:
 **Commands:**
 
 ```
-/start      – Start the bot
-/status     – Check agent status
-/ask        – Direct query
-/auditlog   – Show last 10 executed actions
+/start              – Start the bot & show help
+/ask <Frage>        – Direct query
+/clip <URL>         – Save URL as Markdown note to ~/Documents/Wissen/
+/search             – List all saved notes
+/search <Begriff>   – Search notes by keyword
+/search #Tag        – Search notes by tag
+/status             – Check agent status
+/auditlog           – Show last 10 executed actions
 ```
 
 ---
@@ -158,12 +167,34 @@ Send any natural language message or voice note to your bot on Telegram:
 
 FabBot supports Telegram voice messages out of the box. Send a voice note instead of typing – Whisper transcribes it locally on your Mac, then the result is passed to the normal agent pipeline.
 
-**How it works:**
 ```
-Voice note (OGG) → Whisper (local, ~small model) → transcribed text → Supervisor → agent
+Voice note (OGG) → Whisper (local, small model) → transcribed text → Supervisor → agent
 ```
 
-The transcribed text is shown as a reply before the agent response, so you always know what was understood. The Whisper `small` model (~460 MB) is downloaded on first use and cached locally. No audio data leaves your machine.
+The transcribed text is shown as a reply before the agent response. The Whisper `small` model (~460 MB) is downloaded on first use and cached locally. No audio data leaves your machine.
+
+---
+
+## Knowledge Clipper
+
+Save any article or webpage to your local Obsidian-compatible knowledge base:
+
+```
+/clip https://example.com/article
+→ FabBot fetches & summarizes the page
+→ Shows preview with title, tags, and summary
+→ After confirmation: saved to ~/Documents/Wissen/YYYY-MM-DD-title.md
+```
+
+Notes are saved in Markdown with structured frontmatter (source URL, date, tags, summary, key points). Open `~/Documents/Wissen/` as an Obsidian vault to browse and link notes.
+
+Search your knowledge base directly from Telegram:
+
+```
+/search              → list all notes
+/search Berlin       → find notes containing "Berlin"
+/search #Tech        → find notes tagged #Tech
+```
 
 ---
 
@@ -173,31 +204,36 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 
 ### Input layer
 - **User whitelist** – only explicitly allowed Telegram user IDs can interact with the bot
-- **Prompt injection guard** – known injection patterns are detected and blocked before reaching the LLM
+- **Prompt injection guard** – known injection patterns detected and blocked before reaching the LLM; Unicode normalization prevents homoglyph bypasses (e.g. Cyrillic lookalikes)
+- **Rate limiting** – max 20 messages per 60 seconds per user
 - **Input length limit** – maximum 2,000 characters per message
 
 ### Execution layer
-- **Terminal allowlist** – only 20 explicitly permitted read-only shell commands can be executed
-- **Shell operator blocking** – `;`, `&&`, `|`, `>`, `$()` and similar operators are always rejected
-- **Path traversal guard** – `..` in arguments and paths is always blocked
-- **Dangerous argument blacklist** – `--exec`, `.ssh/id_rsa`, `/etc/passwd` and similar are always rejected
-- **File path sandbox** – file operations are restricted to explicit allowed directories
-- **SSRF protection** – web agent blocks requests to localhost and private IP ranges
-- **TOCTOU protection** – paths and commands are re-validated immediately before execution
+- **Terminal allowlist** – only 20 explicitly permitted shell commands can be executed
+- **Shell operator blocking** – `;`, `&&`, `|`, `>`, `$()` and similar always rejected
+- **Path traversal guard** – `..` in arguments always blocked
+- **Dangerous argument blocklist** – `--exec`, `.ssh/id_rsa`, `.ssh/config`, `.env`, `local_api_token` and similar always rejected
+- **system_profiler whitelist** – only 5 safe datatypes permitted (hardware, software, storage, memory, displays)
+- **find sandboxing** – blocked at `/`, `/etc`, `~/.ssh`, `~/.fabbot`
+- **cat/head/tail protection** – blocked for `~/.ssh/` and sensitive token files
+- **File path sandbox** – file operations restricted to explicit allowed directories (Downloads, Documents, Desktop, Projects); broad home directory access removed
+- **Explicit path blocklist** – `~/.ssh`, `~/.fabbot`, `.env`, shell configs always blocked regardless of base path
+- **SSRF protection** – web agent blocks loopback, private IPs, link-local (169.254.x.x / AWS metadata), IPv6 loopback (::1), multicast, reserved ranges, and `.local`/`.internal` hostnames via Python `ipaddress` module
+- **TOCTOU protection** – paths and commands re-validated immediately before execution
 
 ### Confirmation layer
-- **Human-in-the-loop** – every terminal command, file write, calendar event creation, and computer use action requires explicit confirmation via Telegram inline button
-- **60-second timeout** – unconfirmed actions are automatically cancelled
+- **Human-in-the-loop** – every terminal command, file write, calendar event creation, computer use action, and clip save requires explicit confirmation via Telegram inline button
+- **60-second timeout** – unconfirmed actions automatically cancelled
 - **pyautogui FAILSAFE** – moving mouse to screen corner immediately stops any computer use action
 
 ### Local API
-- **Shared secret token** – local API on `127.0.0.1:8766` is secured with a token stored at `~/.fabbot/local_api_token` (chmod 600)
-- **Localhost only** – API is not reachable from outside the machine
+- **Shared secret token** – local API on `127.0.0.1:8766` secured with token at `~/.fabbot/local_api_token` (chmod 600)
+- **Localhost only** – API not reachable from outside the machine
 
 ### Audit layer
-- **Local audit log** – every action is logged to `~/.fabbot/audit.log`
-- **Sensitive data redacting** – API keys, tokens, passwords, and email addresses are automatically redacted
-- **No content logging** – file contents and command outputs are never written to the log
+- **Local audit log** – every action logged to `~/.fabbot/audit.log`
+- **Sensitive data redacting** – API keys, tokens, passwords, and email addresses automatically redacted
+- **No content logging** – file contents and command outputs never written to the log
 
 ---
 
@@ -209,6 +245,9 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Phase 4** ✅ Menubar app + Calendar event creation with HITL confirmation
 - **Phase 5** ✅ Computer Use – screenshot, click, type, open app with HITL confirmation
 - **Phase 6** ✅ Voice Notes – local Whisper transcription, OGG support, no external API needed
+- **Phase 7** ✅ Knowledge Clipper – `/clip` saves URLs as structured Markdown, Obsidian-compatible
+- **Phase 8** ✅ Knowledge Search – `/search` searches local notes by keyword and tag
+- **Phase 9** ✅ Security hardening – Unicode normalization, rate limiting, IPv6 SSRF, tightened sandboxes
 
 ---
 
