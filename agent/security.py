@@ -5,7 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Bekannte Prompt-Injection-Muster
 INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
     r"vergiss\s+(alle\s+)?(vorherigen|obigen)\s+(anweisungen|befehle)",
@@ -21,7 +20,6 @@ INJECTION_PATTERNS = [
     r"disable\s+(all\s+)?(safety|restrictions|filters)",
 ]
 
-# Gefährliche Shell-Muster die niemals erlaubt sind
 DANGEROUS_SHELL_PATTERNS = [
     r"rm\s+-rf\s+/",
     r"rm\s+-rf\s+~",
@@ -30,23 +28,43 @@ DANGEROUS_SHELL_PATTERNS = [
     r">\s*/dev/sd",
     r"chmod\s+777\s+/",
     r"sudo\s+rm",
-    r":\(\)\{:\|:&\};:",  # Fork bomb
+    r":\s*\(\s*\)\s*\{.*:\s*\|.*:.*&.*\}",  # Fork bomb – flexibel mit optionalen Leerzeichen
     r"curl\s+.*\|\s*(bash|sh|zsh)",
     r"wget\s+.*\|\s*(bash|sh|zsh)",
 ]
 
 MAX_INPUT_LENGTH = 2000
 
-# Rate limiting: max Nachrichten pro Zeitfenster pro User
 _rate_limit: dict[int, list[float]] = {}
-RATE_LIMIT_MAX = 20       # max Nachrichten
-RATE_LIMIT_WINDOW = 60    # pro Sekunden
+RATE_LIMIT_MAX = 20
+RATE_LIMIT_WINDOW = 60
+
+# Explizite Homoglyph-Tabelle für häufige Cyrillic/Greek/Fullwidth Lookalikes.
+# NFKD allein entfernt diese Zeichen – wir ersetzen sie stattdessen explizit.
+_HOMOGLYPH_MAP = str.maketrans({
+    # Kyrillisch → ASCII
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
+    "х": "x", "у": "y", "А": "A", "В": "B", "Е": "E",
+    "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P",
+    "С": "C", "Т": "T", "Х": "X",
+    # Griechisch → ASCII
+    "α": "a", "β": "b", "ο": "o", "ρ": "p",
+    # Fullwidth
+    "ａ": "a", "ｂ": "b", "ｃ": "c", "ｄ": "d", "ｅ": "e",
+    "ｉ": "i", "ｊ": "j", "ｋ": "k", "ｌ": "l", "ｍ": "m",
+    "ｎ": "n", "ｏ": "o", "ｐ": "p", "ｑ": "q", "ｒ": "r",
+    "ｓ": "s", "ｔ": "t", "ｕ": "u", "ｖ": "v", "ｗ": "w",
+    "ｘ": "x", "ｙ": "y", "ｚ": "z",
+})
 
 
 def _normalize(text: str) -> str:
     """Normalisiert Unicode auf ASCII-Basis um homoglyph-Bypässe zu verhindern.
-    Beispiel: kyrillisches 'а' → 'a', sodass Injection-Patterns greifen.
+    Schritt 1: Bekannte Homoglyphe explizit ersetzen (Cyrillic, Greek, Fullwidth)
+    Schritt 2: NFKD-Normalisierung für Akzentzeichen (é→e, ü→u)
+    Schritt 3: Verbleibende Nicht-ASCII-Zeichen entfernen
     """
+    text = text.translate(_HOMOGLYPH_MAP)
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
@@ -58,7 +76,6 @@ def check_rate_limit(user_id: int) -> bool:
     if user_id not in _rate_limit:
         _rate_limit[user_id] = []
 
-    # Alte Einträge außerhalb des Fensters entfernen
     _rate_limit[user_id] = [t for t in _rate_limit[user_id] if t > window_start]
 
     if len(_rate_limit[user_id]) >= RATE_LIMIT_MAX:
@@ -80,11 +97,9 @@ def sanitize_input(text: str, user_id: int | None = None) -> tuple[bool, str]:
     if len(text) > MAX_INPUT_LENGTH:
         return False, f"Eingabe zu lang (max. {MAX_INPUT_LENGTH} Zeichen)."
 
-    # Rate Limiting
     if user_id is not None and not check_rate_limit(user_id):
         return False, f"Zu viele Nachrichten. Bitte {RATE_LIMIT_WINDOW}s warten."
 
-    # Unicode-Normalisierung für Pattern-Matching (verhindert homoglyph-Bypass)
     text_normalized = _normalize(text.lower())
 
     for pattern in INJECTION_PATTERNS:
@@ -97,6 +112,5 @@ def sanitize_input(text: str, user_id: int | None = None) -> tuple[bool, str]:
             logger.warning(f"Gefährliches Shell-Muster erkannt: pattern='{pattern}' input='{text[:100]}'")
             return False, "Gefährlicher Befehl erkannt."
 
-    # Einfache Bereinigung: Null-Bytes entfernen
     clean = text.replace("\x00", "").strip()
     return True, clean
