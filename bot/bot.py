@@ -12,6 +12,7 @@ from bot.search import search_knowledge, list_knowledge
 from agent.supervisor import agent_graph
 from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
+from agent.protocol import Proto
 from agent.agents.terminal import terminal_agent_execute
 from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
@@ -74,7 +75,6 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Fetcht eine URL, erstellt eine Markdown-Notiz und speichert sie nach Bestätigung."""
     if not ctx.args:
         await update.message.reply_text(
             "Verwendung: /clip <URL>\n"
@@ -111,7 +111,6 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Durchsucht gespeicherte Notizen in ~/Documents/Wissen."""
     chat_id = update.effective_chat.id
 
     if not ctx.args:
@@ -131,9 +130,6 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Empfängt Telegram Voice Messages, transkribiert via Whisper und
-    leitet den Text an die normale Agent-Pipeline weiter.
-    """
     thinking = await update.message.reply_text("Transkribiere...")
 
     try:
@@ -144,9 +140,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = await transcribe_audio(bytes(audio_bytes))
 
         if not text:
-            await thinking.edit_text(
-                "Transkription fehlgeschlagen. Bitte nochmal versuchen."
-            )
+            await thinking.edit_text("Transkription fehlgeschlagen. Bitte nochmal versuchen.")
             return
 
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
@@ -155,9 +149,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Voice handler error: {e}", exc_info=True)
         try:
-            await thinking.edit_text(
-                "Fehler bei der Verarbeitung der Sprachnachricht."
-            )
+            await thinking.edit_text("Fehler bei der Verarbeitung der Sprachnachricht.")
         except Exception:
             pass
 
@@ -166,7 +158,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    is_safe, result = sanitize_input(text)
+    is_safe, result = sanitize_input(text, user_id)
     if not is_safe:
         log_blocked(result, text, user_id)
         await update.message.reply_text(f"Eingabe abgelehnt: {result}")
@@ -184,9 +176,9 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         result_state = await agent_graph.ainvoke(state, {"recursion_limit": 10})
         response_msg = _extract_content(result_state["messages"][-1])
 
-        # Screenshot senden
-        if response_msg.startswith("__SCREENSHOT__:"):
-            analysis = response_msg.replace("__SCREENSHOT__:", "")
+        # Screenshot
+        if Proto.is_screenshot(response_msg):
+            analysis = response_msg[len(Proto.SCREENSHOT):]
             await thinking.delete()
             screenshot_bytes = _screenshot_to_telegram_bytes()
             if screenshot_bytes:
@@ -195,26 +187,26 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
                 await bot.send_message(chat_id=chat_id, text=f"Screenshot-Analyse:\n{analysis}")
             return
 
-        # Human-in-the-Loop: Computer Use Bestaetigung
-        if response_msg.startswith("__CONFIRM_COMPUTER__:"):
-            parts = response_msg.replace("__CONFIRM_COMPUTER__:", "").split(":", 3)
+        # HITL: Computer Use
+        if Proto.is_confirm_computer(response_msg):
+            parts = response_msg[len(Proto.CONFIRM_COMPUTER):].split(":", 3)
             action = parts[0] if len(parts) > 0 else ""
             x = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
             y = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            text = parts[3] if len(parts) > 3 else ""
+            text_arg = parts[3] if len(parts) > 3 else ""
             await thinking.delete()
-            display = f"{action}: {text}" if text else f"{action} @ ({x}, {y})"
+            display = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
             confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
             if confirmed:
-                output = computer_agent_execute(action, x, y, text, chat_id)
+                output = computer_agent_execute(action, x, y, text_arg, chat_id)
                 await bot.send_message(chat_id=chat_id, text=output)
             else:
                 log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
             return
 
-        # Human-in-the-Loop: Terminal Bestaetigung
-        if response_msg.startswith("__CONFIRM_TERMINAL__:"):
-            command = response_msg.split(":", 1)[1]
+        # HITL: Terminal
+        if Proto.is_confirm_terminal(response_msg):
+            command = response_msg[len(Proto.CONFIRM_TERMINAL):]
             await thinking.delete()
             confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
             if confirmed:
@@ -224,9 +216,9 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
                 log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
             return
 
-        # Human-in-the-Loop: Calendar Create Bestaetigung
-        if response_msg.startswith("__CONFIRM_CREATE_EVENT__:"):
-            parts = response_msg.replace("__CONFIRM_CREATE_EVENT__:", "").split("::")
+        # HITL: Calendar Create
+        if Proto.is_confirm_create_event(response_msg):
+            parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT):].split("::")
             title = parts[0] if len(parts) > 0 else ""
             start_time = parts[1] if len(parts) > 1 else ""
             end_time = parts[2] if len(parts) > 2 else ""
@@ -242,10 +234,10 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
                 log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
             return
 
-        # Human-in-the-Loop: File Write Bestaetigung
-        if response_msg.startswith("__CONFIRM_FILE_WRITE__:"):
-            parts = response_msg.split("::", 1)
-            path_str = parts[0].replace("__CONFIRM_FILE_WRITE__:", "")
+        # HITL: File Write
+        if Proto.is_confirm_file_write(response_msg):
+            parts = response_msg[len(Proto.CONFIRM_FILE_WRITE):].split("::", 1)
+            path_str = parts[0]
             file_content = parts[1] if len(parts) > 1 else ""
             await thinking.delete()
             confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")

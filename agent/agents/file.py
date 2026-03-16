@@ -1,19 +1,12 @@
-import os
 import re
 import json
 from pathlib import Path
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.audit import log_action
+from agent.llm import get_llm
+from agent.protocol import Proto
 
-llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-)
-
-# Explizit erlaubte Verzeichnisse – kein breites Home-Verzeichnis
-# /Users/fmorena wurde entfernt (zu weit gefasst, erlaubte ~/.ssh etc.)
 ALLOWED_BASE_PATHS = [
     Path.home() / "Downloads",
     Path.home() / "Documents",
@@ -25,7 +18,6 @@ ALLOWED_BASE_PATHS = [
     Path("/Volumes/McAir SSD/fmorena/Documents"),
 ]
 
-# Pfade die explizit niemals erlaubt sind, auch wenn sie unter ALLOWED_BASE_PATHS fallen würden
 EXPLICITLY_BLOCKED_PATHS = [
     Path.home() / ".ssh",
     Path.home() / ".fabbot",
@@ -63,20 +55,14 @@ def _extract_json(text: str) -> str:
 
 
 def is_path_allowed(path: Path) -> tuple[bool, str]:
-    """Prueft ob der Pfad in einem erlaubten Verzeichnis liegt.
-    Loest Symlinks auf um TOCTOU-Angriffe zu verhindern.
-    """
     try:
-        # resolve() loest Symlinks auf – verhindert TOCTOU via Symlink-Swap
         resolved = path.resolve()
     except Exception:
         return False, "Pfad konnte nicht aufgeloest werden."
 
-    # Sicherheitscheck: Keine Path-Traversal-Muster
     if ".." in path.parts:
         return False, "Path-Traversal nicht erlaubt."
 
-    # Explizit blockierte Pfade prüfen (auch wenn unter allowed base)
     for blocked in EXPLICITLY_BLOCKED_PATHS:
         try:
             resolved.relative_to(blocked.resolve())
@@ -95,6 +81,7 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
 
 
 def file_agent(state: AgentState) -> AgentState:
+    llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
     response = llm.invoke(messages)
     content = response.content
@@ -119,7 +106,6 @@ def file_agent(state: AgentState) -> AgentState:
     path = Path(path_str)
     allowed, reason = is_path_allowed(path)
     if not allowed:
-        # Nur Metadaten loggen, niemals file_content
         log_action("file_agent", action, f"blocked: {reason}", state.get("telegram_chat_id"), status="blocked")
         return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
 
@@ -128,10 +114,9 @@ def file_agent(state: AgentState) -> AgentState:
     elif action == "read":
         return _read_file(path, state)
     elif action == "write":
-        # Dateiinhalt NICHT in Bestaetigungsnachricht an Telegram schicken
         preview = f"{len(file_content)} Zeichen" if file_content else "leer"
         return {
-            "messages": [AIMessage(content=f"__CONFIRM_FILE_WRITE__:{path}::{file_content}")],
+            "messages": [AIMessage(content=f"{Proto.CONFIRM_FILE_WRITE}{path}::{file_content}")],
             "next_agent": None,
             "_confirm_display": f"Schreibe {preview} nach: {path}",
         }
@@ -153,7 +138,6 @@ def _list_dir(path: Path, state: AgentState) -> AgentState:
         result = f"Inhalt von {path}:\n\n" + "\n".join(lines)
         if len(entries) > 50:
             result += f"\n... und {len(entries) - 50} weitere"
-        # Nur Pfad loggen, nie Dateiinhalt
         log_action("file_agent", "list", str(path), state.get("telegram_chat_id"), status="executed")
         return {"messages": [AIMessage(content=result)]}
     except PermissionError:
@@ -171,7 +155,6 @@ def _read_file(path: Path, state: AgentState) -> AgentState:
         text = path.read_text(encoding="utf-8", errors="replace")
         if len(text) > 3000:
             text = text[:3000] + "\n... (Inhalt gekuerzt)"
-        # Nur Pfad und Groesse loggen, nie Inhalt
         log_action("file_agent", "read", f"path={path} size={path.stat().st_size}b",
                    state.get("telegram_chat_id"), status="executed")
         return {"messages": [AIMessage(content=f"Inhalt von {path.name}:\n\n{text}")]}
@@ -180,10 +163,7 @@ def _read_file(path: Path, state: AgentState) -> AgentState:
 
 
 def file_agent_write(path: Path, content: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung aufgerufen.
-    Re-validiert den Pfad direkt vor der Ausfuehrung (TOCTOU-Schutz).
-    """
-    # TOCTOU-Fix: Pfad nochmal validieren direkt vor dem Schreiben
+    """Wird nach Benutzerbestaetigung aufgerufen. Re-validiert vor Ausfuehrung (TOCTOU-Schutz)."""
     allowed, reason = is_path_allowed(path)
     if not allowed:
         log_action("file_agent", "write", f"toctou-blocked: {reason}", chat_id, status="blocked")
@@ -192,7 +172,6 @@ def file_agent_write(path: Path, content: str, chat_id: int) -> str:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        # Nur Pfad und Groesse loggen, nie Inhalt
         log_action("file_agent", "write", f"path={path} size={len(content)}b", chat_id, status="executed")
         return f"Datei gespeichert: {path.name}"
     except PermissionError:

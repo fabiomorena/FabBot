@@ -1,23 +1,12 @@
-import os
 import re
 import json
 import subprocess
 from datetime import datetime, timedelta, date
-from pathlib import Path
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.audit import log_action
-
-llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-)
-
-CREDENTIALS_PATH = Path(__file__).parent.parent.parent / "credentials.json"
-TOKEN_PATH = Path.home() / ".fabbot" / "google_token.json"
-
-SCOPES = []  # Google Calendar via Apple Calendar Sync eingebunden
+from agent.llm import get_llm
+from agent.protocol import Proto
 
 
 def _build_prompt() -> str:
@@ -54,7 +43,6 @@ def _extract_json(text: str) -> str:
 
 
 def _get_apple_events(date_from: str, date_to: str) -> list[dict]:
-    """Liest Events aus Apple Calendar via AppleScript."""
     try:
         dt_from = datetime.strptime(date_from, "%Y-%m-%d")
         dt_to = datetime.strptime(date_to, "%Y-%m-%d")
@@ -89,19 +77,9 @@ def _get_apple_events(date_from: str, date_to: str) -> list[dict]:
     ]
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            import logging
-            logging.getLogger(__name__).error(f"AppleScript error: {result.stderr}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0 or not result.stdout.strip():
             return []
-        if not result.stdout.strip():
-            return []
-
         events = []
         for line in result.stdout.strip().split("\n"):
             if not line.strip():
@@ -115,37 +93,18 @@ def _get_apple_events(date_from: str, date_to: str) -> list[dict]:
                     "source": "Apple",
                 })
         return events
-    except subprocess.TimeoutExpired:
-        import logging
-        logging.getLogger(__name__).error("AppleScript timeout")
-        return []
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"AppleScript exception: {e}")
+    except Exception:
         return []
 
 
 def _format_events(events: list[dict]) -> str:
-    """Formatiert Events als lesbaren Text."""
     if not events:
         return "Keine Termine gefunden."
-
-    # Sortieren nach Startzeit
     events.sort(key=lambda e: e.get("start", "").zfill(5))
-
-    lines = []
-    for e in events:
-        start = e.get("start", "")
-        lines.append(f"{start}  {e['title']}")
-
-    return "\n".join(lines)
+    return "\n".join(f"{e.get('start', '')}  {e['title']}" for e in events)
 
 
 def _sanitize_applescript_string(text: str) -> str:
-    """Bereinigt Text fuer sichere Verwendung in AppleScript-Strings.
-    Entfernt Zeichen die AppleScript-Injection ermoeglichen koennten.
-    """
-    # Anführungszeichen escapen, Zeilenumbrüche entfernen
     text = text.replace("\\", "\\\\")
     text = text.replace('"', '\\"')
     text = text.replace("\n", " ").replace("\r", " ")
@@ -153,7 +112,6 @@ def _sanitize_applescript_string(text: str) -> str:
 
 
 def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung aufgerufen – erstellt Event in Apple Calendar."""
     try:
         dt_start = datetime.fromisoformat(start_time)
         apple_start = dt_start.strftime("%d.%m.%Y %H:%M")
@@ -162,12 +120,10 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
             dt_end = datetime.fromisoformat(end_time)
             apple_end = dt_end.strftime("%d.%m.%Y %H:%M")
         else:
-            # Standard: 1 Stunde
             dt_end = dt_start.replace(hour=dt_start.hour + 1)
             apple_end = dt_end.strftime("%d.%m.%Y %H:%M")
 
         safe_title = _sanitize_applescript_string(title)
-
         cmd = [
             "osascript",
             "-e", 'tell application "Calendar"',
@@ -176,23 +132,18 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
             "-e", '    end tell',
             "-e", 'end tell',
         ]
-
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
         if result.returncode != 0:
-            import logging
-            logging.getLogger(__name__).error(f"AppleScript create error: {result.stderr}")
             return f"Fehler beim Erstellen des Termins: {result.stderr}"
 
         log_action("calendar_agent", "create_event", f"title={title} start={start_time}", chat_id, status="executed")
         return f"Termin erstellt:\n{title}\n{apple_start} bis {apple_end}"
-
     except Exception as e:
         return f"Fehler: {e}"
 
 
-
 async def calendar_agent(state: AgentState) -> AgentState:
+    llm = get_llm()
     messages = [SystemMessage(content=_build_prompt())] + state["messages"]
     response = llm.invoke(messages)
     content = response.content
@@ -206,26 +157,20 @@ async def calendar_agent(state: AgentState) -> AgentState:
     try:
         parsed = json.loads(content)
         action = parsed.get("action")
-        source = parsed.get("source", "apple")
         date_from = parsed.get("date_from", date.today().isoformat())
         date_to = parsed.get("date_to", date_from)
     except (json.JSONDecodeError, AttributeError):
-        # Fallback: heute anzeigen
         action = "list_events"
-        source = "apple"
         date_from = date.today().isoformat()
         date_to = date_from
 
     log_action("calendar_agent", action, f"{date_from} to {date_to}",
                state.get("telegram_chat_id"), status="executed")
 
-    import logging
-    logging.getLogger(__name__).info(f"Calendar query: action={action} source={source} from={date_from} to={date_to} apple_format={datetime.strptime(date_from, '%Y-%m-%d').strftime('%d.%m.%Y')}")
-
     if action == "list_events":
         events = _get_apple_events(date_from, date_to)
         formatted = _format_events(events)
-        period = f"{date_from}" if date_from == date_to else f"{date_from} bis {date_to}"
+        period = date_from if date_from == date_to else f"{date_from} bis {date_to}"
         return {"messages": [AIMessage(content=f"Termine {period}:\n\n{formatted}")]}
 
     elif action == "create_event":
@@ -236,20 +181,19 @@ async def calendar_agent(state: AgentState) -> AgentState:
         if not title or not start_time:
             return {"messages": [AIMessage(content="Fehler: Titel und Startzeit sind erforderlich.")]}
 
-        # Validierung: Zeitformat prüfen
         try:
             datetime.fromisoformat(start_time)
             if end_time:
                 datetime.fromisoformat(end_time)
         except ValueError:
-            return {"messages": [AIMessage(content=f"Fehler: Ungültiges Zeitformat. Erwartet: YYYY-MM-DDTHH:MM:SS")]}
+            return {"messages": [AIMessage(content="Fehler: Ungültiges Zeitformat. Erwartet: YYYY-MM-DDTHH:MM:SS")]}
 
         confirm_text = f"Neuer Termin:\n{title}\n{start_time}"
         if end_time:
             confirm_text += f" bis {end_time}"
 
         return {
-            "messages": [AIMessage(content=f"__CONFIRM_CREATE_EVENT__:{title}::{start_time}::{end_time}")],
+            "messages": [AIMessage(content=f"{Proto.CONFIRM_CREATE_EVENT}{title}::{start_time}::{end_time}")],
             "next_agent": None,
             "_confirm_display": confirm_text,
         }

@@ -1,16 +1,11 @@
-import os
 import base64
 import subprocess
 from pathlib import Path
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.audit import log_action
-
-llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-)
+from agent.llm import get_llm
+from agent.protocol import Proto
 
 SCREENSHOT_PATH = Path.home() / ".fabbot" / "screenshot.png"
 SCREENSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -43,19 +38,17 @@ Wenn nicht unterstuetzt: UNSUPPORTED
 
 
 def _take_screenshot() -> str | None:
-    """Macht einen Screenshot und gibt den Base64-String zurueck."""
     try:
         import pyautogui
         screenshot = pyautogui.screenshot()
         screenshot.save(str(SCREENSHOT_PATH))
         with open(SCREENSHOT_PATH, "rb") as f:
             return base64.standard_b64encode(f.read()).decode("utf-8")
-    except Exception as e:
+    except Exception:
         return None
 
 
 def _screenshot_to_telegram_bytes() -> bytes | None:
-    """Gibt Screenshot als Bytes fuer Telegram zurueck."""
     try:
         if SCREENSHOT_PATH.exists():
             return SCREENSHOT_PATH.read_bytes()
@@ -68,13 +61,13 @@ async def computer_agent(state: AgentState) -> AgentState:
     import json
     import re
 
+    llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
     response = llm.invoke(messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
 
-    # JSON extrahieren
     content = content.strip()
     content = re.sub(r"^```(?:json)?\s*", "", content)
     content = re.sub(r"\s*```$", "", content).strip()
@@ -95,7 +88,6 @@ async def computer_agent(state: AgentState) -> AgentState:
         if not img_b64:
             return {"messages": [AIMessage(content="Fehler beim Erstellen des Screenshots.")]}
 
-        # Screenshot mit Claude analysieren
         analysis_response = llm.invoke([
             HumanMessage(content=[
                 {
@@ -114,7 +106,7 @@ async def computer_agent(state: AgentState) -> AgentState:
             analysis = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in analysis)
 
         return {
-            "messages": [AIMessage(content=f"__SCREENSHOT__:{analysis.strip()}")],
+            "messages": [AIMessage(content=f"{Proto.SCREENSHOT}{analysis.strip()}")],
             "next_agent": None,
         }
 
@@ -122,7 +114,7 @@ async def computer_agent(state: AgentState) -> AgentState:
         x = parsed.get("x", 0)
         y = parsed.get("y", 0)
         return {
-            "messages": [AIMessage(content=f"__CONFIRM_COMPUTER__:click:{x}:{y}:")],
+            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}click:{x}:{y}:")],
             "next_agent": None,
         }
 
@@ -131,7 +123,7 @@ async def computer_agent(state: AgentState) -> AgentState:
         if not text:
             return {"messages": [AIMessage(content="Kein Text zum Tippen angegeben.")]}
         return {
-            "messages": [AIMessage(content=f"__CONFIRM_COMPUTER__:type:0:0:{text}")],
+            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}type:0:0:{text}")],
             "next_agent": None,
         }
 
@@ -140,7 +132,7 @@ async def computer_agent(state: AgentState) -> AgentState:
         if not app:
             return {"messages": [AIMessage(content="Kein App-Name angegeben.")]}
         return {
-            "messages": [AIMessage(content=f"__CONFIRM_COMPUTER__:open_app:0:0:{app}")],
+            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}open_app:0:0:{app}")],
             "next_agent": None,
         }
 
@@ -152,7 +144,7 @@ def computer_agent_execute(action: str, x: int, y: int, text: str, chat_id: int)
     """Wird nach Benutzerbestaetigung ausgefuehrt."""
     try:
         import pyautogui
-        pyautogui.FAILSAFE = True  # Maus in Ecke = Notaus
+        pyautogui.FAILSAFE = True
 
         if action == "click":
             pyautogui.click(x, y)

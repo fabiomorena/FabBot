@@ -1,21 +1,13 @@
-import os
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from agent.state import AgentState, AgentName
+from agent.llm import get_llm
 from agent.agents.computer import computer_agent
 from agent.agents.terminal import terminal_agent
 from agent.agents.file import file_agent
 from agent.agents.web import web_agent
 from agent.agents.calendar import calendar_agent
-
-MODEL = "claude-sonnet-4-20250514"
-
-llm = ChatAnthropic(
-    model=MODEL,
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-)
 
 SUPERVISOR_PROMPT = """Du bist ein Supervisor-Agent. Du koordinierst spezialisierte Sub-Agenten.
 
@@ -37,9 +29,9 @@ computer_agent | terminal_agent | file_agent | web_agent | calendar_agent | FINI
 
 
 def supervisor_node(state: AgentState) -> AgentState:
+    llm = get_llm()
     messages = state["messages"]
 
-    # Trailing Whitespace aus letzter AI-Nachricht entfernen
     if messages and isinstance(messages[-1], AIMessage):
         content = messages[-1].content
         if isinstance(content, list):

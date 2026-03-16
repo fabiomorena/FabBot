@@ -1,16 +1,11 @@
-import os
 import re
+import ipaddress
 import httpx
 from datetime import date
 from pathlib import Path
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 from agent.audit import log_action
-
-llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-)
+from agent.llm import get_llm
 
 KNOWLEDGE_DIR = Path.home() / "Documents" / "Wissen"
 MAX_FETCH_SIZE = 50_000
@@ -35,7 +30,7 @@ Format:
 - ...
 
 ## Notizen
-Raum für eigene Gedanken (leer lassen).
+
 
 ---
 Halte dich kurz und präzise. Maximal 400 Wörter.
@@ -44,7 +39,6 @@ Antworte NUR mit dem Markdown, ohne Codeblock-Syntax.
 
 
 def _slugify(title: str) -> str:
-    """Wandelt einen Titel in einen dateisicheren Slug um."""
     title = title.lower()
     title = re.sub(r"[äÄ]", "ae", title)
     title = re.sub(r"[öÖ]", "oe", title)
@@ -55,15 +49,37 @@ def _slugify(title: str) -> str:
     return title[:60]
 
 
-async def _fetch_url(url: str) -> str:
-    """Ruft den Inhalt einer URL ab und strippt HTML."""
+def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
     if not url.startswith(("http://", "https://")):
-        raise ValueError("Nur HTTP/HTTPS URLs erlaubt.")
+        return True, "Nur HTTP/HTTPS URLs erlaubt."
+    try:
+        host_match = re.match(r"https?://([^/:@\]]+|\[[^\]]+\])", url)
+        if not host_match:
+            return True, "URL konnte nicht geparst werden."
+        host = host_match.group(1).strip("[]")
+    except Exception:
+        return True, "URL konnte nicht geparst werden."
 
-    blocked = ["localhost", "127.0.0.1", "0.0.0.0", "192.168.", "10.", "172.16."]
-    for b in blocked:
-        if b in url:
-            raise ValueError("Lokale URLs sind nicht erlaubt.")
+    if host.lower() in ["localhost", "ip6-localhost"]:
+        return True, f"Lokale URL nicht erlaubt: {host}"
+
+    try:
+        ip = ipaddress.ip_address(host)
+        if any([ip.is_loopback, ip.is_private, ip.is_link_local,
+                ip.is_multicast, ip.is_reserved, ip.is_unspecified]):
+            return True, f"Nicht erlaubte IP-Adresse: {host}"
+    except ValueError:
+        for suffix in [".local", ".internal", ".localhost"]:
+            if host.lower().endswith(suffix):
+                return True, f"Lokaler Hostname nicht erlaubt: {host}"
+
+    return False, ""
+
+
+async def _fetch_url(url: str) -> str:
+    blocked, reason = _is_ssrf_blocked(url)
+    if blocked:
+        raise ValueError(reason)
 
     async with httpx.AsyncClient(
         timeout=TIMEOUT,
@@ -74,7 +90,6 @@ async def _fetch_url(url: str) -> str:
         resp.raise_for_status()
         text = resp.text[:MAX_FETCH_SIZE]
 
-    # HTML strippen
     text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
     text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -83,18 +98,10 @@ async def _fetch_url(url: str) -> str:
 
 
 async def clip_agent(url: str, chat_id: int) -> dict:
-    """
-    Fetcht eine URL, erstellt eine Markdown-Notiz und gibt
-    Pfad + Inhalt zurück für HITL-Bestätigung in bot.py.
-
-    Returns:
-        {"ok": True, "path": Path, "content": str, "preview": str}
-        {"ok": False, "error": str}
-    """
-    # URL validieren
     url = url.strip()
-    if not url.startswith(("http://", "https://")):
-        return {"ok": False, "error": "Ungültige URL. Muss mit http:// oder https:// beginnen."}
+    blocked, reason = _is_ssrf_blocked(url)
+    if blocked:
+        return {"ok": False, "error": reason}
 
     log_action("clip_agent", "fetch", url[:200], chat_id, status="executed")
 
@@ -112,7 +119,7 @@ async def clip_agent(url: str, chat_id: int) -> dict:
     if not raw.strip():
         return {"ok": False, "error": "Seite enthält keinen lesbaren Text."}
 
-    # Mit LLM zusammenfassen
+    llm = get_llm()
     today = date.today().strftime("%d.%m.%Y")
     response = llm.invoke([
         SystemMessage(content=SUMMARIZE_PROMPT),
@@ -123,7 +130,6 @@ async def clip_agent(url: str, chat_id: int) -> dict:
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     content = content.strip()
 
-    # Titel aus erstem H1 extrahieren für Dateiname
     title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     title = title_match.group(1) if title_match else "notiz"
     slug = _slugify(title)
@@ -132,8 +138,7 @@ async def clip_agent(url: str, chat_id: int) -> dict:
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     file_path = KNOWLEDGE_DIR / filename
 
-    # Preview für HITL (erste 3 Zeilen)
-    preview_lines = [l for l in content.split("\n") if l.strip()][:4]
+    preview_lines = [ln for ln in content.split("\n") if ln.strip()][:4]
     preview = "\n".join(preview_lines)
 
     return {
@@ -146,7 +151,6 @@ async def clip_agent(url: str, chat_id: int) -> dict:
 
 
 def clip_agent_write(path: Path, content: str, chat_id: int) -> str:
-    """Wird nach HITL-Bestätigung aufgerufen."""
     try:
         path.write_text(content, encoding="utf-8")
         log_action("clip_agent", "write", str(path), chat_id, status="executed")

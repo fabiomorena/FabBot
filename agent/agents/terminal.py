@@ -1,15 +1,11 @@
 import os
 import subprocess
 import shlex
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.audit import log_action
-
-llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-)
+from agent.llm import get_llm
+from agent.protocol import Proto
 
 ALLOWED_COMMANDS = {
     "ls", "pwd", "echo", "cat", "head", "tail", "grep",
@@ -18,7 +14,6 @@ ALLOWED_COMMANDS = {
     "diskutil", "system_profiler",
 }
 
-# Argumente die niemals erlaubt sind
 FORBIDDEN_ARGS = {
     "--exec", "-exec", "--delete", "-delete",
     "/etc/passwd", "/etc/shadow", "/etc/sudoers",
@@ -29,7 +24,6 @@ FORBIDDEN_ARGS = {
     ".env", "id_rsa", "id_ed25519",
 }
 
-# Pfade die niemals als Argument übergeben werden dürfen
 FORBIDDEN_PATH_PREFIXES = (
     "/etc/",
     "/private/etc/",
@@ -38,7 +32,6 @@ FORBIDDEN_PATH_PREFIXES = (
     "/Library/LaunchAgents/",
 )
 
-# Erlaubte system_profiler Datatypes (alle anderen sind zu sensitiv)
 ALLOWED_SYSTEM_PROFILER_TYPES = {
     "SPHardwareDataType",
     "SPSoftwareDataType",
@@ -62,7 +55,6 @@ Wenn die Anfrage keinen erlaubten Befehl erfordert, antworte mit: UNSUPPORTED
 
 
 def is_command_allowed(command: str) -> tuple[bool, str]:
-    """Prueft ob der Befehl auf der Allowlist steht und keine gefaehrlichen Argumente enthaelt."""
     try:
         parts = shlex.split(command.strip())
     except ValueError as e:
@@ -75,7 +67,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
     if base_cmd not in ALLOWED_COMMANDS:
         return False, f"Befehl `{base_cmd}` ist nicht erlaubt."
 
-    # Shell-Operatoren blockieren
     forbidden_chars = [";", "&&", "||", "|", ">", "<", "`", "$(", "\\"]
     for char in forbidden_chars:
         if char in command:
@@ -84,32 +75,27 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
     args = parts[1:]
     args_str = " ".join(args).lower()
 
-    # Gefaehrliche Argumente blockieren
     for forbidden in FORBIDDEN_ARGS:
         if forbidden.lower() in args_str:
             return False, f"Argument `{forbidden}` ist nicht erlaubt."
 
-    # Path-Traversal in Argumenten blockieren
     for part in args:
         if ".." in part:
             return False, "Path-Traversal (..) in Argumenten nicht erlaubt."
 
-    # Verbotene Pfad-Prefixe prüfen
     for part in args:
         expanded = os.path.expanduser(part)
         for prefix in FORBIDDEN_PATH_PREFIXES:
             if expanded.startswith(prefix):
                 return False, f"Zugriff auf `{prefix}` ist nicht erlaubt."
 
-    # system_profiler: nur erlaubte Datatypes
     if base_cmd == "system_profiler":
         if not args:
-            return False, "system_profiler benötigt einen Datatype-Parameter."
+            return False, "system_profiler benoetigt einen Datatype-Parameter."
         if args[0] not in ALLOWED_SYSTEM_PROFILER_TYPES:
             allowed = ", ".join(sorted(ALLOWED_SYSTEM_PROFILER_TYPES))
             return False, f"system_profiler Datatype nicht erlaubt. Erlaubt: {allowed}"
 
-    # find: Root-Suche und sensitive Verzeichnisse blockieren
     if base_cmd == "find":
         if args:
             search_path = os.path.expanduser(args[0])
@@ -120,7 +106,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
                 if search_path == blocked or search_path.startswith(blocked + "/"):
                     return False, f"find in `{args[0]}` ist nicht erlaubt."
 
-    # cat/head/tail: sensitive Dateien blockieren
     if base_cmd in ("cat", "head", "tail"):
         for part in args:
             expanded = os.path.expanduser(part)
@@ -129,7 +114,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
                 os.path.expanduser("~/.fabbot/local_api_token"),
                 os.path.expanduser("~/.fabbot/audit.log"),
             )
-            # Audit log darf nur via /auditlog Command gelesen werden, nicht via cat
             for blocked in blocked_files:
                 if expanded.startswith(blocked) or expanded == blocked.rstrip("/"):
                     return False, f"Zugriff auf `{part}` ist nicht erlaubt."
@@ -138,7 +122,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
 
 
 def execute_command(command: str) -> str:
-    """Fuehrt einen Befehl sicher aus und gibt den Output zurueck."""
     try:
         parts = shlex.split(command.strip())
         result = subprocess.run(
@@ -146,7 +129,6 @@ def execute_command(command: str) -> str:
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
-            # Kein Shell=True – verhindert Shell-Injection
         )
         output = result.stdout.strip() or result.stderr.strip() or "(kein Output)"
         if len(output) > 3000:
@@ -159,6 +141,7 @@ def execute_command(command: str) -> str:
 
 
 def terminal_agent(state: AgentState) -> AgentState:
+    llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
     response = llm.invoke(messages)
     content = response.content
@@ -176,22 +159,18 @@ def terminal_agent(state: AgentState) -> AgentState:
         return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
 
     return {
-        "messages": [AIMessage(content=f"__CONFIRM_TERMINAL__:{command}")],
+        "messages": [AIMessage(content=f"{Proto.CONFIRM_TERMINAL}{command}")],
         "next_agent": None,
     }
 
 
 def terminal_agent_execute(command: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung aufgerufen.
-    Re-validiert den Befehl direkt vor der Ausfuehrung (TOCTOU-Schutz).
-    """
-    # Re-Validierung direkt vor Ausfuehrung
+    """Wird nach Benutzerbestaetigung aufgerufen. Re-validiert vor Ausfuehrung (TOCTOU-Schutz)."""
     allowed, reason = is_command_allowed(command)
     if not allowed:
         log_action("terminal_agent", command[:200], f"toctou-blocked: {reason}", chat_id, status="blocked")
         return f"Blockiert (Re-Validierung): {reason}"
 
-    # Nur Befehl loggen, nie Output (koennte sensible Daten enthalten)
     log_action("terminal_agent", command[:200], "executing", chat_id, status="confirmed")
     output = execute_command(command)
     log_action("terminal_agent", command[:200], f"done, {len(output)}b output", chat_id, status="executed")
