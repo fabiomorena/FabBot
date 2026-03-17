@@ -43,6 +43,7 @@ FabBot/
 ├── menubar.py               # macOS menubar app
 ├── requirements.txt         # Direct dependencies
 ├── requirements.lock        # Pinned lock file (pip-compile)
+├── .env.example             # Environment variable template
 ├── tests/
 │   └── test_security_terminal.py  # pytest suite (55 tests)
 ├── agent/
@@ -53,16 +54,16 @@ FabBot/
 │   ├── security.py          # Prompt injection guard, rate limiting, homoglyph normalization
 │   ├── audit.py             # Tamper-evident audit log
 │   └── agents/
-│       ├── computer.py      # Desktop control (Computer Use API)
+│       ├── computer.py      # Desktop control (validated input, top-level imports)
 │       ├── terminal.py      # Shell command execution
 │       ├── file.py          # File operations
 │       ├── web.py           # Web search & fetch
 │       ├── calendar.py      # Calendar management
 │       └── clip_agent.py    # URL clipper – fetch, summarize, save as Markdown
 └── bot/
-    ├── bot.py               # Telegram handlers (text, voice, commands)
+    ├── bot.py               # Telegram handlers with dispatch pattern
     ├── auth.py              # User whitelist (cached at startup)
-    ├── confirm.py           # Human-in-the-loop confirmation
+    ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription
     └── search.py            # Local knowledge base search
 ```
@@ -109,15 +110,7 @@ brew install ffmpeg
 cp .env.example .env
 ```
 
-Edit `.env`:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_ALLOWED_USER_IDS=123456789
-TAVILY_API_KEY=tvly-...
-BRAVE_API_KEY=BSA...
-```
+Edit `.env` with your API keys – all required variables are documented in `.env.example`.
 
 ### macOS Permissions
 
@@ -216,7 +209,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 ### Input layer
 - **User whitelist** – only explicitly allowed Telegram user IDs can interact with the bot; IDs cached at startup
 - **Prompt injection guard** – known injection patterns detected and blocked before reaching the LLM
-- **Homoglyph normalization** – Cyrillic, Greek, and fullwidth lookalikes explicitly mapped to ASCII before pattern matching; prevents unicode bypass attacks
+- **Homoglyph normalization** – Cyrillic, Greek, and fullwidth lookalikes explicitly mapped to ASCII before pattern matching
 - **Rate limiting** – max 20 messages per 60 seconds per user
 - **Input length limit** – maximum 2,000 characters per message
 
@@ -225,16 +218,19 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Shell operator blocking** – `;`, `&&`, `|`, `>`, `$()` and similar always rejected
 - **Path traversal guard** – `..` in arguments always blocked
 - **Dangerous argument blocklist** – `--exec`, `.ssh/id_rsa`, `.ssh/config`, `.env`, `local_api_token` and similar always rejected
-- **system_profiler whitelist** – only 5 safe datatypes permitted (hardware, software, storage, memory, displays)
+- **system_profiler whitelist** – only 5 safe datatypes permitted
 - **find sandboxing** – blocked at `/`, `/etc`, `~/.ssh`, `~/.fabbot`
 - **cat/head/tail protection** – blocked for `~/.ssh/` and sensitive token files
-- **File path sandbox** – file operations restricted to explicit allowed directories; broad home directory access removed
+- **File path sandbox** – restricted to explicit allowed directories; broad home directory access removed
 - **Explicit path blocklist** – `~/.ssh`, `~/.fabbot`, `.env`, shell configs always blocked
-- **SSRF protection** – blocks loopback, private IPs, link-local (169.254.x.x), IPv6 loopback (::1), multicast, reserved ranges, `.local`/`.internal` hostnames
+- **SSRF protection** – blocks loopback, private IPs, link-local, IPv6 loopback, `.local`/`.internal` hostnames
 - **TOCTOU protection** – paths and commands re-validated immediately before execution
+- **typewrite validation** – max 500 chars, printable ASCII only
+- **App name validation** – allowlist regex before `subprocess.run`
 
 ### Confirmation layer
 - **Human-in-the-loop** – every terminal command, file write, calendar event, computer use action, and clip save requires explicit Telegram confirmation
+- **Full UUID confirmation IDs** – eliminates collision risk for parallel requests
 - **60-second timeout** – unconfirmed actions automatically cancelled
 - **pyautogui FAILSAFE** – moving mouse to screen corner immediately stops any computer use action
 
@@ -277,6 +273,7 @@ pytest tests/ -v
 - **Phase 8** ✅ Knowledge Search – `/search` searches local notes by keyword and tag
 - **Phase 9** ✅ Security hardening – Unicode normalization, rate limiting, IPv6 SSRF, tightened sandboxes
 - **Phase 10** ✅ Engineering quality – centralized LLM client, protocol constants, pytest suite, pip lock file
+- **Phase 11** ✅ Code quality – dispatch pattern, input validation, full UUID, `.env.example`
 
 ---
 
