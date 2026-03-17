@@ -31,7 +31,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
 | ✅ | Knowledge Clipper – `/clip <URL>` saves articles as Markdown to Obsidian vault |
 | ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
-| ✅ | Conversation Memory – context retained across messages per chat |
+| ✅ | Conversation Memory – context retained across messages per chat (isolated per user) |
 | ✅ | Chat Agent – answers follow-up questions directly from conversation history |
 | ✅ | Test suite – 55 pytest tests for security and terminal validation |
 
@@ -56,7 +56,7 @@ FabBot/
 │   ├── security.py          # Prompt injection guard, rate limiting, homoglyph normalization
 │   ├── audit.py             # Tamper-evident audit log
 │   └── agents/
-│       ├── chat_agent.py    # Context-aware conversation agent (no tools)
+│       ├── chat_agent.py    # Context-aware conversation agent (no tools, ainvoke)
 │       ├── computer.py      # Desktop control (validated input)
 │       ├── terminal.py      # Shell command execution
 │       ├── file.py          # File operations
@@ -64,7 +64,7 @@ FabBot/
 │       ├── calendar.py      # Calendar management
 │       └── clip_agent.py    # URL clipper – fetch, summarize, save as Markdown
 └── bot/
-    ├── bot.py               # Telegram handlers with dispatch pattern
+    ├── bot.py               # Telegram handlers – dispatch pattern, per-user thread_id
     ├── auth.py              # User whitelist (cached at startup, warns if empty)
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription
@@ -209,7 +209,7 @@ Open `~/Documents/Wissen/` as an Obsidian vault to browse and link notes.
 
 ## Conversation Memory
 
-FabBot remembers the context of your conversation within a session. Each Telegram chat has its own persistent conversation thread via LangGraph's MemorySaver.
+FabBot remembers the context of your conversation within a session. Each Telegram chat has its own isolated conversation thread via LangGraph's MemorySaver – no cross-user leakage possible.
 
 ```
 Du: "Welche Termine habe ich morgen?"
@@ -218,7 +218,7 @@ Du: "Was habe ich dich gerade gefragt?"
 Bot: "Du hast mich gefragt: 'Welche Termine habe ich morgen?'"
 ```
 
-Follow-up questions, summaries, and meta-questions are handled by the `chat_agent` which answers directly from the conversation history without making external calls.
+Note: conversation history is stored in-memory and resets on bot restart. For persistent memory across restarts, `SqliteSaver` would be the next step.
 
 ---
 
@@ -230,7 +230,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **User whitelist** – only explicitly allowed Telegram user IDs; cached at startup with warning if empty
 - **Prompt injection guard** – known injection patterns detected and blocked before reaching the LLM
 - **Homoglyph normalization** – Cyrillic, Greek, and fullwidth lookalikes mapped to ASCII
-- **Rate limiting** – max 20 messages per 60 seconds per user; bounded dict prevents memory flooding
+- **Rate limiting** – max 20 messages per 60 seconds per user; bounded OrderedDict prevents memory flooding
 - **Input length limit** – maximum 2,000 characters per message
 
 ### Execution layer
@@ -242,7 +242,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **find sandboxing** – blocked at `/`, `/etc`, `~/.ssh`, `~/.fabbot`
 - **cat/head/tail protection** – blocked for sensitive files
 - **File path sandbox** – restricted to explicit allowed directories
-- **clip_agent path guard** – output path validated to stay within `~/Documents/Wissen/`
+- **clip_agent path guard** – output path validated to stay within `~/Documents/Wissen/` with TOCTOU re-validation
 - **SSRF protection** – blocks loopback, private IPs, link-local, IPv6 loopback, `.local`/`.internal`
 - **TOCTOU protection** – paths and commands re-validated immediately before execution
 - **typewrite validation** – max 500 chars, printable ASCII only
@@ -288,7 +288,7 @@ pytest tests/ -v
 - **Phase 9** ✅ Security hardening – Unicode normalization, rate limiting, IPv6 SSRF, tightened sandboxes
 - **Phase 10** ✅ Engineering quality – centralized LLM client, protocol constants, pytest suite, pip lock file
 - **Phase 11** ✅ Code quality – dispatch pattern, input validation, full UUID, `.env.example`
-- **Phase 12** ✅ Conversation memory – LangGraph MemorySaver, chat_agent for context-aware follow-ups
+- **Phase 12** ✅ Conversation memory – LangGraph MemorySaver, chat_agent, isolated per-user threads
 
 ---
 
