@@ -2,6 +2,7 @@ import re
 import time
 import unicodedata
 import logging
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +29,21 @@ DANGEROUS_SHELL_PATTERNS = [
     r">\s*/dev/sd",
     r"chmod\s+777\s+/",
     r"sudo\s+rm",
-    r":\s*\(\s*\)\s*\{.*:\s*\|.*:.*&.*\}",  # Fork bomb – flexibel mit optionalen Leerzeichen
+    r":\s*\(\s*\)\s*\{.*:\s*\|.*:.*&.*\}",  # Fork bomb
     r"curl\s+.*\|\s*(bash|sh|zsh)",
     r"wget\s+.*\|\s*(bash|sh|zsh)",
 ]
 
 MAX_INPUT_LENGTH = 2000
 
-_rate_limit: dict[int, list[float]] = {}
 RATE_LIMIT_MAX = 20
 RATE_LIMIT_WINDOW = 60
 
-# Explizite Homoglyph-Tabelle für häufige Cyrillic/Greek/Fullwidth Lookalikes.
-# NFKD allein entfernt diese Zeichen – wir ersetzen sie stattdessen explizit.
+# Bounded OrderedDict – verhindert unbegrenztes Wachstum bei User-ID-Flooding.
+# Maximal RATE_LIMIT_DICT_SIZE Einträge; älteste werden bei Überschreitung entfernt.
+RATE_LIMIT_DICT_SIZE = 10_000
+_rate_limit: OrderedDict[int, list[float]] = OrderedDict()
+
 _HOMOGLYPH_MAP = str.maketrans({
     # Kyrillisch → ASCII
     "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
@@ -59,23 +62,28 @@ _HOMOGLYPH_MAP = str.maketrans({
 
 
 def _normalize(text: str) -> str:
-    """Normalisiert Unicode auf ASCII-Basis um homoglyph-Bypässe zu verhindern.
-    Schritt 1: Bekannte Homoglyphe explizit ersetzen (Cyrillic, Greek, Fullwidth)
-    Schritt 2: NFKD-Normalisierung für Akzentzeichen (é→e, ü→u)
-    Schritt 3: Verbleibende Nicht-ASCII-Zeichen entfernen
-    """
+    """Normalisiert Unicode auf ASCII-Basis um homoglyph-Bypässe zu verhindern."""
     text = text.translate(_HOMOGLYPH_MAP)
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
 def check_rate_limit(user_id: int) -> bool:
-    """Gibt True zurück wenn User im erlaubten Bereich liegt, False wenn geblockt."""
+    """Gibt True zurück wenn User im erlaubten Bereich liegt, False wenn geblockt.
+    Verwendet ein bounded OrderedDict um Memory-Flooding zu verhindern.
+    """
     now = time.time()
     window_start = now - RATE_LIMIT_WINDOW
 
+    # Bounded size: ältesten Eintrag entfernen wenn Dict zu gross wird
     if user_id not in _rate_limit:
+        if len(_rate_limit) >= RATE_LIMIT_DICT_SIZE:
+            _rate_limit.popitem(last=False)  # ältesten Eintrag entfernen
         _rate_limit[user_id] = []
+    else:
+        # Zur MRU-Position verschieben
+        _rate_limit.move_to_end(user_id)
 
+    # Alte Einträge außerhalb des Fensters entfernen
     _rate_limit[user_id] = [t for t in _rate_limit[user_id] if t > window_start]
 
     if len(_rate_limit[user_id]) >= RATE_LIMIT_MAX:

@@ -76,6 +76,17 @@ def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _is_safe_output_path(path: Path) -> bool:
+    """Prüft ob der Ausgabepfad innerhalb von KNOWLEDGE_DIR liegt.
+    Verhindert Path-Traversal durch LLM-generierten Slug.
+    """
+    try:
+        path.resolve().relative_to(KNOWLEDGE_DIR.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 async def _fetch_url(url: str) -> str:
     blocked, reason = _is_ssrf_blocked(url)
     if blocked:
@@ -121,7 +132,9 @@ async def clip_agent(url: str, chat_id: int) -> dict:
 
     llm = get_llm()
     today = date.today().strftime("%d.%m.%Y")
-    response = llm.invoke([
+
+    # ainvoke() statt invoke() – blockiert den asyncio Event-Loop nicht
+    response = await llm.ainvoke([
         SystemMessage(content=SUMMARIZE_PROMPT),
         HumanMessage(content=f"URL: {url}\nDatum: {today}\n\nSeiteninhalt:\n{raw[:8000]}"),
     ])
@@ -138,6 +151,11 @@ async def clip_agent(url: str, chat_id: int) -> dict:
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     file_path = KNOWLEDGE_DIR / filename
 
+    # Path-Traversal-Schutz: Zielpfad muss innerhalb KNOWLEDGE_DIR liegen
+    if not _is_safe_output_path(file_path):
+        log_action("clip_agent", "write", f"path-traversal blocked: {file_path}", chat_id, status="blocked")
+        return {"ok": False, "error": "Ungültiger Zielpfad – Schreiben verweigert."}
+
     preview_lines = [ln for ln in content.split("\n") if ln.strip()][:4]
     preview = "\n".join(preview_lines)
 
@@ -151,6 +169,10 @@ async def clip_agent(url: str, chat_id: int) -> dict:
 
 
 def clip_agent_write(path: Path, content: str, chat_id: int) -> str:
+    # Re-Validierung direkt vor dem Schreiben (TOCTOU-Schutz)
+    if not _is_safe_output_path(path):
+        log_action("clip_agent", "write", f"toctou-blocked: {path}", chat_id, status="blocked")
+        return "Blockiert (Re-Validierung): Ungültiger Zielpfad."
     try:
         path.write_text(content, encoding="utf-8")
         log_action("clip_agent", "write", str(path), chat_id, status="executed")
