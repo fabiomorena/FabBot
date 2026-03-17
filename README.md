@@ -9,7 +9,7 @@ A personal AI assistant that runs locally on macOS, controlled via Telegram and 
 FabBot lets you control your Mac using natural language – from anywhere, via Telegram. A supervisor agent analyzes incoming requests and routes them to the appropriate specialist agent.
 
 ```
-You → Telegram (text or voice) → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / web_agent / ...
+You → Telegram (text or voice) → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / web_agent / chat_agent / ...
 ```
 
 ---
@@ -31,6 +31,8 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
 | ✅ | Knowledge Clipper – `/clip <URL>` saves articles as Markdown to Obsidian vault |
 | ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
+| ✅ | Conversation Memory – context retained across messages per chat |
+| ✅ | Chat Agent – answers follow-up questions directly from conversation history |
 | ✅ | Test suite – 55 pytest tests for security and terminal validation |
 
 ---
@@ -47,14 +49,15 @@ FabBot/
 ├── tests/
 │   └── test_security_terminal.py  # pytest suite (55 tests)
 ├── agent/
-│   ├── supervisor.py        # Supervisor – routes to sub-agents
+│   ├── supervisor.py        # Supervisor – routes to sub-agents (MemorySaver)
 │   ├── state.py             # LangGraph AgentState
 │   ├── llm.py               # Centralized LLM client (lazy singleton)
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
 │   ├── security.py          # Prompt injection guard, rate limiting, homoglyph normalization
 │   ├── audit.py             # Tamper-evident audit log
 │   └── agents/
-│       ├── computer.py      # Desktop control (validated input, top-level imports)
+│       ├── chat_agent.py    # Context-aware conversation agent (no tools)
+│       ├── computer.py      # Desktop control (validated input)
 │       ├── terminal.py      # Shell command execution
 │       ├── file.py          # File operations
 │       ├── web.py           # Web search & fetch
@@ -62,7 +65,7 @@ FabBot/
 │       └── clip_agent.py    # URL clipper – fetch, summarize, save as Markdown
 └── bot/
     ├── bot.py               # Telegram handlers with dispatch pattern
-    ├── auth.py              # User whitelist (cached at startup)
+    ├── auth.py              # User whitelist (cached at startup, warns if empty)
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription
     └── search.py            # Local knowledge base search
@@ -70,7 +73,7 @@ FabBot/
 
 **Stack:**
 - [Claude](https://anthropic.com) – claude-sonnet as the AI backbone
-- [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine
+- [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine with MemorySaver
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
 - [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
@@ -150,6 +153,8 @@ Send any natural language message or voice note to your bot on Telegram:
 | "Suche nach den neuesten KI News" | `web_agent` |
 | "Fetch https://example.com" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
+| "Was habe ich dich gerade gefragt?" | `chat_agent` |
+| "Fass das zusammen" | `chat_agent` |
 | 🎤 Voice note with any of the above | transcribed via Whisper → any agent |
 
 **Commands:**
@@ -202,28 +207,43 @@ Open `~/Documents/Wissen/` as an Obsidian vault to browse and link notes.
 
 ---
 
+## Conversation Memory
+
+FabBot remembers the context of your conversation within a session. Each Telegram chat has its own persistent conversation thread via LangGraph's MemorySaver.
+
+```
+Du: "Welche Termine habe ich morgen?"
+Bot: "21:00 Test"
+Du: "Was habe ich dich gerade gefragt?"
+Bot: "Du hast mich gefragt: 'Welche Termine habe ich morgen?'"
+```
+
+Follow-up questions, summaries, and meta-questions are handled by the `chat_agent` which answers directly from the conversation history without making external calls.
+
+---
+
 ## Security
 
 FabBot has a multi-layered security architecture designed for a locally-running agent with deep system access.
 
 ### Input layer
-- **User whitelist** – only explicitly allowed Telegram user IDs can interact with the bot; IDs cached at startup
+- **User whitelist** – only explicitly allowed Telegram user IDs; cached at startup with warning if empty
 - **Prompt injection guard** – known injection patterns detected and blocked before reaching the LLM
-- **Homoglyph normalization** – Cyrillic, Greek, and fullwidth lookalikes explicitly mapped to ASCII before pattern matching
-- **Rate limiting** – max 20 messages per 60 seconds per user
+- **Homoglyph normalization** – Cyrillic, Greek, and fullwidth lookalikes mapped to ASCII
+- **Rate limiting** – max 20 messages per 60 seconds per user; bounded dict prevents memory flooding
 - **Input length limit** – maximum 2,000 characters per message
 
 ### Execution layer
-- **Terminal allowlist** – only 20 explicitly permitted shell commands can be executed
+- **Terminal allowlist** – only 20 explicitly permitted shell commands
 - **Shell operator blocking** – `;`, `&&`, `|`, `>`, `$()` and similar always rejected
 - **Path traversal guard** – `..` in arguments always blocked
-- **Dangerous argument blocklist** – `--exec`, `.ssh/id_rsa`, `.ssh/config`, `.env`, `local_api_token` and similar always rejected
+- **Dangerous argument blocklist** – `.ssh/id_rsa`, `.ssh/config`, `.env`, `local_api_token` and similar
 - **system_profiler whitelist** – only 5 safe datatypes permitted
 - **find sandboxing** – blocked at `/`, `/etc`, `~/.ssh`, `~/.fabbot`
-- **cat/head/tail protection** – blocked for `~/.ssh/` and sensitive token files
-- **File path sandbox** – restricted to explicit allowed directories; broad home directory access removed
-- **Explicit path blocklist** – `~/.ssh`, `~/.fabbot`, `.env`, shell configs always blocked
-- **SSRF protection** – blocks loopback, private IPs, link-local, IPv6 loopback, `.local`/`.internal` hostnames
+- **cat/head/tail protection** – blocked for sensitive files
+- **File path sandbox** – restricted to explicit allowed directories
+- **clip_agent path guard** – output path validated to stay within `~/Documents/Wissen/`
+- **SSRF protection** – blocks loopback, private IPs, link-local, IPv6 loopback, `.local`/`.internal`
 - **TOCTOU protection** – paths and commands re-validated immediately before execution
 - **typewrite validation** – max 500 chars, printable ASCII only
 - **App name validation** – allowlist regex before `subprocess.run`
@@ -232,15 +252,15 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **Human-in-the-loop** – every terminal command, file write, calendar event, computer use action, and clip save requires explicit Telegram confirmation
 - **Full UUID confirmation IDs** – eliminates collision risk for parallel requests
 - **60-second timeout** – unconfirmed actions automatically cancelled
-- **pyautogui FAILSAFE** – moving mouse to screen corner immediately stops any computer use action
+- **pyautogui FAILSAFE** – moving mouse to screen corner stops any computer use action
 
 ### Local API
 - **Shared secret token** – local API on `127.0.0.1:8766` secured with token at `~/.fabbot/local_api_token` (chmod 600)
-- **Localhost only** – API not reachable from outside the machine
+- **Localhost only** – not reachable from outside the machine
 
 ### Audit layer
 - **Local audit log** – every action logged to `~/.fabbot/audit.log`
-- **Sensitive data redacting** – API keys, tokens, passwords, and email addresses automatically redacted
+- **Sensitive data redacting** – API keys, tokens, passwords, email addresses automatically redacted
 - **No content logging** – file contents and command outputs never written to the log
 
 ---
@@ -251,13 +271,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 pytest tests/ -v
 ```
 
-55 tests covering:
-- `sanitize_input` – empty input, length limits, null bytes
-- Prompt injection patterns – English and German variants
-- Dangerous shell patterns – rm -rf, fork bomb, curl pipe
-- Unicode homoglyph bypass – Cyrillic, Greek lookalikes
-- Rate limiting – per-user sliding window
-- `is_command_allowed` – allowlist, shell operators, path traversal, forbidden args, system_profiler whitelist, find sandboxing
+55 tests covering `sanitize_input`, `check_rate_limit`, and `is_command_allowed` across security and terminal validation.
 
 ---
 
@@ -274,6 +288,7 @@ pytest tests/ -v
 - **Phase 9** ✅ Security hardening – Unicode normalization, rate limiting, IPv6 SSRF, tightened sandboxes
 - **Phase 10** ✅ Engineering quality – centralized LLM client, protocol constants, pytest suite, pip lock file
 - **Phase 11** ✅ Code quality – dispatch pattern, input validation, full UUID, `.env.example`
+- **Phase 12** ✅ Conversation memory – LangGraph MemorySaver, chat_agent for context-aware follow-ups
 
 ---
 
