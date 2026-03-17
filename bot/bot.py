@@ -37,7 +37,7 @@ def _extract_content(msg) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Private HITL-Handler – je eine Funktion pro Protokoll-Typ
+# Private HITL-Handler
 # ---------------------------------------------------------------------------
 
 async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
@@ -102,7 +102,6 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
         log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
 
-# Dispatch-Tabelle: Proto-Prefix → Handler-Funktion
 _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
     (Proto.SCREENSHOT,           _handle_screenshot),
     (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
@@ -240,7 +239,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
-# Core message handler mit differenzierter Fehlerbehandlung
+# Core message handler
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str):
@@ -262,10 +261,14 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             "telegram_chat_id": chat_id,
             "next_agent": None,
         }
-        result_state = await agent_graph.ainvoke(state, {"recursion_limit": 10})
+
+        # thread_id = chat_id sorgt dafür dass jeder Chat seinen eigenen
+        # Gesprächsverlauf bekommt – LangGraph MemorySaver verwaltet das automatisch
+        config = {"configurable": {"thread_id": str(chat_id)}}
+
+        result_state = await agent_graph.ainvoke(state, config)
         response_msg = _extract_content(result_state["messages"][-1])
 
-        # Dispatch via Tabelle
         for prefix, handler in _RESPONSE_DISPATCH:
             if response_msg.startswith(prefix):
                 await thinking.delete()
@@ -276,7 +279,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         await update.message.reply_text(response_msg or "Keine Antwort vom Agent.")
 
     except RateLimitError:
-        # Transient – Anthropic Rate Limit
         logger.warning(f"Anthropic rate limit hit for user={user_id}")
         try:
             await thinking.delete()
@@ -287,7 +289,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         )
 
     except APIConnectionError as e:
-        # Transient – Netzwerkfehler zur Anthropic API
         logger.warning(f"Anthropic connection error: {e}")
         try:
             await thinking.delete()
@@ -298,7 +299,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         )
 
     except APIStatusError as e:
-        # Permanent – z.B. ungültiger API Key, Modell nicht verfügbar
         logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
         try:
             await thinking.delete()
@@ -309,7 +309,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         )
 
     except (TimedOut, NetworkError) as e:
-        # Transient – Telegram Netzwerkfehler
         logger.warning(f"Telegram network error: {e}")
         try:
             await thinking.delete()
@@ -320,7 +319,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         )
 
     except RetryAfter as e:
-        # Transient – Telegram Rate Limit
         logger.warning(f"Telegram rate limit, retry after {e.retry_after}s")
         try:
             await thinking.delete()
@@ -331,7 +329,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         )
 
     except asyncio.TimeoutError:
-        # Transient – LLM Aufruf hat zu lange gedauert
         logger.warning(f"LLM timeout for user={user_id}")
         try:
             await thinking.delete()
@@ -342,7 +339,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         )
 
     except Exception as e:
-        # Fallback für unerwartete Fehler
         logger.error(f"Unexpected agent error: {e}", exc_info=True)
         try:
             await thinking.delete()

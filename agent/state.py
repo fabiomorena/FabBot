@@ -3,7 +3,15 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 
-AgentName = Literal["computer_agent", "terminal_agent", "file_agent", "web_agent", "calendar_agent", "FINISH"]
+AgentName = Literal[
+    "computer_agent",
+    "terminal_agent",
+    "file_agent",
+    "web_agent",
+    "calendar_agent",
+    "chat_agent",
+    "FINISH",
+]
 
 
 class AgentState(TypedDict):
