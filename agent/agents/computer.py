@@ -1,3 +1,5 @@
+import json
+import re
 import base64
 import subprocess
 from pathlib import Path
@@ -9,6 +11,16 @@ from agent.protocol import Proto
 
 SCREENSHOT_PATH = Path.home() / ".fabbot" / "screenshot.png"
 SCREENSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Maximale Zeichenanzahl die getippt werden darf
+TYPEWRITE_MAX_CHARS = 500
+
+# Erlaubte Zeichen fuer typewrite – blockiert Steuerzeichen
+TYPEWRITE_ALLOWED_PATTERN = re.compile(r'^[\x20-\x7E\s]+$')
+
+# Erlaubte App-Namen – nur Buchstaben, Zahlen, Leerzeichen, Bindestriche, Punkte
+APP_NAME_PATTERN = re.compile(r'^[A-Za-z0-9\s\-\.]+$')
+APP_NAME_MAX_LENGTH = 64
 
 PROMPT = """Du bist ein spezialisierter Computer-Use-Agent auf einem Mac.
 
@@ -57,10 +69,30 @@ def _screenshot_to_telegram_bytes() -> bytes | None:
         return None
 
 
-async def computer_agent(state: AgentState) -> AgentState:
-    import json
-    import re
+def _validate_typewrite_text(text: str) -> tuple[bool, str]:
+    """Validiert Text fuer typewrite – blockiert Steuerzeichen und zu langen Text."""
+    if not text:
+        return False, "Leerer Text."
+    if len(text) > TYPEWRITE_MAX_CHARS:
+        return False, f"Text zu lang (max. {TYPEWRITE_MAX_CHARS} Zeichen)."
+    if not TYPEWRITE_ALLOWED_PATTERN.match(text):
+        return False, "Text enthaelt unerlaubte Steuerzeichen."
+    return True, text
 
+
+def _validate_app_name(app: str) -> tuple[bool, str]:
+    """Validiert App-Namen – nur sichere Zeichen erlaubt."""
+    if not app or not app.strip():
+        return False, "Leerer App-Name."
+    app = app.strip()
+    if len(app) > APP_NAME_MAX_LENGTH:
+        return False, f"App-Name zu lang (max. {APP_NAME_MAX_LENGTH} Zeichen)."
+    if not APP_NAME_PATTERN.match(app):
+        return False, "App-Name enthaelt unerlaubte Zeichen."
+    return True, app
+
+
+async def computer_agent(state: AgentState) -> AgentState:
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
     response = llm.invoke(messages)
@@ -120,8 +152,9 @@ async def computer_agent(state: AgentState) -> AgentState:
 
     elif action == "type":
         text = parsed.get("text", "")
-        if not text:
-            return {"messages": [AIMessage(content="Kein Text zum Tippen angegeben.")]}
+        valid, reason = _validate_typewrite_text(text)
+        if not valid:
+            return {"messages": [AIMessage(content=f"Ungültiger Text: {reason}")]}
         return {
             "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}type:0:0:{text}")],
             "next_agent": None,
@@ -129,10 +162,11 @@ async def computer_agent(state: AgentState) -> AgentState:
 
     elif action == "open_app":
         app = parsed.get("app", "")
-        if not app:
-            return {"messages": [AIMessage(content="Kein App-Name angegeben.")]}
+        valid, clean_app = _validate_app_name(app)
+        if not valid:
+            return {"messages": [AIMessage(content=f"Ungültiger App-Name: {clean_app}")]}
         return {
-            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}open_app:0:0:{app}")],
+            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}open_app:0:0:{clean_app}")],
             "next_agent": None,
         }
 
@@ -152,14 +186,20 @@ def computer_agent_execute(action: str, x: int, y: int, text: str, chat_id: int)
             return f"Geklickt auf ({x}, {y})."
 
         elif action == "type":
+            valid, reason = _validate_typewrite_text(text)
+            if not valid:
+                return f"Blockiert: {reason}"
             pyautogui.typewrite(text, interval=0.05)
             log_action("computer_agent", "type", f"len={len(text)}", chat_id, status="executed")
             return f"Text getippt: {text[:50]}"
 
         elif action == "open_app":
-            subprocess.run(["open", "-a", text], check=True)
-            log_action("computer_agent", "open_app", text, chat_id, status="executed")
-            return f"App geoeffnet: {text}"
+            valid, clean_app = _validate_app_name(text)
+            if not valid:
+                return f"Blockiert: {clean_app}"
+            subprocess.run(["open", "-a", clean_app], check=True)
+            log_action("computer_agent", "open_app", clean_app, chat_id, status="executed")
+            return f"App geoeffnet: {clean_app}"
 
         else:
             return f"Unbekannte Aktion: {action}"

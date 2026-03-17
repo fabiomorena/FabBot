@@ -17,7 +17,8 @@ async def request_confirmation(
     agent: str,
     action: str,
 ) -> bool:
-    confirmation_id = str(uuid.uuid4())[:8]
+    # Volles UUID statt [:8] – eliminiert Kollisionsrisiko bei parallelen Requests
+    confirmation_id = str(uuid.uuid4())
     loop = asyncio.get_running_loop()
     future: asyncio.Future = loop.create_future()
     _pending[confirmation_id] = future

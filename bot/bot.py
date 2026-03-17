@@ -33,6 +33,87 @@ def _extract_content(msg) -> str:
     return str(content).strip()
 
 
+# ---------------------------------------------------------------------------
+# Private HITL-Handler – je eine Funktion pro Protokoll-Typ
+# ---------------------------------------------------------------------------
+
+async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    analysis = response_msg[len(Proto.SCREENSHOT):]
+    screenshot_bytes = _screenshot_to_telegram_bytes()
+    if screenshot_bytes:
+        await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
+    else:
+        await bot.send_message(chat_id=chat_id, text=f"Screenshot-Analyse:\n{analysis}")
+
+
+async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    parts = response_msg[len(Proto.CONFIRM_COMPUTER):].split(":", 3)
+    action = parts[0] if len(parts) > 0 else ""
+    x = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    y = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    text_arg = parts[3] if len(parts) > 3 else ""
+    display = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
+    confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
+    if confirmed:
+        output = computer_agent_execute(action, x, y, text_arg, chat_id)
+        await bot.send_message(chat_id=chat_id, text=output)
+    else:
+        log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
+
+
+async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    command = response_msg[len(Proto.CONFIRM_TERMINAL):]
+    confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
+    if confirmed:
+        output = terminal_agent_execute(command, chat_id)
+        await bot.send_message(chat_id=chat_id, text=f"Output:\n\n{output}")
+    else:
+        log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
+
+
+async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT):].split("::")
+    title = parts[0] if len(parts) > 0 else ""
+    start_time = parts[1] if len(parts) > 1 else ""
+    end_time = parts[2] if len(parts) > 2 else ""
+    confirmed = await request_confirmation(
+        bot, chat_id, "calendar_agent",
+        f"Neuer Termin: {title} am {start_time}"
+    )
+    if confirmed:
+        output = calendar_event_create(title, start_time, end_time, chat_id)
+        await bot.send_message(chat_id=chat_id, text=output)
+    else:
+        log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
+
+
+async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    parts = response_msg[len(Proto.CONFIRM_FILE_WRITE):].split("::", 1)
+    path_str = parts[0]
+    file_content = parts[1] if len(parts) > 1 else ""
+    confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
+    if confirmed:
+        output = file_agent_write(Path(path_str), file_content, chat_id)
+        await bot.send_message(chat_id=chat_id, text=output)
+    else:
+        log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
+
+
+# Dispatch-Tabelle: Proto-Prefix → Handler-Funktion
+# Reihenfolge spielt keine Rolle da startswith() eindeutig ist
+_RESPONSE_DISPATCH: list[tuple[str, callable]] = [
+    (Proto.SCREENSHOT,           _handle_screenshot),
+    (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
+    (Proto.CONFIRM_TERMINAL,     _handle_confirm_terminal),
+    (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
+    (Proto.CONFIRM_FILE_WRITE,   _handle_confirm_file_write),
+]
+
+
+# ---------------------------------------------------------------------------
+# Command Handlers
+# ---------------------------------------------------------------------------
+
 @restricted
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -112,13 +193,11 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @restricted
 async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-
     if not ctx.args:
         result = list_knowledge()
     else:
         query = " ".join(ctx.args)
         result = search_knowledge(query)
-
     await update.message.reply_text(result, parse_mode="Markdown")
     log_action("search", "search_knowledge", " ".join(ctx.args or []), chat_id, status="executed")
 
@@ -131,12 +210,10 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @restricted
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     thinking = await update.message.reply_text("Transkribiere...")
-
     try:
         voice = update.message.voice
         tg_file = await ctx.bot.get_file(voice.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
-
         text = await transcribe_audio(bytes(audio_bytes))
 
         if not text:
@@ -153,6 +230,10 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+
+# ---------------------------------------------------------------------------
+# Core message handler
+# ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str):
     chat_id = update.effective_chat.id
@@ -176,77 +257,12 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         result_state = await agent_graph.ainvoke(state, {"recursion_limit": 10})
         response_msg = _extract_content(result_state["messages"][-1])
 
-        # Screenshot
-        if Proto.is_screenshot(response_msg):
-            analysis = response_msg[len(Proto.SCREENSHOT):]
-            await thinking.delete()
-            screenshot_bytes = _screenshot_to_telegram_bytes()
-            if screenshot_bytes:
-                await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
-            else:
-                await bot.send_message(chat_id=chat_id, text=f"Screenshot-Analyse:\n{analysis}")
-            return
-
-        # HITL: Computer Use
-        if Proto.is_confirm_computer(response_msg):
-            parts = response_msg[len(Proto.CONFIRM_COMPUTER):].split(":", 3)
-            action = parts[0] if len(parts) > 0 else ""
-            x = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-            y = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-            text_arg = parts[3] if len(parts) > 3 else ""
-            await thinking.delete()
-            display = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
-            confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
-            if confirmed:
-                output = computer_agent_execute(action, x, y, text_arg, chat_id)
-                await bot.send_message(chat_id=chat_id, text=output)
-            else:
-                log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
-            return
-
-        # HITL: Terminal
-        if Proto.is_confirm_terminal(response_msg):
-            command = response_msg[len(Proto.CONFIRM_TERMINAL):]
-            await thinking.delete()
-            confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
-            if confirmed:
-                output = terminal_agent_execute(command, chat_id)
-                await bot.send_message(chat_id=chat_id, text=f"Output:\n\n{output}")
-            else:
-                log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
-            return
-
-        # HITL: Calendar Create
-        if Proto.is_confirm_create_event(response_msg):
-            parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT):].split("::")
-            title = parts[0] if len(parts) > 0 else ""
-            start_time = parts[1] if len(parts) > 1 else ""
-            end_time = parts[2] if len(parts) > 2 else ""
-            await thinking.delete()
-            confirmed = await request_confirmation(
-                bot, chat_id, "calendar_agent",
-                f"Neuer Termin: {title} am {start_time}"
-            )
-            if confirmed:
-                output = calendar_event_create(title, start_time, end_time, chat_id)
-                await bot.send_message(chat_id=chat_id, text=output)
-            else:
-                log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
-            return
-
-        # HITL: File Write
-        if Proto.is_confirm_file_write(response_msg):
-            parts = response_msg[len(Proto.CONFIRM_FILE_WRITE):].split("::", 1)
-            path_str = parts[0]
-            file_content = parts[1] if len(parts) > 1 else ""
-            await thinking.delete()
-            confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
-            if confirmed:
-                output = file_agent_write(Path(path_str), file_content, chat_id)
-                await bot.send_message(chat_id=chat_id, text=output)
-            else:
-                log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
-            return
+        # Dispatch via Tabelle statt if-Kette
+        for prefix, handler in _RESPONSE_DISPATCH:
+            if response_msg.startswith(prefix):
+                await thinking.delete()
+                await handler(response_msg=response_msg, bot=bot, chat_id=chat_id)
+                return
 
         await thinking.delete()
         await update.message.reply_text(response_msg or "Keine Antwort vom Agent.")
@@ -259,6 +275,10 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             pass
         await update.message.reply_text("Ein Fehler ist aufgetreten. Bitte versuche es erneut.")
 
+
+# ---------------------------------------------------------------------------
+# Bot setup
+# ---------------------------------------------------------------------------
 
 def build_bot():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
