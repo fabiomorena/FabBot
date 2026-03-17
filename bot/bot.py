@@ -1,9 +1,12 @@
 import logging
 import os
+import asyncio
 from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.error import TimedOut, NetworkError, RetryAfter
 from langchain_core.messages import HumanMessage
+from anthropic import RateLimitError, APIStatusError, APIConnectionError
 
 from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
@@ -100,7 +103,6 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
 
 
 # Dispatch-Tabelle: Proto-Prefix → Handler-Funktion
-# Reihenfolge spielt keine Rolle da startswith() eindeutig ist
 _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
     (Proto.SCREENSHOT,           _handle_screenshot),
     (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
@@ -223,6 +225,12 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
         await handle_message_text(update, ctx.bot, text)
 
+    except (TimedOut, NetworkError) as e:
+        logger.warning(f"Telegram network error in voice handler: {e}")
+        try:
+            await thinking.edit_text("Netzwerkfehler – bitte nochmal versuchen.")
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Voice handler error: {e}", exc_info=True)
         try:
@@ -232,7 +240,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
-# Core message handler
+# Core message handler mit differenzierter Fehlerbehandlung
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str):
@@ -257,7 +265,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         result_state = await agent_graph.ainvoke(state, {"recursion_limit": 10})
         response_msg = _extract_content(result_state["messages"][-1])
 
-        # Dispatch via Tabelle statt if-Kette
+        # Dispatch via Tabelle
         for prefix, handler in _RESPONSE_DISPATCH:
             if response_msg.startswith(prefix):
                 await thinking.delete()
@@ -267,13 +275,82 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
         await thinking.delete()
         await update.message.reply_text(response_msg or "Keine Antwort vom Agent.")
 
-    except Exception as e:
-        logger.error(f"Agent error: {e}", exc_info=True)
+    except RateLimitError:
+        # Transient – Anthropic Rate Limit
+        logger.warning(f"Anthropic rate limit hit for user={user_id}")
         try:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text("Ein Fehler ist aufgetreten. Bitte versuche es erneut.")
+        await update.message.reply_text(
+            "Zu viele Anfragen – bitte kurz warten und nochmal versuchen."
+        )
+
+    except APIConnectionError as e:
+        # Transient – Netzwerkfehler zur Anthropic API
+        logger.warning(f"Anthropic connection error: {e}")
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(
+            "Verbindungsfehler zur KI – bitte nochmal versuchen."
+        )
+
+    except APIStatusError as e:
+        # Permanent – z.B. ungültiger API Key, Modell nicht verfügbar
+        logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(
+            f"API Fehler ({e.status_code}) – bitte Administrator informieren."
+        )
+
+    except (TimedOut, NetworkError) as e:
+        # Transient – Telegram Netzwerkfehler
+        logger.warning(f"Telegram network error: {e}")
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(
+            "Netzwerkfehler – bitte nochmal versuchen."
+        )
+
+    except RetryAfter as e:
+        # Transient – Telegram Rate Limit
+        logger.warning(f"Telegram rate limit, retry after {e.retry_after}s")
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(
+            f"Telegram meldet: bitte {e.retry_after}s warten."
+        )
+
+    except asyncio.TimeoutError:
+        # Transient – LLM Aufruf hat zu lange gedauert
+        logger.warning(f"LLM timeout for user={user_id}")
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(
+            "Timeout – die Anfrage hat zu lange gedauert. Bitte nochmal versuchen."
+        )
+
+    except Exception as e:
+        # Fallback für unerwartete Fehler
+        logger.error(f"Unexpected agent error: {e}", exc_info=True)
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(
+            "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut."
+        )
 
 
 # ---------------------------------------------------------------------------
