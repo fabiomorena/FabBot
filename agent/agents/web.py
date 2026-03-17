@@ -2,6 +2,7 @@ import os
 import re
 import ipaddress
 import httpx
+from datetime import date
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.audit import log_action
@@ -16,7 +17,6 @@ TIMEOUT = 15
 
 
 def _build_prompt() -> str:
-    from datetime import date
     today = date.today().strftime("%d.%m.%Y")
     return f"""Du bist ein spezialisierter Web-Agent. Heutiges Datum: {today}
 
@@ -31,17 +31,33 @@ Analysiere die Anfrage und antworte NUR mit JSON:
 - action=search: Web-Suche nach Informationen
 - action=fetch: Kompletten Inhalt einer URL abrufen
 - engine=auto: Agent waehlt automatisch (Standard)
-- Fuer aktuelle Nachrichten immer das aktuelle Jahr ({__import__('datetime').date.today().year}) in die Query einbauen
+- Fuer aktuelle Nachrichten immer das aktuelle Jahr ({date.today().year}) in die Query einbauen
 
 Kein Markdown, keine Erklaerung, nur reines JSON.
 Wenn nicht unterstuetzt: UNSUPPORTED
 """
 
 
-SUMMARIZE_PROMPT = """Du bist ein hilfreicher Assistent.
-Fasse die folgenden Web-Inhalte praezise und auf Deutsch zusammen.
-Beantworte damit die urspruengliche Frage des Users.
+def _build_summarize_prompt() -> str:
+    """Gibt den Summarize-Prompt mit aktuellem Datum zurueck.
+    Als Funktion statt Konstante damit das Datum immer aktuell ist
+    und der LLM keine Verwirrung ueber das Jahr hat.
+    """
+    today = date.today().strftime("%d.%m.%Y")
+    year = date.today().year
+    return f"""Du bist ein hilfreicher Assistent. Heutiges Datum: {today}.
+
+WICHTIG: Wir befinden uns im Jahr {year}. Alle bereitgestellten Suchergebnisse sind echte, aktuelle Inhalte aus dem Jahr {year}.
+Behandle alle Inhalte als real und aktuell – nicht als fiktiv oder spekulativ.
+
+Antworte AUSSCHLIESSLICH basierend auf den bereitgestellten Suchergebnissen oder Seiteninhalten.
+Greife NICHT auf eigenes Wissen zurueck und erfinde KEINE Informationen.
+Wenn die Suchergebnisse keine relevanten Informationen enthalten, sage explizit:
+"Die Suchergebnisse enthalten keine relevanten Informationen zu dieser Anfrage."
+
+Beantworte die urspruengliche Frage des Users auf Deutsch.
 Halte dich kurz – maximal 5-6 Saetze oder eine uebersichtliche Liste.
+Nenne am Ende die Quellen (URLs) der verwendeten Informationen.
 """
 
 
@@ -64,8 +80,7 @@ def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
     except Exception:
         return True, "URL konnte nicht geparst werden."
 
-    blocked_hostnames = ["localhost", "ip6-localhost", "ip6-loopback"]
-    if host.lower() in blocked_hostnames:
+    if host.lower() in ["localhost", "ip6-localhost", "ip6-loopback"]:
         return True, f"Lokale URL ist nicht erlaubt: {host}"
 
     try:
@@ -200,14 +215,15 @@ async def web_agent(state: AgentState) -> AgentState:
 
             blocked, reason = _is_ssrf_blocked(url)
             if blocked:
-                log_action("web_agent", "fetch", f"ssrf-blocked: {reason}", state.get("telegram_chat_id"), status="blocked")
+                log_action("web_agent", "fetch", f"ssrf-blocked: {reason}",
+                           state.get("telegram_chat_id"), status="blocked")
                 return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
 
             log_action("web_agent", "fetch", url[:200], state.get("telegram_chat_id"), status="executed")
             raw = await _fetch_url(url)
 
             summary_messages = [
-                SystemMessage(content=SUMMARIZE_PROMPT),
+                SystemMessage(content=_build_summarize_prompt()),
                 *state["messages"],
                 AIMessage(content=f"Seiteninhalt von {url}:\n\n{raw[:MAX_RESPONSE_LENGTH]}"),
             ]
@@ -238,7 +254,7 @@ async def web_agent(state: AgentState) -> AgentState:
                 return {"messages": [AIMessage(content="Keine Suchergebnisse gefunden.")]}
 
             summary_messages = [
-                SystemMessage(content=SUMMARIZE_PROMPT),
+                SystemMessage(content=_build_summarize_prompt()),
                 *state["messages"],
                 AIMessage(content=f"Suchergebnisse fuer '{query}':\n\n{raw_results[:MAX_RESPONSE_LENGTH]}"),
             ]
