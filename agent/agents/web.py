@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import ipaddress
 import httpx
 from datetime import date
@@ -186,7 +187,6 @@ def _format_search_results(results: list[dict], source: str) -> str:
 
 
 async def web_agent(state: AgentState) -> AgentState:
-    import json
     llm = get_llm()
 
     messages = [SystemMessage(content=_build_prompt())] + state["messages"]
