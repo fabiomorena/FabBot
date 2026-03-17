@@ -262,11 +262,13 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             "next_agent": None,
         }
 
-        # thread_id = chat_id sorgt dafür dass jeder Chat seinen eigenen
-        # Gesprächsverlauf bekommt – LangGraph MemorySaver verwaltet das automatisch
-        config = {"configurable": {"thread_id": str(chat_id)}}
-
-        result_state = await agent_graph.ainvoke(state, config)
+        # thread_id = str(chat_id) sorgt für isolierten Gesprächsverlauf pro Chat.
+        # Jeder Telegram-Chat bekommt seinen eigenen MemorySaver-Thread –
+        # kein Cross-User-Leakage möglich.
+        result_state = await agent_graph.ainvoke(
+            state,
+            config={"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10},
+        )
         response_msg = _extract_content(result_state["messages"][-1])
 
         for prefix, handler in _RESPONSE_DISPATCH:

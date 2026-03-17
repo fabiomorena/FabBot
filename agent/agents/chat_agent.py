@@ -18,10 +18,12 @@ Typische Faelle fuer dich:
 
 
 async def chat_agent(state: AgentState) -> AgentState:
-    """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools."""
+    """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools.
+    Nutzt ainvoke() um den asyncio Event-Loop nicht zu blockieren.
+    """
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
