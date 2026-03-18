@@ -34,7 +34,8 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | Conversation Memory – context retained across messages per chat (isolated per user) |
 | ✅ | Chat Agent – answers follow-up questions directly from conversation history |
 | ✅ | Text-to-Speech – responses spoken via Mac speaker + Telegram voice message |
-| ✅ | Test suite – 55 pytest tests for security and terminal validation |
+| ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
+| ✅ | Test suite – 69 pytest tests for security, terminal, and TTS validation |
 
 ---
 
@@ -48,7 +49,7 @@ FabBot/
 ├── requirements.lock        # Pinned lock file (pip-compile)
 ├── .env.example             # Environment variable template
 ├── tests/
-│   └── test_security_terminal.py  # pytest suite (55 tests)
+│   └── test_security_terminal.py  # pytest suite (69 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – routes to sub-agents (MemorySaver)
 │   ├── state.py             # LangGraph AgentState
@@ -118,6 +119,11 @@ cp .env.example .env
 
 Edit `.env` with your API keys – all required variables are documented in `.env.example`.
 
+To disable TTS by default, add to `.env`:
+```env
+TTS_ENABLED=false
+```
+
 ### macOS Permissions
 
 For Apple Calendar access, grant Terminal automation permissions:
@@ -169,7 +175,8 @@ Send any natural language message or voice note to your bot on Telegram:
 /search             – List all saved notes
 /search <Begriff>   – Search notes by keyword
 /search #Tag        – Search notes by tag
-/status             – Check agent status
+/tts on|off         – Enable or disable text-to-speech
+/status             – Check agent status (shows TTS state)
 /auditlog           – Show last 10 executed actions
 ```
 
@@ -198,7 +205,16 @@ Bot response (text)
   └── send_voice() → Telegram voice message (accessible anywhere)
 ```
 
-Before synthesis, responses are cleaned automatically – URLs, Markdown formatting, and source sections are stripped so the bot reads naturally without reciting web addresses.
+Before synthesis, responses are cleaned automatically – URLs, Markdown formatting, and source sections are stripped so the bot reads naturally.
+
+**Toggle TTS at runtime:**
+```
+/tts off    → disable (silent mode)
+/tts on     → re-enable
+/status     → shows current TTS state
+```
+
+Or set default in `.env`: `TTS_ENABLED=false`
 
 - Max 1,000 characters read aloud; longer responses are truncated
 - If TTS fails, the text reply still works – no bot crash
@@ -293,7 +309,11 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 pytest tests/ -v
 ```
 
-55 tests covering `sanitize_input`, `check_rate_limit`, and `is_command_allowed` across security and terminal validation.
+69 tests covering:
+- `sanitize_input`, `check_rate_limit` – security and rate limiting
+- `is_command_allowed` – terminal allowlist, shell operators, path traversal
+- `_clean_for_tts` – URL removal, Markdown stripping, source header detection
+- TTS toggle – `set_tts_enabled` / `is_tts_enabled`
 
 ---
 
@@ -312,6 +332,7 @@ pytest tests/ -v
 - **Phase 11** ✅ Code quality – dispatch pattern, input validation, full UUID, `.env.example`
 - **Phase 12** ✅ Conversation memory – LangGraph MemorySaver, chat_agent, isolated per-user threads
 - **Phase 13** ✅ Text-to-Speech – edge-tts neural voices, Mac speaker + Telegram voice message
+- **Phase 14** ✅ TTS polish – toggle command, robust source detection, 69 tests
 
 ---
 
