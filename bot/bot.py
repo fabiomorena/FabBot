@@ -12,6 +12,7 @@ from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import transcribe_audio
 from bot.search import search_knowledge, list_knowledge
+from bot.tts import speak_and_send
 from agent.supervisor import agent_graph
 from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
@@ -116,7 +117,7 @@ _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
 # ---------------------------------------------------------------------------
 
 @restricted
-async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Mac Agent bereit.\n\n"
         "Schick mir eine Nachricht oder Sprachnachricht, oder nutze:\n"
@@ -131,12 +132,12 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
-async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Agent laeuft.")
 
 
 @restricted
-async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     log_path = Path.home() / ".fabbot" / "audit.log"
     if not log_path.exists():
         await update.message.reply_text("Noch keine Aktionen geloggt.")
@@ -147,7 +148,7 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
-async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     text = " ".join(ctx.args)
     if not text:
         await update.message.reply_text("Verwendung: /ask <deine Frage>")
@@ -156,7 +157,7 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
-async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
         await update.message.reply_text(
             "Verwendung: /clip <URL>\n"
@@ -192,7 +193,7 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
-async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     if not ctx.args:
         result = list_knowledge()
@@ -204,12 +205,12 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
-async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_message_text(update, ctx.bot, update.message.text)
 
 
 @restricted
-async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Transkribiere...")
     try:
         voice = update.message.voice
@@ -242,7 +243,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # Core message handler
 # ---------------------------------------------------------------------------
 
-async def handle_message_text(update: Update, bot: Bot, text: str):
+async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -262,15 +263,13 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
             "next_agent": None,
         }
 
-        # thread_id = str(chat_id) sorgt für isolierten Gesprächsverlauf pro Chat.
-        # Jeder Telegram-Chat bekommt seinen eigenen MemorySaver-Thread –
-        # kein Cross-User-Leakage möglich.
         result_state = await agent_graph.ainvoke(
             state,
             config={"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10},
         )
         response_msg = _extract_content(result_state["messages"][-1])
 
+        # HITL-Dispatch
         for prefix, handler in _RESPONSE_DISPATCH:
             if response_msg.startswith(prefix):
                 await thinking.delete()
@@ -278,7 +277,12 @@ async def handle_message_text(update: Update, bot: Bot, text: str):
                 return
 
         await thinking.delete()
-        await update.message.reply_text(response_msg or "Keine Antwort vom Agent.")
+
+        # Normale Textantwort: Text schicken + TTS (parallel)
+        await asyncio.gather(
+            update.message.reply_text(response_msg or "Keine Antwort vom Agent."),
+            speak_and_send(response_msg, bot, chat_id) if response_msg else asyncio.sleep(0),
+        )
 
     except RateLimitError:
         logger.warning(f"Anthropic rate limit hit for user={user_id}")
