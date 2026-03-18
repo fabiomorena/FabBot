@@ -3,7 +3,7 @@ import os
 import asyncio
 from pathlib import Path
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError, RetryAfter
 from langchain_core.messages import HumanMessage
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
@@ -12,7 +12,7 @@ from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import transcribe_audio
 from bot.search import search_knowledge, list_knowledge
-from bot.tts import speak_and_send
+from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled
 from agent.supervisor import agent_graph
 from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
@@ -126,6 +126,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/search <Begriff> – Notizen durchsuchen\n"
         "/search #Tag – Nach Tag suchen\n"
         "/search – Alle Notizen auflisten\n"
+        "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -133,7 +134,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Agent laeuft.")
+    tts_status = "aktiviert" if is_tts_enabled() else "deaktiviert"
+    await update.message.reply_text(f"Agent laeuft. TTS: {tts_status}")
 
 
 @restricted
@@ -145,6 +147,23 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     lines = log_path.read_text().strip().split("\n")
     last = lines[-10:] if len(lines) > 10 else lines
     await update.message.reply_text("Letzte Aktionen:\n\n" + "\n".join(last))
+
+
+@restricted
+async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Aktiviert oder deaktiviert TTS zur Laufzeit."""
+    if not ctx.args or ctx.args[0].lower() not in ("on", "off"):
+        status = "aktiviert" if is_tts_enabled() else "deaktiviert"
+        await update.message.reply_text(
+            f"Sprachausgabe ist aktuell {status}.\n"
+            "Verwendung: /tts on oder /tts off"
+        )
+        return
+
+    enabled = ctx.args[0].lower() == "on"
+    set_tts_enabled(enabled)
+    status = "aktiviert" if enabled else "deaktiviert"
+    await update.message.reply_text(f"Sprachausgabe {status}.")
 
 
 @restricted
@@ -244,6 +263,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
+    """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -269,7 +289,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         )
         response_msg = _extract_content(result_state["messages"][-1])
 
-        # HITL-Dispatch
         for prefix, handler in _RESPONSE_DISPATCH:
             if response_msg.startswith(prefix):
                 await thinking.delete()
@@ -278,7 +297,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 
         await thinking.delete()
 
-        # Normale Textantwort: Text schicken + TTS (parallel)
         await asyncio.gather(
             update.message.reply_text(response_msg or "Keine Antwort vom Agent."),
             speak_and_send(response_msg, bot, chat_id) if response_msg else asyncio.sleep(0),
@@ -359,7 +377,8 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # Bot setup
 # ---------------------------------------------------------------------------
 
-def build_bot():
+def build_bot() -> Application:
+    """Erstellt und konfiguriert die Telegram-Bot-Application."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN nicht gesetzt")
@@ -368,6 +387,7 @@ def build_bot():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("auditlog", cmd_auditlog))
+    app.add_handler(CommandHandler("tts", cmd_tts))
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))
     app.add_handler(CommandHandler("clip", cmd_clip, block=False))
     app.add_handler(CommandHandler("search", cmd_search, block=False))

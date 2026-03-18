@@ -7,9 +7,13 @@ Kombiniert:
 
 Deutsche Stimme: de-DE-KatjaNeural (weiblich, natuerlich)
 Alternativ:      de-DE-ConradNeural (maennlich)
+
+TTS kann zur Laufzeit via /tts on|off togglen werden.
+Standard: TTS_ENABLED=true in .env, oder per default aktiviert.
 """
 import asyncio
 import logging
+import os
 import re
 import subprocess
 import tempfile
@@ -25,28 +29,49 @@ TTS_RATE = "+0%"
 # Texte ueber dieser Laenge werden nicht vorgelesen (zu lang fuer TTS)
 TTS_MAX_CHARS = 1000
 
+# TTS-Status – kann zur Laufzeit via /tts on|off geaendert werden.
+# Standard: aus .env (TTS_ENABLED=true/false), fallback: aktiviert.
+_tts_enabled: bool = os.getenv("TTS_ENABLED", "true").lower() != "false"
+
+# Exakte Bezeichnungen fuer Quellen-Ueberschriften (lowercase, nach Markdown-Strip)
+_SOURCE_HEADERS = {"quellen:", "quellen", "sources:", "sources", "source:"}
+
+
+def is_tts_enabled() -> bool:
+    """Gibt zurueck ob TTS aktuell aktiviert ist."""
+    return _tts_enabled
+
+
+def set_tts_enabled(enabled: bool) -> None:
+    """Aktiviert oder deaktiviert TTS zur Laufzeit."""
+    global _tts_enabled
+    _tts_enabled = enabled
+    logger.info(f"TTS {'aktiviert' if enabled else 'deaktiviert'}.")
+
 
 def _clean_for_tts(text: str) -> str:
     """Bereinigt Text fuer TTS-Ausgabe.
-    Entfernt URLs, Markdown-Formatierung und Quellenangaben
-    damit der Bot keine URLs vorliest.
+    Entfernt URLs, Markdown-Formatierung und Quellenabschnitte
+    damit der Bot keine URLs oder Ueberschriften vorliest.
     """
     # Markdown-Links [Text](URL) → nur Text behalten
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
 
-    # URLs entfernen (http/https)
+    # URLs entfernen
     text = re.sub(r"https?://\S+", "", text)
 
     # Markdown-Formatierung entfernen: **, *, __, _, `
     text = re.sub(r"[*_`]{1,2}", "", text)
 
-    # Quellenabschnitt erkennen und alles danach entfernen
+    # Quellenabschnitt erkennen – exakter Vergleich auf bekannte Ueberschriften.
+    # Verhindert false positives wie "Die Quelle dieser Information ist..."
     lines = text.split("\n")
     cleaned_lines = []
     for line in lines:
         stripped = line.strip().lower()
-        if stripped.startswith(("quelle", "quellen:", "source", "quellen")):
-            break  # Ab hier alles weglassen
+        # Exakter Header-Match oder Markdown-Ueberschrift "## quell..."
+        if stripped in _SOURCE_HEADERS or stripped.startswith("## quell"):
+            break
         cleaned_lines.append(line)
     text = "\n".join(cleaned_lines)
 
@@ -74,7 +99,6 @@ async def synthesize(text: str) -> bytes | None:
         logger.warning("edge-tts nicht installiert – TTS deaktiviert.")
         return None
 
-    # Text bereinigen bevor er vorgelesen wird
     text = _clean_for_tts(text)
 
     if not text:
@@ -100,11 +124,13 @@ async def synthesize(text: str) -> bytes | None:
 
 
 async def speak_and_send(text: str, bot, chat_id: int) -> bool:
-    """
-    Spricht Text gleichzeitig ueber Mac-Lautsprecher und
+    """Spricht Text gleichzeitig ueber Mac-Lautsprecher und
     schickt Sprachnachricht an Telegram.
-    Returns True wenn erfolgreich, False bei Fehler.
+    Gibt False zurueck wenn TTS deaktiviert oder Fehler auftritt.
     """
+    if not _tts_enabled:
+        return False
+
     audio_bytes = await synthesize(text)
     if not audio_bytes:
         return False
@@ -114,7 +140,6 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
             f.write(audio_bytes)
             tmp_path = Path(f.name)
 
-        # Parallel: Mac-Lautsprecher + Telegram
         await asyncio.gather(
             _play_on_mac(tmp_path),
             _send_voice_telegram(bot, chat_id, audio_bytes),
@@ -132,7 +157,7 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
 
 
 async def _play_on_mac(path: Path) -> None:
-    """Spielt Audio ueber Mac-Lautsprecher via afplay (macOS-nativ, kein Paket noetig)."""
+    """Spielt Audio ueber Mac-Lautsprecher via afplay (macOS-nativ)."""
     try:
         await asyncio.to_thread(
             subprocess.run,
