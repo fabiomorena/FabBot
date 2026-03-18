@@ -50,6 +50,10 @@ Antworte NUR mit dem Befehl - keine Erklaerung, kein Markdown, keine Backticks.
 Erlaubte Befehle: ls, pwd, echo, cat, head, tail, grep, df, du, top, ps, uname,
 whoami, date, find, wc, sort, uniq, uptime, sw_vers, diskutil, system_profiler
 
+Wichtige Regeln fuer bestimmte Befehle:
+- Fuer Datumsabfragen IMMER dieses Format verwenden: date "+%d.%m.%Y, %H:%M Uhr"
+  Beispiel-Output: 18.03.2026, 19:02 Uhr
+
 Wenn die Anfrage keinen erlaubten Befehl erfordert, antworte mit: UNSUPPORTED
 """
 

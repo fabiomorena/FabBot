@@ -12,8 +12,7 @@ from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import transcribe_audio
 from bot.search import search_knowledge, list_knowledge
-from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled
-from agent.supervisor import agent_graph
+from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled, stop_speaking
 from agent.security import sanitize_input
 from agent.audit import log_action, log_blocked
 from agent.protocol import Proto
@@ -24,6 +23,9 @@ from agent.agents.computer import computer_agent_execute, _screenshot_to_telegra
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 
 logger = logging.getLogger(__name__)
+
+# TTS nur fuer kurze Outputs – lange Dateilisten etc. werden nicht vorgelesen
+_TTS_MAX_HITL_OUTPUT = 300
 
 
 def _extract_content(msg) -> str:
@@ -71,6 +73,8 @@ async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **
     if confirmed:
         output = terminal_agent_execute(command, chat_id)
         await bot.send_message(chat_id=chat_id, text=f"Output:\n\n{output}")
+        if len(output) <= _TTS_MAX_HITL_OUTPUT:
+            await speak_and_send(output, bot, chat_id)
     else:
         log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
 
@@ -87,6 +91,8 @@ async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int
     if confirmed:
         output = calendar_event_create(title, start_time, end_time, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
+        if len(output) <= _TTS_MAX_HITL_OUTPUT:
+            await speak_and_send(output, bot, chat_id)
     else:
         log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
 
@@ -99,6 +105,8 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
     if confirmed:
         output = file_agent_write(Path(path_str), file_content, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
+        if len(output) <= _TTS_MAX_HITL_OUTPUT:
+            await speak_and_send(output, bot, chat_id)
     else:
         log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
@@ -127,6 +135,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/search #Tag – Nach Tag suchen\n"
         "/search – Alle Notizen auflisten\n"
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
+        "/stop – Laufende Sprachausgabe stoppen\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -159,11 +168,20 @@ async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "Verwendung: /tts on oder /tts off"
         )
         return
-
     enabled = ctx.args[0].lower() == "on"
     set_tts_enabled(enabled)
     status = "aktiviert" if enabled else "deaktiviert"
     await update.message.reply_text(f"Sprachausgabe {status}.")
+
+
+@restricted
+async def cmd_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Stoppt die laufende Sprachausgabe sofort."""
+    stopped = stop_speaking()
+    if stopped:
+        await update.message.reply_text("Sprachausgabe gestoppt.")
+    else:
+        await update.message.reply_text("Keine laufende Sprachausgabe.")
 
 
 @restricted
@@ -264,6 +282,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
+    from agent.supervisor import agent_graph
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -308,9 +327,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            "Zu viele Anfragen – bitte kurz warten und nochmal versuchen."
-        )
+        await update.message.reply_text("Zu viele Anfragen – bitte kurz warten und nochmal versuchen.")
 
     except APIConnectionError as e:
         logger.warning(f"Anthropic connection error: {e}")
@@ -318,9 +335,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            "Verbindungsfehler zur KI – bitte nochmal versuchen."
-        )
+        await update.message.reply_text("Verbindungsfehler zur KI – bitte nochmal versuchen.")
 
     except APIStatusError as e:
         logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
@@ -328,9 +343,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            f"API Fehler ({e.status_code}) – bitte Administrator informieren."
-        )
+        await update.message.reply_text(f"API Fehler ({e.status_code}) – bitte Administrator informieren.")
 
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error: {e}")
@@ -338,9 +351,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            "Netzwerkfehler – bitte nochmal versuchen."
-        )
+        await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
 
     except RetryAfter as e:
         logger.warning(f"Telegram rate limit, retry after {e.retry_after}s")
@@ -348,9 +359,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            f"Telegram meldet: bitte {e.retry_after}s warten."
-        )
+        await update.message.reply_text(f"Telegram meldet: bitte {e.retry_after}s warten.")
 
     except asyncio.TimeoutError:
         logger.warning(f"LLM timeout for user={user_id}")
@@ -358,9 +367,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            "Timeout – die Anfrage hat zu lange gedauert. Bitte nochmal versuchen."
-        )
+        await update.message.reply_text("Timeout – die Anfrage hat zu lange gedauert. Bitte nochmal versuchen.")
 
     except Exception as e:
         logger.error(f"Unexpected agent error: {e}", exc_info=True)
@@ -368,9 +375,25 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             await thinking.delete()
         except Exception:
             pass
-        await update.message.reply_text(
-            "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut."
-        )
+        await update.message.reply_text("Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut.")
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle Hooks
+# ---------------------------------------------------------------------------
+
+async def _post_init(app: Application) -> None:
+    """Initialisiert AsyncSqliteSaver nachdem der Event Loop gestartet ist."""
+    from agent.supervisor import init_graph
+    await init_graph()
+    logger.info("SqliteSaver-Checkpointer initialisiert.")
+
+
+async def _post_shutdown(app: Application) -> None:
+    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
+    from agent.supervisor import close_graph
+    await close_graph()
+    logger.info("SqliteSaver-Verbindung geschlossen.")
 
 
 # ---------------------------------------------------------------------------
@@ -383,11 +406,18 @@ def build_bot() -> Application:
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN nicht gesetzt")
 
-    app = ApplicationBuilder().token(token).build()
+    app = (
+        ApplicationBuilder()
+        .token(token)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("auditlog", cmd_auditlog))
     app.add_handler(CommandHandler("tts", cmd_tts))
+    app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))
     app.add_handler(CommandHandler("clip", cmd_clip, block=False))
     app.add_handler(CommandHandler("search", cmd_search, block=False))
