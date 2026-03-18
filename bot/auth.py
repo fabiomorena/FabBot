@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_allowed_ids() -> frozenset[int]:
+    """Laedt erlaubte User-IDs aus Env-Var beim Start."""
     raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
     if not raw.strip():
         logger.critical(
@@ -20,19 +21,18 @@ def _load_allowed_ids() -> frozenset[int]:
     return ids
 
 
-# Einmalig beim Start laden – nicht bei jeder Nachricht neu parsen
 ALLOWED_IDS: frozenset[int] = _load_allowed_ids()
 
 
 def get_allowed_ids() -> frozenset[int]:
-    """Gibt die gecachten erlaubten User-IDs zurück."""
+    """Gibt die gecachten erlaubten User-IDs zurueck."""
     return ALLOWED_IDS
 
 
 def restricted(func):
     """Decorator: blockt alle User die nicht in der Whitelist sind."""
     @wraps(func)
-    async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+    async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE, *args, **kwargs) -> None:
         user_id = update.effective_user.id
         if user_id not in ALLOWED_IDS:
             await update.message.reply_text("⛔ Kein Zugriff.")

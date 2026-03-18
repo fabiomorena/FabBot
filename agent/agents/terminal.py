@@ -55,6 +55,7 @@ Wenn die Anfrage keinen erlaubten Befehl erfordert, antworte mit: UNSUPPORTED
 
 
 def is_command_allowed(command: str) -> tuple[bool, str]:
+    """Prueft ob der Befehl auf der Allowlist steht und keine gefaehrlichen Argumente enthaelt."""
     try:
         parts = shlex.split(command.strip())
     except ValueError as e:
@@ -122,6 +123,7 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
 
 
 def execute_command(command: str) -> str:
+    """Fuehrt einen validierten Befehl sicher aus und gibt den Output zurueck."""
     try:
         parts = shlex.split(command.strip())
         result = subprocess.run(
@@ -141,6 +143,7 @@ def execute_command(command: str) -> str:
 
 
 def terminal_agent(state: AgentState) -> AgentState:
+    """Generiert einen Shell-Befehl via LLM und gibt ihn zur HITL-Bestaetigung weiter."""
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
     response = llm.invoke(messages)

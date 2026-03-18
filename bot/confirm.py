@@ -17,7 +17,7 @@ async def request_confirmation(
     agent: str,
     action: str,
 ) -> bool:
-    # Volles UUID statt [:8] – eliminiert Kollisionsrisiko bei parallelen Requests
+    """Schickt HITL-Bestaetigungsanfrage und wartet auf Antwort des Users."""
     confirmation_id = str(uuid.uuid4())
     loop = asyncio.get_running_loop()
     future: asyncio.Future = loop.create_future()
@@ -54,6 +54,7 @@ async def request_confirmation(
 
 
 async def handle_confirmation_callback(update, context) -> None:
+    """Verarbeitet Inline-Button-Klicks fuer HITL-Bestaetigungen."""
     query = update.callback_query
     await query.answer()
 
@@ -75,4 +76,5 @@ async def handle_confirmation_callback(update, context) -> None:
 
 
 def register_confirmation_handler(app: Application) -> None:
+    """Registriert den Callback-Handler fuer HITL-Bestaetigungen."""
     app.add_handler(CallbackQueryHandler(handle_confirmation_callback))

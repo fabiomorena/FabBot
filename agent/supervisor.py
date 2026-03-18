@@ -33,6 +33,7 @@ computer_agent | terminal_agent | file_agent | web_agent | calendar_agent | chat
 
 
 def supervisor_node(state: AgentState) -> AgentState:
+    """Analysiert den aktuellen State und entscheidet welcher Agent als naechstes aktiv wird."""
     llm = get_llm()
     messages = state["messages"]
 
@@ -62,10 +63,12 @@ def supervisor_node(state: AgentState) -> AgentState:
 
 
 def route(state: AgentState) -> AgentName:
+    """Gibt den naechsten Agent-Namen aus dem State zurueck."""
     return state["next_agent"]
 
 
 def build_graph() -> StateGraph:
+    """Baut und kompiliert den LangGraph mit MemorySaver-Checkpointer."""
     graph = StateGraph(AgentState)
 
     graph.add_node("supervisor", supervisor_node)
