@@ -33,6 +33,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
 | ✅ | Conversation Memory – context retained across messages per chat (isolated per user) |
 | ✅ | Chat Agent – answers follow-up questions directly from conversation history |
+| ✅ | Text-to-Speech – responses spoken via Mac speaker + Telegram voice message |
 | ✅ | Test suite – 55 pytest tests for security and terminal validation |
 
 ---
@@ -56,7 +57,7 @@ FabBot/
 │   ├── security.py          # Prompt injection guard, rate limiting, homoglyph normalization
 │   ├── audit.py             # Tamper-evident audit log
 │   └── agents/
-│       ├── chat_agent.py    # Context-aware conversation agent (no tools, ainvoke)
+│       ├── chat_agent.py    # Context-aware conversation agent (no tools)
 │       ├── computer.py      # Desktop control (validated input)
 │       ├── terminal.py      # Shell command execution
 │       ├── file.py          # File operations
@@ -64,10 +65,11 @@ FabBot/
 │       ├── calendar.py      # Calendar management
 │       └── clip_agent.py    # URL clipper – fetch, summarize, save as Markdown
 └── bot/
-    ├── bot.py               # Telegram handlers – dispatch pattern, per-user thread_id
+    ├── bot.py               # Telegram handlers with dispatch pattern
     ├── auth.py              # User whitelist (cached at startup, warns if empty)
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
-    ├── transcribe.py        # Local Whisper transcription
+    ├── transcribe.py        # Local Whisper transcription (voice → text)
+    ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice)
     └── search.py            # Local knowledge base search
 ```
 
@@ -76,6 +78,7 @@ FabBot/
 - [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine with MemorySaver
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
 - [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
+- [edge-tts](https://github.com/rany2/edge-tts) – text-to-speech via Microsoft Neural Voices
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - [rumps](https://github.com/jaredks/rumps) – macOS menubar app
 - [Obsidian](https://obsidian.md) – knowledge base viewer (optional)
@@ -184,6 +187,25 @@ The Whisper `small` model (~460 MB) is downloaded on first use and cached locall
 
 ---
 
+## Text-to-Speech
+
+Every bot response is automatically spoken aloud via two channels simultaneously:
+
+```
+Bot response (text)
+  → edge-tts (de-DE-KatjaNeural) → MP3
+  ├── afplay → Mac speaker (immediate, no interaction needed)
+  └── send_voice() → Telegram voice message (accessible anywhere)
+```
+
+Before synthesis, responses are cleaned automatically – URLs, Markdown formatting, and source sections are stripped so the bot reads naturally without reciting web addresses.
+
+- Max 1,000 characters read aloud; longer responses are truncated
+- If TTS fails, the text reply still works – no bot crash
+- Voice: `de-DE-KatjaNeural` (can be changed in `bot/tts.py`)
+
+---
+
 ## Knowledge Clipper
 
 Save any article or webpage to your local Obsidian-compatible knowledge base:
@@ -218,7 +240,7 @@ Du: "Was habe ich dich gerade gefragt?"
 Bot: "Du hast mich gefragt: 'Welche Termine habe ich morgen?'"
 ```
 
-Note: conversation history is stored in-memory and resets on bot restart. For persistent memory across restarts, `SqliteSaver` would be the next step.
+Note: conversation history is stored in-memory and resets on bot restart.
 
 ---
 
@@ -242,7 +264,7 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 - **find sandboxing** – blocked at `/`, `/etc`, `~/.ssh`, `~/.fabbot`
 - **cat/head/tail protection** – blocked for sensitive files
 - **File path sandbox** – restricted to explicit allowed directories
-- **clip_agent path guard** – output path validated to stay within `~/Documents/Wissen/` with TOCTOU re-validation
+- **clip_agent path guard** – output path validated to stay within `~/Documents/Wissen/`
 - **SSRF protection** – blocks loopback, private IPs, link-local, IPv6 loopback, `.local`/`.internal`
 - **TOCTOU protection** – paths and commands re-validated immediately before execution
 - **typewrite validation** – max 500 chars, printable ASCII only
@@ -289,6 +311,7 @@ pytest tests/ -v
 - **Phase 10** ✅ Engineering quality – centralized LLM client, protocol constants, pytest suite, pip lock file
 - **Phase 11** ✅ Code quality – dispatch pattern, input validation, full UUID, `.env.example`
 - **Phase 12** ✅ Conversation memory – LangGraph MemorySaver, chat_agent, isolated per-user threads
+- **Phase 13** ✅ Text-to-Speech – edge-tts neural voices, Mac speaker + Telegram voice message
 
 ---
 
