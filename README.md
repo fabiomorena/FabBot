@@ -31,11 +31,13 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
 | ✅ | Knowledge Clipper – `/clip <URL>` saves articles as Markdown to Obsidian vault |
 | ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
-| ✅ | Conversation Memory – context retained across messages per chat (isolated per user) |
+| ✅ | Persistent Conversation Memory – SQLite via AsyncSqliteSaver, survives restarts |
 | ✅ | Chat Agent – answers follow-up questions directly from conversation history |
 | ✅ | Text-to-Speech – responses spoken via Mac speaker + Telegram voice message |
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
-| ✅ | Test suite – 69 pytest tests for security, terminal, and TTS validation |
+| ✅ | TTS Stop – `/stop` kills running afplay immediately |
+| ✅ | German date format – `18.03.2026, 19:06 Uhr` |
+| ✅ | Test suite – 69 pytest tests |
 
 ---
 
@@ -51,7 +53,7 @@ FabBot/
 ├── tests/
 │   └── test_security_terminal.py  # pytest suite (69 tests)
 ├── agent/
-│   ├── supervisor.py        # Supervisor – routes to sub-agents (MemorySaver)
+│   ├── supervisor.py        # Supervisor – AsyncSqliteSaver, init_graph/close_graph
 │   ├── state.py             # LangGraph AgentState
 │   ├── llm.py               # Centralized LLM client (lazy singleton)
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
@@ -60,26 +62,27 @@ FabBot/
 │   └── agents/
 │       ├── chat_agent.py    # Context-aware conversation agent (no tools)
 │       ├── computer.py      # Desktop control (validated input)
-│       ├── terminal.py      # Shell command execution
+│       ├── terminal.py      # Shell command execution, German date format
 │       ├── file.py          # File operations
 │       ├── web.py           # Web search & fetch
 │       ├── calendar.py      # Calendar management
 │       └── clip_agent.py    # URL clipper – fetch, summarize, save as Markdown
 └── bot/
-    ├── bot.py               # Telegram handlers with dispatch pattern
+    ├── bot.py               # Telegram handlers, HITL TTS, post_init/post_shutdown hooks
     ├── auth.py              # User whitelist (cached at startup, warns if empty)
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription (voice → text)
-    ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice)
+    ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice + stop)
     └── search.py            # Local knowledge base search
 ```
 
 **Stack:**
 - [Claude](https://anthropic.com) – claude-sonnet as the AI backbone
-- [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine with MemorySaver
+- [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine with AsyncSqliteSaver
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
 - [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
 - [edge-tts](https://github.com/rany2/edge-tts) – text-to-speech via Microsoft Neural Voices
+- [aiosqlite](https://github.com/omnilib/aiosqlite) – async SQLite for persistent memory
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - [rumps](https://github.com/jaredks/rumps) – macOS menubar app
 - [Obsidian](https://obsidian.md) – knowledge base viewer (optional)
@@ -117,41 +120,28 @@ brew install ffmpeg
 cp .env.example .env
 ```
 
-Edit `.env` with your API keys – all required variables are documented in `.env.example`.
-
-To disable TTS by default, add to `.env`:
+Edit `.env` with your API keys. To disable TTS by default:
 ```env
 TTS_ENABLED=false
 ```
 
 ### macOS Permissions
 
-For Apple Calendar access, grant Terminal automation permissions:
+For Apple Calendar access:
 
 **System Settings → Privacy & Security → Automation → Terminal → Calendar → Enable**
 
 ### Run
 
-**Bot only (Telegram):**
 ```bash
-python main.py
-```
-
-**With menubar app:**
-```bash
-python menubar.py
-```
-
-**Run tests:**
-```bash
-pytest tests/ -v
+python main.py        # Bot only
+python menubar.py     # With menubar app
+pytest tests/ -v      # Run tests
 ```
 
 ---
 
 ## Usage
-
-Send any natural language message or voice note to your bot on Telegram:
 
 | Message | Routed to |
 |--------|-----------|
@@ -159,23 +149,23 @@ Send any natural language message or voice note to your bot on Telegram:
 | "Erstelle einen Termin morgen um 14 Uhr: Meeting" | `calendar_agent` |
 | "Zeig mir den Inhalt von ~/Downloads" | `file_agent` |
 | "Wie viel freier Speicher ist noch?" | `terminal_agent` |
+| "Was ist heute für ein Datum?" | `terminal_agent` → `18.03.2026, 19:06 Uhr` |
 | "Suche nach den neuesten KI News" | `web_agent` |
-| "Fetch https://example.com" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
 | "Was habe ich dich gerade gefragt?" | `chat_agent` |
-| "Fass das zusammen" | `chat_agent` |
-| 🎤 Voice note with any of the above | transcribed via Whisper → any agent |
+| 🎤 Voice note | Whisper → any agent |
 
 **Commands:**
 
 ```
 /start              – Start the bot & show help
 /ask <Frage>        – Direct query
-/clip <URL>         – Save URL as Markdown note to ~/Documents/Wissen/
+/clip <URL>         – Save URL as Markdown note
 /search             – List all saved notes
 /search <Begriff>   – Search notes by keyword
 /search #Tag        – Search notes by tag
 /tts on|off         – Enable or disable text-to-speech
+/stop               – Stop current voice output immediately
 /status             – Check agent status (shows TTS state)
 /auditlog           – Show last 10 executed actions
 ```
@@ -184,122 +174,56 @@ Send any natural language message or voice note to your bot on Telegram:
 
 ## Voice Notes
 
-FabBot supports Telegram voice messages out of the box. Send a voice note instead of typing – Whisper transcribes it locally on your Mac, then the result is passed to the normal agent pipeline.
-
 ```
 Voice note (OGG) → Whisper (local, small model) → transcribed text → Supervisor → agent
 ```
 
-The Whisper `small` model (~460 MB) is downloaded on first use and cached locally. No audio data leaves your machine.
+Whisper `small` model (~460 MB) downloaded on first use, cached locally. No audio leaves your machine.
 
 ---
 
 ## Text-to-Speech
 
-Every bot response is automatically spoken aloud via two channels simultaneously:
+Every bot response is spoken aloud simultaneously:
 
 ```
 Bot response (text)
   → edge-tts (de-DE-KatjaNeural) → MP3
-  ├── afplay → Mac speaker (immediate, no interaction needed)
-  └── send_voice() → Telegram voice message (accessible anywhere)
+  ├── afplay → Mac speaker (immediate)
+  └── send_voice() → Telegram voice message
 ```
 
-Before synthesis, responses are cleaned automatically – URLs, Markdown formatting, and source sections are stripped so the bot reads naturally.
+Text is cleaned before synthesis – URLs, Markdown, and source sections stripped automatically.
 
-**Toggle TTS at runtime:**
+For HITL-confirmed actions (terminal output, calendar events, file writes), TTS fires only for short outputs ≤ 300 characters.
+
 ```
-/tts off    → disable (silent mode)
+/tts off    → silent mode
 /tts on     → re-enable
-/status     → shows current TTS state
+/stop       → kill running afplay immediately
 ```
-
-Or set default in `.env`: `TTS_ENABLED=false`
-
-- Max 1,000 characters read aloud; longer responses are truncated
-- If TTS fails, the text reply still works – no bot crash
-- Voice: `de-DE-KatjaNeural` (can be changed in `bot/tts.py`)
-
----
-
-## Knowledge Clipper
-
-Save any article or webpage to your local Obsidian-compatible knowledge base:
-
-```
-/clip https://example.com/article
-→ FabBot fetches & summarizes the page
-→ Shows preview with title, tags, and summary
-→ After confirmation: saved to ~/Documents/Wissen/YYYY-MM-DD-title.md
-```
-
-Search your knowledge base directly from Telegram:
-
-```
-/search              → list all notes
-/search Berlin       → find notes containing "Berlin"
-/search #Tech        → find notes tagged #Tech
-```
-
-Open `~/Documents/Wissen/` as an Obsidian vault to browse and link notes.
 
 ---
 
 ## Conversation Memory
 
-FabBot remembers the context of your conversation within a session. Each Telegram chat has its own isolated conversation thread via LangGraph's MemorySaver – no cross-user leakage possible.
+Persistent across bot restarts via AsyncSqliteSaver (`~/.fabbot/memory.db`). Each Telegram chat has its own isolated thread.
 
 ```
 Du: "Welche Termine habe ich morgen?"
 Bot: "21:00 Test"
-Du: "Was habe ich dich gerade gefragt?"
+[Bot neu gestartet]
+Du: "Was habe ich dich zuletzt gefragt?"
 Bot: "Du hast mich gefragt: 'Welche Termine habe ich morgen?'"
 ```
-
-Note: conversation history is stored in-memory and resets on bot restart.
 
 ---
 
 ## Security
 
-FabBot has a multi-layered security architecture designed for a locally-running agent with deep system access.
+Multi-layered security: user whitelist → prompt injection guard → homoglyph normalization → rate limiting → terminal allowlist → shell operator blocking → path traversal guard → SSRF protection → TOCTOU re-validation → HITL confirmation → tamper-evident audit log.
 
-### Input layer
-- **User whitelist** – only explicitly allowed Telegram user IDs; cached at startup with warning if empty
-- **Prompt injection guard** – known injection patterns detected and blocked before reaching the LLM
-- **Homoglyph normalization** – Cyrillic, Greek, and fullwidth lookalikes mapped to ASCII
-- **Rate limiting** – max 20 messages per 60 seconds per user; bounded OrderedDict prevents memory flooding
-- **Input length limit** – maximum 2,000 characters per message
-
-### Execution layer
-- **Terminal allowlist** – only 20 explicitly permitted shell commands
-- **Shell operator blocking** – `;`, `&&`, `|`, `>`, `$()` and similar always rejected
-- **Path traversal guard** – `..` in arguments always blocked
-- **Dangerous argument blocklist** – `.ssh/id_rsa`, `.ssh/config`, `.env`, `local_api_token` and similar
-- **system_profiler whitelist** – only 5 safe datatypes permitted
-- **find sandboxing** – blocked at `/`, `/etc`, `~/.ssh`, `~/.fabbot`
-- **cat/head/tail protection** – blocked for sensitive files
-- **File path sandbox** – restricted to explicit allowed directories
-- **clip_agent path guard** – output path validated to stay within `~/Documents/Wissen/`
-- **SSRF protection** – blocks loopback, private IPs, link-local, IPv6 loopback, `.local`/`.internal`
-- **TOCTOU protection** – paths and commands re-validated immediately before execution
-- **typewrite validation** – max 500 chars, printable ASCII only
-- **App name validation** – allowlist regex before `subprocess.run`
-
-### Confirmation layer
-- **Human-in-the-loop** – every terminal command, file write, calendar event, computer use action, and clip save requires explicit Telegram confirmation
-- **Full UUID confirmation IDs** – eliminates collision risk for parallel requests
-- **60-second timeout** – unconfirmed actions automatically cancelled
-- **pyautogui FAILSAFE** – moving mouse to screen corner stops any computer use action
-
-### Local API
-- **Shared secret token** – local API on `127.0.0.1:8766` secured with token at `~/.fabbot/local_api_token` (chmod 600)
-- **Localhost only** – not reachable from outside the machine
-
-### Audit layer
-- **Local audit log** – every action logged to `~/.fabbot/audit.log`
-- **Sensitive data redacting** – API keys, tokens, passwords, email addresses automatically redacted
-- **No content logging** – file contents and command outputs never written to the log
+Full details in the Security section of previous README versions.
 
 ---
 
@@ -309,30 +233,18 @@ FabBot has a multi-layered security architecture designed for a locally-running 
 pytest tests/ -v
 ```
 
-69 tests covering:
-- `sanitize_input`, `check_rate_limit` – security and rate limiting
-- `is_command_allowed` – terminal allowlist, shell operators, path traversal
-- `_clean_for_tts` – URL removal, Markdown stripping, source header detection
-- TTS toggle – `set_tts_enabled` / `is_tts_enabled`
+69 tests: security, rate limiting, terminal allowlist, TTS cleaning, TTS toggle.
 
 ---
 
 ## Roadmap
 
-- **Phase 1** ✅ Foundation – Telegram bot, LangGraph supervisor, multi-agent structure
-- **Phase 2** ✅ Core tools – Terminal agent, File agent, full security layer
-- **Phase 3** ✅ Web & Calendar – Tavily + Brave search, fetch, Apple Calendar integration
-- **Phase 4** ✅ Menubar app + Calendar event creation with HITL confirmation
-- **Phase 5** ✅ Computer Use – screenshot, click, type, open app with HITL confirmation
-- **Phase 6** ✅ Voice Notes – local Whisper transcription, OGG support, no external API needed
-- **Phase 7** ✅ Knowledge Clipper – `/clip` saves URLs as structured Markdown, Obsidian-compatible
-- **Phase 8** ✅ Knowledge Search – `/search` searches local notes by keyword and tag
-- **Phase 9** ✅ Security hardening – Unicode normalization, rate limiting, IPv6 SSRF, tightened sandboxes
-- **Phase 10** ✅ Engineering quality – centralized LLM client, protocol constants, pytest suite, pip lock file
-- **Phase 11** ✅ Code quality – dispatch pattern, input validation, full UUID, `.env.example`
-- **Phase 12** ✅ Conversation memory – LangGraph MemorySaver, chat_agent, isolated per-user threads
-- **Phase 13** ✅ Text-to-Speech – edge-tts neural voices, Mac speaker + Telegram voice message
-- **Phase 14** ✅ TTS polish – toggle command, robust source detection, 69 tests
+- **Phase 1–9** ✅ Foundation, agents, security hardening
+- **Phase 10–11** ✅ Engineering & code quality
+- **Phase 12** ✅ Conversation memory (MemorySaver → AsyncSqliteSaver)
+- **Phase 13** ✅ Text-to-Speech (edge-tts, Mac speaker + Telegram)
+- **Phase 14** ✅ TTS polish – toggle, source detection, 69 tests, /stop command
+- **Phase 15** ✅ Persistent memory, clean shutdown, German date format, HITL TTS
 
 ---
 
