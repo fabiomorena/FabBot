@@ -39,7 +39,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 69 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 69 pytest tests on every push, with pip cache |
 | ✅ | Test suite – 69 pytest tests |
 
 ---
@@ -56,7 +56,7 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── .github/
 │   └── workflows/
-│       └── test.yml         # GitHub Actions CI pipeline
+│       └── test.yml         # GitHub Actions CI – pip cache + pytest
 ├── tests/
 │   └── test_security_terminal.py  # pytest suite (69 tests)
 ├── agent/
@@ -222,13 +222,27 @@ Multi-layered security: user whitelist → prompt injection guard → homoglyph 
 
 ---
 
+## CI
+
+GitHub Actions runs on every push and pull request to `master`:
+
+```yaml
+- Python 3.11, ubuntu-latest
+- pip cache keyed on requirements-ci.txt
+- pytest tests/ -v  (69 tests)
+```
+
+`requirements-ci.txt` excludes macOS-only packages (`pyobjc`, `rumps`, `pyautogui`, `rubicon-objc`) that cannot build on Linux.
+
+---
+
 ## Testing
 
 ```bash
 pytest tests/ -v
 ```
 
-69 tests: security, rate limiting, terminal allowlist, TTS cleaning, TTS toggle. CI runs automatically on every push via GitHub Actions.
+69 tests: security, rate limiting, terminal allowlist, TTS cleaning, TTS toggle.
 
 ---
 
@@ -240,7 +254,7 @@ pytest tests/ -v
 - **Phase 13** ✅ Text-to-Speech (edge-tts, Mac speaker + Telegram)
 - **Phase 14** ✅ TTS polish – toggle, source detection, 69 tests, /stop command
 - **Phase 15** ✅ Persistent memory, clean shutdown, German date format, HITL TTS
-- **Phase 16** ✅ GitHub Actions CI – green on every push
+- **Phase 16** ✅ GitHub Actions CI – green on every push, pip cache, rubicon-objc fix
 
 ---
 
