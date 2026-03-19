@@ -1,6 +1,7 @@
+from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from agent.state import AgentState, AgentName
 from agent.llm import get_llm
@@ -10,6 +11,13 @@ from agent.agents.file import file_agent
 from agent.agents.web import web_agent
 from agent.agents.calendar import calendar_agent
 from agent.agents.chat_agent import chat_agent
+
+_DB_PATH = Path.home() / ".fabbot" / "memory.db"
+_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Globale Referenzen – werden in init_graph() gesetzt
+agent_graph = None
+_db_conn = None
 
 SUPERVISOR_PROMPT = """Du bist ein Supervisor-Agent. Du koordinierst spezialisierte Sub-Agenten.
 
@@ -67,8 +75,8 @@ def route(state: AgentState) -> AgentName:
     return state["next_agent"]
 
 
-def build_graph() -> StateGraph:
-    """Baut und kompiliert den LangGraph mit MemorySaver-Checkpointer."""
+def _build_graph() -> StateGraph:
+    """Erstellt den StateGraph ohne Checkpointer."""
     graph = StateGraph(AgentState)
 
     graph.add_node("supervisor", supervisor_node)
@@ -99,8 +107,25 @@ def build_graph() -> StateGraph:
                   "web_agent", "calendar_agent", "chat_agent"]:
         graph.add_edge(agent, "supervisor")
 
-    checkpointer = MemorySaver()
-    return graph.compile(checkpointer=checkpointer)
+    return graph
 
 
-agent_graph = build_graph()
+async def init_graph() -> None:
+    """Initialisiert den Graphen mit persistentem AsyncSqliteSaver.
+    Wird via post_init Hook von python-telegram-bot aufgerufen.
+    """
+    global agent_graph, _db_conn
+    import aiosqlite
+    _db_conn = await aiosqlite.connect(str(_DB_PATH))
+    checkpointer = AsyncSqliteSaver(_db_conn)
+    agent_graph = _build_graph().compile(checkpointer=checkpointer)
+
+
+async def close_graph() -> None:
+    """Schliesst die SQLite-Verbindung sauber beim Shutdown.
+    Wird via post_shutdown Hook von python-telegram-bot aufgerufen.
+    """
+    global _db_conn
+    if _db_conn:
+        await _db_conn.close()
+        _db_conn = None
