@@ -9,6 +9,7 @@ Deutsche Stimme: de-DE-KatjaNeural (weiblich, natuerlich)
 Alternativ:      de-DE-ConradNeural (maennlich)
 
 TTS kann zur Laufzeit via /tts on|off togglen werden.
+Laufende Sprachausgabe kann via /stop gestoppt werden.
 Standard: TTS_ENABLED=true in .env, oder per default aktiviert.
 """
 import asyncio
@@ -21,17 +22,15 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Deutsche Neural-Stimme – beste Qualitaet fuer Deutsch
 TTS_VOICE = "de-DE-KatjaNeural"
-# Sprechgeschwindigkeit: +0% = normal, +10% = etwas schneller
 TTS_RATE = "+0%"
-
-# Texte ueber dieser Laenge werden nicht vorgelesen (zu lang fuer TTS)
 TTS_MAX_CHARS = 1000
 
-# TTS-Status – kann zur Laufzeit via /tts on|off geaendert werden.
-# Standard: aus .env (TTS_ENABLED=true/false), fallback: aktiviert.
+# TTS-Status – kann zur Laufzeit via /tts on|off geaendert werden
 _tts_enabled: bool = os.getenv("TTS_ENABLED", "true").lower() != "false"
+
+# Laufender afplay-Prozess – wird fuer /stop benoetigt
+_current_afplay: subprocess.Popen | None = None
 
 # Exakte Bezeichnungen fuer Quellen-Ueberschriften (lowercase, nach Markdown-Strip)
 _SOURCE_HEADERS = {"quellen:", "quellen", "sources:", "sources", "source:"}
@@ -49,10 +48,22 @@ def set_tts_enabled(enabled: bool) -> None:
     logger.info(f"TTS {'aktiviert' if enabled else 'deaktiviert'}.")
 
 
+def stop_speaking() -> bool:
+    """Stoppt die laufende Sprachausgabe falls vorhanden.
+    Gibt True zurueck wenn ein Prozess gestoppt wurde.
+    """
+    global _current_afplay
+    if _current_afplay and _current_afplay.poll() is None:
+        _current_afplay.terminate()
+        _current_afplay = None
+        logger.info("Sprachausgabe gestoppt.")
+        return True
+    return False
+
+
 def _clean_for_tts(text: str) -> str:
     """Bereinigt Text fuer TTS-Ausgabe.
-    Entfernt URLs, Markdown-Formatierung und Quellenabschnitte
-    damit der Bot keine URLs oder Ueberschriften vorliest.
+    Entfernt URLs, Markdown-Formatierung und Quellenabschnitte.
     """
     # Markdown-Links [Text](URL) → nur Text behalten
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
@@ -63,13 +74,11 @@ def _clean_for_tts(text: str) -> str:
     # Markdown-Formatierung entfernen: **, *, __, _, `
     text = re.sub(r"[*_`]{1,2}", "", text)
 
-    # Quellenabschnitt erkennen – exakter Vergleich auf bekannte Ueberschriften.
-    # Verhindert false positives wie "Die Quelle dieser Information ist..."
+    # Quellenabschnitt erkennen – exakter Vergleich verhindert false positives
     lines = text.split("\n")
     cleaned_lines = []
     for line in lines:
         stripped = line.strip().lower()
-        # Exakter Header-Match oder Markdown-Ueberschrift "## quell..."
         if stripped in _SOURCE_HEADERS or stripped.startswith("## quell"):
             break
         cleaned_lines.append(line)
@@ -91,16 +100,12 @@ def _is_tts_available() -> bool:
 
 
 async def synthesize(text: str) -> bytes | None:
-    """Konvertiert Text zu MP3-Audio via edge-tts.
-    Bereinigt den Text vor der Synthese (keine URLs, kein Markdown).
-    Gibt Audio-Bytes zurueck oder None bei Fehler.
-    """
+    """Konvertiert Text zu MP3-Audio via edge-tts."""
     if not _is_tts_available():
         logger.warning("edge-tts nicht installiert – TTS deaktiviert.")
         return None
 
     text = _clean_for_tts(text)
-
     if not text:
         return None
 
@@ -110,24 +115,18 @@ async def synthesize(text: str) -> bytes | None:
     try:
         import edge_tts
         communicate = edge_tts.Communicate(text, TTS_VOICE, rate=TTS_RATE)
-
         audio_bytes = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 audio_bytes += chunk["data"]
-
         return audio_bytes if audio_bytes else None
-
     except Exception as e:
         logger.error(f"TTS Synthese-Fehler: {e}")
         return None
 
 
 async def speak_and_send(text: str, bot, chat_id: int) -> bool:
-    """Spricht Text gleichzeitig ueber Mac-Lautsprecher und
-    schickt Sprachnachricht an Telegram.
-    Gibt False zurueck wenn TTS deaktiviert oder Fehler auftritt.
-    """
+    """Spricht Text ueber Mac-Lautsprecher und schickt Sprachnachricht an Telegram."""
     if not _tts_enabled:
         return False
 
@@ -157,14 +156,24 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
 
 
 async def _play_on_mac(path: Path) -> None:
-    """Spielt Audio ueber Mac-Lautsprecher via afplay (macOS-nativ)."""
+    """Spielt Audio ueber Mac-Lautsprecher via afplay.
+    Speichert den Prozess fuer /stop-Befehl.
+    Timeout: 300s (ausreichend fuer lange Wetterberichte etc.)
+    """
+    global _current_afplay
     try:
-        await asyncio.to_thread(
-            subprocess.run,
-            ["afplay", str(path)],
-            timeout=60,
-            check=False,
-        )
+        def _run() -> None:
+            global _current_afplay
+            _current_afplay = subprocess.Popen(["afplay", str(path)])
+            try:
+                _current_afplay.wait(timeout=300)
+            except subprocess.TimeoutExpired:
+                _current_afplay.terminate()
+                logger.warning("afplay Timeout nach 300s.")
+            finally:
+                _current_afplay = None
+
+        await asyncio.to_thread(_run)
     except Exception as e:
         logger.warning(f"afplay Fehler (nicht kritisch): {e}")
 
