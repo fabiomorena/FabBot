@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from agent.state import AgentState, AgentName
-from agent.llm import get_llm
+from agent.llm import get_fast_llm
 from agent.agents.computer import computer_agent
 from agent.agents.terminal import terminal_agent
 from agent.agents.file import file_agent
@@ -41,8 +41,10 @@ computer_agent | terminal_agent | file_agent | web_agent | calendar_agent | chat
 
 
 def supervisor_node(state: AgentState) -> AgentState:
-    """Analysiert den aktuellen State und entscheidet welcher Agent als naechstes aktiv wird."""
-    llm = get_llm()
+    """Analysiert den aktuellen State und entscheidet welcher Agent als naechstes aktiv wird.
+    Nutzt Haiku fuer schnelles, kostenguenstiges Routing (~4x schneller als Sonnet).
+    """
+    llm = get_fast_llm()
     messages = state["messages"]
 
     if messages and isinstance(messages[-1], AIMessage):

@@ -1,25 +1,30 @@
 """
-Zentraler LLM-Client für FabBot.
-Alle Agenten verwenden get_llm() statt eigener Instantiierung.
-Lazy singleton – wird nur einmal erstellt.
+Zentraler LLM-Client fuer FabBot.
+
+- get_llm()       → claude-sonnet (Qualitaet, fuer alle Agents)
+- get_fast_llm()  → claude-haiku  (Geschwindigkeit, fuer Supervisor-Routing)
 """
-import os
 from langchain_anthropic import ChatAnthropic
 
 _llm: ChatAnthropic | None = None
-
-MODEL = "claude-sonnet-4-20250514"
+_fast_llm: ChatAnthropic | None = None
 
 
 def get_llm() -> ChatAnthropic:
-    """Gibt die gemeinsame LLM-Instanz zurück (lazy singleton)."""
+    """Gibt den Sonnet-Client zurueck (lazy singleton).
+    Fuer alle Agents die Antwortqualitaet benoetigen.
+    """
     global _llm
     if _llm is None:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY nicht gesetzt.")
-        _llm = ChatAnthropic(
-            model=MODEL,
-            api_key=api_key,
-        )
+        _llm = ChatAnthropic(model="claude-sonnet-4-5-20251022")
     return _llm
+
+
+def get_fast_llm() -> ChatAnthropic:
+    """Gibt den Haiku-Client zurueck (lazy singleton).
+    Fuer den Supervisor – schnelles Routing, ~4x schneller als Sonnet.
+    """
+    global _fast_llm
+    if _fast_llm is None:
+        _fast_llm = ChatAnthropic(model="claude-haiku-4-5-20251001")
+    return _fast_llm
