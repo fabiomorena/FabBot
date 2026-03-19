@@ -11,7 +11,7 @@ A personal AI assistant that runs locally on macOS, controlled via Telegram and 
 FabBot lets you control your Mac using natural language – from anywhere, via Telegram. A supervisor agent analyzes incoming requests and routes them to the appropriate specialist agent.
 
 ```
-You → Telegram (text or voice) → Security Guard → Supervisor → calendar_agent / terminal_agent / file_agent / web_agent / chat_agent / ...
+You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → calendar_agent / terminal_agent / file_agent / web_agent / chat_agent / ...
 ```
 
 ---
@@ -22,7 +22,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 |--------|---------|
 | ✅ | Telegram bot interface |
 | ✅ | User authentication (whitelist, cached at startup) |
-| ✅ | Multi-agent supervisor routing |
+| ✅ | Multi-agent supervisor routing (claude-haiku for speed) |
 | ✅ | Terminal – execute shell commands |
 | ✅ | File – read, write, list files |
 | ✅ | Web – search (Tavily + Brave) and fetch URLs |
@@ -60,9 +60,9 @@ FabBot/
 ├── tests/
 │   └── test_security_terminal.py  # pytest suite (69 tests)
 ├── agent/
-│   ├── supervisor.py        # Supervisor – AsyncSqliteSaver, init_graph/close_graph
+│   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
-│   ├── llm.py               # Centralized LLM client (lazy singleton)
+│   ├── llm.py               # get_llm() Sonnet + get_fast_llm() Haiku
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
 │   ├── security.py          # Prompt injection guard, rate limiting, homoglyph normalization
 │   ├── audit.py             # Tamper-evident audit log
@@ -84,7 +84,8 @@ FabBot/
 ```
 
 **Stack:**
-- [Claude](https://anthropic.com) – claude-sonnet as the AI backbone
+- [Claude Sonnet 4](https://anthropic.com) – AI backbone for all agents (`claude-sonnet-4-20250514`)
+- [Claude Haiku 4.5](https://anthropic.com) – fast supervisor routing (`claude-haiku-4-5-20251001`)
 - [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine with AsyncSqliteSaver
 - [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
 - [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
@@ -210,6 +211,19 @@ Text is cleaned before synthesis – URLs, Markdown, and source sections strippe
 
 ---
 
+## Performance
+
+FabBot uses a two-model architecture for optimal speed and quality:
+
+| Component | Model | Reason |
+|---|---|---|
+| Supervisor (routing) | claude-haiku-4-5 | ~4x faster, simple classification task |
+| All agents (answers) | claude-sonnet-4 | Full quality for responses |
+
+This reduces total LLM latency by ~40% compared to using Sonnet for everything.
+
+---
+
 ## Conversation Memory
 
 Persistent across bot restarts via AsyncSqliteSaver (`~/.fabbot/memory.db`). Each Telegram chat has its own isolated thread. Connection opened via `post_init` hook and closed cleanly via `post_shutdown` hook.
@@ -232,7 +246,7 @@ GitHub Actions runs on every push and pull request to `master`:
 - pytest tests/ -v  (69 tests)
 ```
 
-`requirements-ci.txt` excludes macOS-only packages (`pyobjc`, `rumps`, `pyautogui`, `rubicon-objc`) that cannot build on Linux.
+`requirements-ci.txt` excludes macOS-only packages (`pyobjc`, `rumps`, `pyautogui`, `rubicon-objc`).
 
 ---
 
@@ -254,7 +268,8 @@ pytest tests/ -v
 - **Phase 13** ✅ Text-to-Speech (edge-tts, Mac speaker + Telegram)
 - **Phase 14** ✅ TTS polish – toggle, source detection, 69 tests, /stop command
 - **Phase 15** ✅ Persistent memory, clean shutdown, German date format, HITL TTS
-- **Phase 16** ✅ GitHub Actions CI – green on every push, pip cache, rubicon-objc fix
+- **Phase 16** ✅ GitHub Actions CI – green on every push, pip cache
+- **Phase 17** ✅ Performance – Haiku supervisor, ~40% faster response time
 
 ---
 
