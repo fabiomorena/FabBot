@@ -18,7 +18,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.lock
+        run: pip install -r requirements-ci.txt
 
       - name: Run tests
         run: pytest tests/ -v
