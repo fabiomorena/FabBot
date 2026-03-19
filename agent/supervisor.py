@@ -15,35 +15,36 @@ from agent.agents.chat_agent import chat_agent
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Globale Referenzen – werden in init_graph() gesetzt
 agent_graph = None
 _db_conn = None
 
-SUPERVISOR_PROMPT = """Du bist ein Supervisor-Agent. Du koordinierst spezialisierte Sub-Agenten.
+SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, eine der folgenden Antworten zurueckzugeben.
 
-Verfuegbare Agenten und ihre genauen Zustaendigkeiten:
-- file_agent: Dateien und Ordner LESEN, AUFLISTEN oder SCHREIBEN
-- terminal_agent: Shell-Befehle, Systeminformationen wie Speicher, CPU, laufende Prozesse
-- web_agent: Im Internet suchen, Webseiten abrufen, aktuelle Nachrichten
+Verfuegbare Agenten:
+- file_agent: Dateien und Ordner lesen, auflisten oder schreiben
+- terminal_agent: Shell-Befehle, Datum, Uhrzeit, Speicher, CPU, Prozesse
+- web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten
 - calendar_agent: Kalendertermine lesen oder erstellen
-- computer_agent: NUR fuer echte Desktop-Steuerung (Klicks, Screenshots, Apps oeffnen per UI)
-- chat_agent: Folgefragen zum bisherigen Gespraech, Meta-Fragen, Zusammenfassungen des Verlaufs,
-  Hoeflichkeiten. Beispiele: "was habe ich dich gefragt?", "fass das zusammen",
-  "erklaer das nochmal", "danke", "was meintest du mit X?"
+- computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
+- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, alles andere
 
 Regeln:
-1. Wenn die letzte Nachricht eine Antwort eines Sub-Agenten ist (enthaelt Ergebnisse/Daten), antworte mit: FINISH
-2. Fuer Folgefragen oder Meta-Fragen zum bisherigen Gespraech: chat_agent
-3. Fuer neue externe Aufgaben: passenden Spezialagenten waehlen
-4. Antworte NUR mit einem dieser Woerter:
-computer_agent | terminal_agent | file_agent | web_agent | calendar_agent | chat_agent | FINISH
+- Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
+- Sonst: waehle den passenden Agenten
+
+WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes, keine Erklaerung):
+computer_agent
+terminal_agent
+file_agent
+web_agent
+calendar_agent
+chat_agent
+FINISH
 """
 
 
 def supervisor_node(state: AgentState) -> AgentState:
-    """Analysiert den aktuellen State und entscheidet welcher Agent als naechstes aktiv wird.
-    Nutzt Haiku fuer schnelles, kostenguenstiges Routing (~4x schneller als Sonnet).
-    """
+    """Routing via Haiku – schnell und kostenguenstig."""
     llm = get_fast_llm()
     messages = state["messages"]
 
@@ -67,7 +68,8 @@ def supervisor_node(state: AgentState) -> AgentState:
         "web_agent", "calendar_agent", "chat_agent", "FINISH"
     }
     if next_agent not in valid:
-        next_agent = "FINISH"
+        # Haiku hat kein gueltiges Routing-Wort zurueckgegeben – sicher zu chat_agent fallen
+        next_agent = "chat_agent"
 
     return {"next_agent": next_agent}
 
@@ -113,9 +115,7 @@ def _build_graph() -> StateGraph:
 
 
 async def init_graph() -> None:
-    """Initialisiert den Graphen mit persistentem AsyncSqliteSaver.
-    Wird via post_init Hook von python-telegram-bot aufgerufen.
-    """
+    """Initialisiert den Graphen mit persistentem AsyncSqliteSaver."""
     global agent_graph, _db_conn
     import aiosqlite
     _db_conn = await aiosqlite.connect(str(_DB_PATH))
@@ -124,9 +124,7 @@ async def init_graph() -> None:
 
 
 async def close_graph() -> None:
-    """Schliesst die SQLite-Verbindung sauber beim Shutdown.
-    Wird via post_shutdown Hook von python-telegram-bot aufgerufen.
-    """
+    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
     global _db_conn
     if _db_conn:
         await _db_conn.close()
