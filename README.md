@@ -1,5 +1,7 @@
 # FabBot – Personal Mac AI Assistant
 
+![CI](https://github.com/fabiomorena/FabBot/actions/workflows/test.yml/badge.svg)
+
 A personal AI assistant that runs locally on macOS, controlled via Telegram and a native menubar app. Built with Claude (Anthropic), LangGraph, and a multi-agent architecture.
 
 ---
@@ -37,6 +39,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor → calendar_
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
+| ✅ | GitHub Actions CI – runs 69 pytest tests on every push |
 | ✅ | Test suite – 69 pytest tests |
 
 ---
@@ -49,7 +52,11 @@ FabBot/
 ├── menubar.py               # macOS menubar app
 ├── requirements.txt         # Direct dependencies
 ├── requirements.lock        # Pinned lock file (pip-compile)
+├── requirements-ci.txt      # CI dependencies (no macOS-only packages)
 ├── .env.example             # Environment variable template
+├── .github/
+│   └── workflows/
+│       └── test.yml         # GitHub Actions CI pipeline
 ├── tests/
 │   └── test_security_terminal.py  # pytest suite (69 tests)
 ├── agent/
@@ -193,9 +200,7 @@ Bot response (text)
   └── send_voice() → Telegram voice message
 ```
 
-Text is cleaned before synthesis – URLs, Markdown, and source sections stripped automatically.
-
-For HITL-confirmed actions (terminal output, calendar events, file writes), TTS fires only for short outputs ≤ 300 characters.
+Text is cleaned before synthesis – URLs, Markdown, and source sections stripped automatically. For HITL-confirmed actions, TTS fires only for short outputs ≤ 300 characters.
 
 ```
 /tts off    → silent mode
@@ -207,23 +212,13 @@ For HITL-confirmed actions (terminal output, calendar events, file writes), TTS 
 
 ## Conversation Memory
 
-Persistent across bot restarts via AsyncSqliteSaver (`~/.fabbot/memory.db`). Each Telegram chat has its own isolated thread.
-
-```
-Du: "Welche Termine habe ich morgen?"
-Bot: "21:00 Test"
-[Bot neu gestartet]
-Du: "Was habe ich dich zuletzt gefragt?"
-Bot: "Du hast mich gefragt: 'Welche Termine habe ich morgen?'"
-```
+Persistent across bot restarts via AsyncSqliteSaver (`~/.fabbot/memory.db`). Each Telegram chat has its own isolated thread. Connection opened via `post_init` hook and closed cleanly via `post_shutdown` hook.
 
 ---
 
 ## Security
 
 Multi-layered security: user whitelist → prompt injection guard → homoglyph normalization → rate limiting → terminal allowlist → shell operator blocking → path traversal guard → SSRF protection → TOCTOU re-validation → HITL confirmation → tamper-evident audit log.
-
-Full details in the Security section of previous README versions.
 
 ---
 
@@ -233,7 +228,7 @@ Full details in the Security section of previous README versions.
 pytest tests/ -v
 ```
 
-69 tests: security, rate limiting, terminal allowlist, TTS cleaning, TTS toggle.
+69 tests: security, rate limiting, terminal allowlist, TTS cleaning, TTS toggle. CI runs automatically on every push via GitHub Actions.
 
 ---
 
@@ -245,6 +240,7 @@ pytest tests/ -v
 - **Phase 13** ✅ Text-to-Speech (edge-tts, Mac speaker + Telegram)
 - **Phase 14** ✅ TTS polish – toggle, source detection, 69 tests, /stop command
 - **Phase 15** ✅ Persistent memory, clean shutdown, German date format, HITL TTS
+- **Phase 16** ✅ GitHub Actions CI – green on every push
 
 ---
 
