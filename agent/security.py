@@ -91,18 +91,18 @@ _INJECTION_PATTERNS = [
 ]
 
 _SUSPICIOUS_PATTERNS = [
-    # Weichere Muster die einen Score erhoehen aber nicht sofort blockieren
+    # Praezisere Muster um false positives zu reduzieren
     r"system\s*prompt",
-    r"ignore\s+",
-    r"forget\s+",
-    r"vergiss\s+",
+    r"ignore\s+(all|previous|instructions|your)",
+    r"vergiss\s+(alle|meine|vorherigen|deine)",
+    r"forget\s+(all|your|previous|everything)",
     r"pretend\s+(you\s+are|to\s+be)",
-    r"tu\s+so\s+als\s+ob",
-    r"new\s+instructions?",
-    r"override\s+",
-    r"bypass\s+",
-    r"disregard\s+",
-    r"assistant\s*:",
+    r"tu\s+so\s+als\s+ob\s+(du|sie)",
+    r"new\s+instructions?\s+(are|follow)",
+    r"override\s+(your|all|previous)",
+    r"bypass\s+(security|restrictions|rules)",
+    r"disregard\s+(all|previous|your)",
+    r"assistant\s*:\s*",
     r"\[system\]",
     r"\[inst\]",
     r"<\|im_start\|>",
@@ -144,7 +144,7 @@ async def _llm_guard(text: str) -> bool:
         from langchain_core.messages import HumanMessage
 
         llm = get_fast_llm()
-        prompt = _GUARD_PROMPT.format(input=text[:500])  # max 500 Zeichen fuer den Guard
+        prompt = _GUARD_PROMPT.format(input=text[:500])
         response = await llm.ainvoke([HumanMessage(content=prompt)])
 
         content = response.content
@@ -188,7 +188,7 @@ def check_rate_limit(user_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Haupt-Einstiegspunkt (synchron – fuer Abwaertskompatibilitaet)
+# Haupt-Einstiegspunkt
 # ---------------------------------------------------------------------------
 
 def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
@@ -215,8 +215,7 @@ def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
     if hard_block:
         return False, reason
 
-    # score > 0 → LLM-Guard noetig, aber synchron nicht moeglich
-    # In diesem Fall als verdaechtig markieren fuer async-Caller
+    # score > 0 → LLM-Guard noetig, als verdaechtig markieren fuer async-Caller
     if score > 0:
         return True, f"__SUSPICIOUS__{text}"
 
