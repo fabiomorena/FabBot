@@ -314,7 +314,6 @@ class TestCleanForTts:
         assert "QUELLEN" not in result
 
     def test_no_false_positive_quelle_in_sentence(self):
-        # "Die Quelle dieser Information..." darf NICHT abschneiden
         text = "Die Quelle dieser Information ist verlaesslich."
         result = _clean_for_tts(text)
         assert "verlaesslich" in result
@@ -349,3 +348,69 @@ class TestTtsToggle:
         set_tts_enabled(False)
         set_tts_enabled(True)
         assert is_tts_enabled() is True
+
+
+# ---------------------------------------------------------------------------
+# tts.py Tests – stop_speaking()
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock
+from bot.tts import stop_speaking
+import bot.tts as tts_module
+
+
+class TestStopSpeaking:
+
+    def setup_method(self) -> None:
+        """Stellt sicher dass _current_afplay vor jedem Test None ist."""
+        tts_module._current_afplay = None
+
+    def test_stop_when_no_process_running(self) -> None:
+        """stop_speaking() gibt False zurueck wenn kein Prozess laeuft."""
+        result = stop_speaking()
+        assert result is False
+
+    def test_stop_when_process_running(self) -> None:
+        """stop_speaking() stoppt laufenden Prozess und gibt True zurueck."""
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # Prozess laeuft noch
+        tts_module._current_afplay = mock_proc
+
+        result = stop_speaking()
+
+        assert result is True
+        mock_proc.terminate.assert_called_once()
+        assert tts_module._current_afplay is None
+
+    def test_stop_when_process_already_finished(self) -> None:
+        """stop_speaking() gibt False zurueck wenn Prozess schon beendet ist."""
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0  # Prozess ist beendet (exit code 0)
+        tts_module._current_afplay = mock_proc
+
+        result = stop_speaking()
+
+        assert result is False
+        mock_proc.terminate.assert_not_called()
+
+    def test_stop_clears_reference(self) -> None:
+        """stop_speaking() setzt _current_afplay auf None nach dem Stoppen."""
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        tts_module._current_afplay = mock_proc
+
+        stop_speaking()
+
+        assert tts_module._current_afplay is None
+
+    def test_stop_twice(self) -> None:
+        """Zweimaliges stop_speaking(): erstes True, zweites False."""
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        tts_module._current_afplay = mock_proc
+
+        first = stop_speaking()
+        second = stop_speaking()
+
+        assert first is True
+        assert second is False
