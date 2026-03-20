@@ -13,7 +13,7 @@ from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import transcribe_audio
 from bot.search import search_knowledge, list_knowledge
 from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled, stop_speaking
-from agent.security import sanitize_input
+from agent.security import sanitize_input_async
 from agent.audit import log_action, log_blocked
 from agent.protocol import Proto
 from agent.agents.terminal import terminal_agent_execute
@@ -286,7 +286,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    is_safe, result = sanitize_input(text, user_id)
+    is_safe, result = await sanitize_input_async(text, user_id)
     if not is_safe:
         log_blocked(result, text, user_id)
         await update.message.reply_text(f"Eingabe abgelehnt: {result}")
