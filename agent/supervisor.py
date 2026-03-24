@@ -15,6 +15,7 @@ from agent.agents.chat_agent import chat_agent
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+# Globale Referenzen – werden in init_graph() gesetzt
 agent_graph = None
 _db_conn = None
 
@@ -44,17 +45,17 @@ FINISH
 
 
 def supervisor_node(state: AgentState) -> AgentState:
-    """Routing via Haiku – schnell und kostenguenstig."""
+    """Routing via Haiku – schnell und kostenguenstig.
+    Jede AIMessage beendet den Graph (FINISH) – egal ob HITL-Prefix oder normale Antwort.
+    Der HITL-Dispatch passiert in bot.py, nicht hier.
+    """
     llm = get_fast_llm()
     messages = state["messages"]
 
+    # Sobald ein Agent geantwortet hat → FINISH
+    # Bot.py entscheidet dann ob HITL oder normale Antwort
     if messages and isinstance(messages[-1], AIMessage):
-        content = messages[-1].content
-        if isinstance(content, list):
-            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        content = content.strip()
-        if not content.startswith("__CONFIRM_"):
-            return {"next_agent": "FINISH"}
+        return {"next_agent": "FINISH"}
 
     all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + messages
     response = llm.invoke(all_messages)
@@ -68,7 +69,6 @@ def supervisor_node(state: AgentState) -> AgentState:
         "web_agent", "calendar_agent", "chat_agent", "FINISH"
     }
     if next_agent not in valid:
-        # Haiku hat kein gueltiges Routing-Wort zurueckgegeben – sicher zu chat_agent fallen
         next_agent = "chat_agent"
 
     return {"next_agent": next_agent}
