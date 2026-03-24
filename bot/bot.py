@@ -5,7 +5,7 @@ from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError, RetryAfter
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
 
 from bot.auth import restricted
@@ -24,7 +24,6 @@ from agent.agents.clip_agent import clip_agent, clip_agent_write
 
 logger = logging.getLogger(__name__)
 
-# TTS nur fuer kurze Outputs – lange Dateilisten etc. werden nicht vorgelesen
 _TTS_MAX_HITL_OUTPUT = 300
 
 
@@ -37,6 +36,21 @@ def _extract_content(msg) -> str:
             for b in content
         ).strip()
     return str(content).strip()
+
+
+async def _update_memory(chat_id: int, result_text: str) -> None:
+    """Schreibt das HITL-Ergebnis als AIMessage in den LangGraph State.
+    Dadurch kann chat_agent spaetere Fragen zum Ergebnis beantworten.
+    """
+    try:
+        from agent.supervisor import agent_graph
+        config = {"configurable": {"thread_id": str(chat_id)}}
+        await agent_graph.aupdate_state(
+            config,
+            {"messages": [AIMessage(content=result_text)]},
+        )
+    except Exception as e:
+        logger.warning(f"Memory update nach HITL fehlgeschlagen (nicht kritisch): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +77,7 @@ async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **
     if confirmed:
         output = computer_agent_execute(action, x, y, text_arg, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
+        await _update_memory(chat_id, f"Desktop-Aktion ausgefuehrt: {display}\nErgebnis: {output}")
     else:
         log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
 
@@ -75,6 +90,7 @@ async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **
         await bot.send_message(chat_id=chat_id, text=f"Output:\n\n{output}")
         if len(output) <= _TTS_MAX_HITL_OUTPUT:
             await speak_and_send(output, bot, chat_id)
+        await _update_memory(chat_id, f"Terminal-Befehl ausgefuehrt: {command}\nErgebnis: {output}")
     else:
         log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
 
@@ -93,6 +109,7 @@ async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int
         await bot.send_message(chat_id=chat_id, text=output)
         if len(output) <= _TTS_MAX_HITL_OUTPUT:
             await speak_and_send(output, bot, chat_id)
+        await _update_memory(chat_id, f"Kalendereintrag erstellt: {title} um {start_time}\nErgebnis: {output}")
     else:
         log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
 
@@ -107,6 +124,7 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
         await bot.send_message(chat_id=chat_id, text=output)
         if len(output) <= _TTS_MAX_HITL_OUTPUT:
             await speak_and_send(output, bot, chat_id)
+        await _update_memory(chat_id, f"Datei geschrieben: {path_str}\nErgebnis: {output}")
     else:
         log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
@@ -306,7 +324,8 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             state,
             config={"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10},
         )
-        response_msg = _extract_content(result_state["messages"][-1])
+        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
+        response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
 
         for prefix, handler in _RESPONSE_DISPATCH:
             if response_msg.startswith(prefix):
