@@ -250,6 +250,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 21** ✅ Supervisor routing fix – last HumanMessage only, Launch Agent setup
 - **Phase 22** ✅ Persistent logging – TimedRotatingFileHandler, 7-day rotation, review_log.sh
 - **Phase 23** ✅ macOS permissions – Full Disk Access for Launch Agent, caffeinate docs
+- **Phase 24** ✅ Bug fixes – terminal HITL prefix, web_agent JSON logging, _filter_hitl_messages tests, review_log.sh precise API count
 
 ---
 
