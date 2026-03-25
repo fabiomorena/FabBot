@@ -1,5 +1,5 @@
 from pathlib import Path
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -24,7 +24,7 @@ SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, 
 Verfuegbare Agenten:
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
 - terminal_agent: Shell-Befehle, Datum, Uhrzeit, Speicher, CPU, Prozesse, ALLE Fragen nach aktuellem Datum oder Uhrzeit
-- web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten
+- web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten, Wetter, ALLE Fragen die aktuelle oder externe Informationen erfordern
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, alles andere
@@ -75,7 +75,10 @@ def supervisor_node(state: AgentState) -> AgentState:
 
     # HITL-Nachrichten aus Kontext filtern bevor Haiku routet
     clean_messages = _filter_hitl_messages(messages)
-    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + clean_messages
+    # Nur letzte HumanMessage fuer Routing – volle History verwirrt Haiku
+    last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
+    routing_messages = [last_human[-1]] if last_human else clean_messages[-1:]
+    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
     response = llm.invoke(all_messages)
     content = response.content
     if isinstance(content, list):
