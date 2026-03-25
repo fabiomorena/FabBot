@@ -125,6 +125,7 @@ cp .env.example .env   # fill in API keys
 
 ```bash
 python main.py        # Bot only
+launchctl load ~/Library/LaunchAgents/com.fabbot.agent.plist  # Run as Launch Agent (auto-start)
 python menubar.py     # With menubar app
 pytest tests/ -v      # Run tests (74 tests)
 ```
@@ -203,6 +204,7 @@ Coverage: security patterns · rate limiting · terminal allowlist · TTS cleani
 - **Phase 18** ✅ Security – two-stage LLM-Guard + content isolation
 - **Phase 19** ✅ stop_speaking() tests, precise suspicious patterns
 - **Phase 20** ✅ Bug fixes – AIMessage echo fix, HITL context isolation
+- **Phase 21** ✅ Supervisor routing fix – last HumanMessage only, Launch Agent setup
 
 ---
 
