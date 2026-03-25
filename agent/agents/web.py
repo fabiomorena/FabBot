@@ -1,5 +1,7 @@
 import os
 import re
+import logging
+logger = logging.getLogger(__name__)
 import json
 import ipaddress
 import httpx
@@ -207,6 +209,7 @@ async def web_agent(state: AgentState) -> AgentState:
         url = parsed.get("url", "")
         engine = parsed.get("engine", "auto")
     except (json.JSONDecodeError, AttributeError) as e:
+        logger.warning(f"web_agent JSON parse error: {e!r} | raw: {content!r}")
         return {"messages": [AIMessage(content=f"Fehler beim Parsen der Anfrage: {e}")]}
 
     try:

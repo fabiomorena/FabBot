@@ -155,6 +155,9 @@ def terminal_agent(state: AgentState) -> AgentState:
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     command = content.strip().strip("`")
+    # Defensiv: HITL-Prefix abstreifen falls LLM ihn aus der History nachahmt
+    if command.startswith("__CONFIRM_TERMINAL__:"):
+        command = command[len("__CONFIRM_TERMINAL__:"):]
 
     if command == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom Terminal-Agent nicht unterstuetzt.")]}
