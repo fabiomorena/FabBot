@@ -202,6 +202,7 @@ Coverage: security patterns · rate limiting · terminal allowlist · TTS cleani
 - **Phase 17** ✅ Performance – Haiku supervisor, ~40% faster
 - **Phase 18** ✅ Security – two-stage LLM-Guard + content isolation
 - **Phase 19** ✅ stop_speaking() tests, precise suspicious patterns
+- **Phase 20** ✅ Bug fixes – AIMessage echo fix, HITL context isolation
 
 ---
 
