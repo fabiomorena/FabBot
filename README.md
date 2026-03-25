@@ -205,6 +205,7 @@ Coverage: security patterns · rate limiting · terminal allowlist · TTS cleani
 - **Phase 19** ✅ stop_speaking() tests, precise suspicious patterns
 - **Phase 20** ✅ Bug fixes – AIMessage echo fix, HITL context isolation
 - **Phase 21** ✅ Supervisor routing fix – last HumanMessage only, Launch Agent setup
+- **Phase 22** ✅ Persistent logging – TimedRotatingFileHandler, 7-day rotation, review_log.sh
 
 ---
 
