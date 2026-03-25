@@ -55,6 +55,7 @@ FabBot/
 ├── requirements.lock        # Pinned lock file (pip-compile)
 ├── requirements-ci.txt      # CI dependencies (no macOS-only packages)
 ├── .env.example             # Environment variable template
+├── review_log.sh            # Daily log summary script
 ├── .github/
 │   └── workflows/
 │       └── test.yml         # GitHub Actions CI – pip cache + pytest
@@ -121,13 +122,42 @@ brew install ffmpeg
 cp .env.example .env   # fill in API keys
 ```
 
+### macOS Permissions (required)
+
+FabBot runs as a background process and needs explicit permissions to access files and folders.
+
+**Full Disk Access** (for `/search`, `file_agent`, `terminal_agent`):
+`System Settings → Privacy & Security → Full Disk Access → + → .venv/bin/python`
+
+**Prevent idle sleep** (to keep bot running while away):
+```bash
+caffeinate -i &   # prevents idle sleep, allows screen lock
+```
+Note: closing the laptop lid will still suspend the bot. Keep lid open or connect an external display.
+
 ### Run
 
 ```bash
 python main.py        # Bot only
-launchctl load ~/Library/LaunchAgents/com.fabbot.agent.plist  # Run as Launch Agent (auto-start)
 python menubar.py     # With menubar app
 pytest tests/ -v      # Run tests (74 tests)
+```
+
+### Run as Launch Agent (auto-start on login)
+
+```bash
+# Install
+cp com.fabbot.agent.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fabbot.agent.plist
+
+# Control
+launchctl start com.fabbot.agent
+launchctl stop com.fabbot.agent
+
+# Logs
+tail -f ~/.fabbot/fabbot.log
+./review_log.sh          # daily summary
+./review_log.sh 2026-03-25  # specific date
 ```
 
 ---
@@ -141,6 +171,7 @@ pytest tests/ -v      # Run tests (74 tests)
 | "Wie viel freier Speicher ist noch?" | `terminal_agent` |
 | "Was ist heute für ein Datum?" | `terminal_agent` → `18.03.2026, 19:06 Uhr` |
 | "Suche nach den neuesten KI News" | `web_agent` |
+| "Wie ist das Wetter in Berlin?" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
 | "Was habe ich dich gerade gefragt?" | `chat_agent` |
 | 🎤 Voice note | Whisper → any agent |
@@ -191,6 +222,18 @@ Coverage: security patterns · rate limiting · terminal allowlist · TTS cleani
 
 ---
 
+## Logging
+
+Logs are written to `~/.fabbot/fabbot.log` with daily rotation (7 days kept).
+
+```bash
+tail -f ~/.fabbot/fabbot.log      # live log
+./review_log.sh                   # today's summary
+./review_log.sh 2026-03-25        # specific date summary
+```
+
+---
+
 ## Roadmap
 
 - **Phase 1–9** ✅ Foundation, agents, security hardening
@@ -206,6 +249,7 @@ Coverage: security patterns · rate limiting · terminal allowlist · TTS cleani
 - **Phase 20** ✅ Bug fixes – AIMessage echo fix, HITL context isolation
 - **Phase 21** ✅ Supervisor routing fix – last HumanMessage only, Launch Agent setup
 - **Phase 22** ✅ Persistent logging – TimedRotatingFileHandler, 7-day rotation, review_log.sh
+- **Phase 23** ✅ macOS permissions – Full Disk Access for Launch Agent, caffeinate docs
 
 ---
 
