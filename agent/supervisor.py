@@ -23,7 +23,7 @@ SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, 
 
 Verfuegbare Agenten:
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
-- terminal_agent: Shell-Befehle, Datum, Uhrzeit, Speicher, CPU, Prozesse
+- terminal_agent: Shell-Befehle, Datum, Uhrzeit, Speicher, CPU, Prozesse, ALLE Fragen nach aktuellem Datum oder Uhrzeit
 - web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
@@ -44,6 +44,23 @@ FINISH
 """
 
 
+def _filter_hitl_messages(messages: list) -> list:
+    """Entfernt HITL-Nachrichten aus dem Kontext bevor sie an den LLM uebergeben werden.
+    Verhindert dass HITL-Prefixes (__CONFIRM_*, __SCREENSHOT__) vom LLM nachgeahmt werden.
+    HITL-AIMessages werden durch neutralen Platzhalter ersetzt damit der Gespraechsfluss erhalten bleibt.
+    """
+    filtered = []
+    for msg in messages:
+        content = msg.content if hasattr(msg, "content") else ""
+        if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__")):
+            if isinstance(msg, AIMessage):
+                filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
+            # HumanMessages mit HITL-Prefix werden komplett entfernt (sollten nicht vorkommen)
+            continue
+        filtered.append(msg)
+    return filtered
+
+
 def supervisor_node(state: AgentState) -> AgentState:
     """Routing via Haiku – schnell und kostenguenstig.
     Jede AIMessage beendet den Graph (FINISH) – egal ob HITL-Prefix oder normale Antwort.
@@ -53,11 +70,12 @@ def supervisor_node(state: AgentState) -> AgentState:
     messages = state["messages"]
 
     # Sobald ein Agent geantwortet hat → FINISH
-    # Bot.py entscheidet dann ob HITL oder normale Antwort
     if messages and isinstance(messages[-1], AIMessage):
         return {"next_agent": "FINISH"}
 
-    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + messages
+    # HITL-Nachrichten aus Kontext filtern bevor Haiku routet
+    clean_messages = _filter_hitl_messages(messages)
+    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + clean_messages
     response = llm.invoke(all_messages)
     content = response.content
     if isinstance(content, list):
