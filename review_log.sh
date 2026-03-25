@@ -13,7 +13,7 @@ grep "$DATE" "$LOG" | grep -i "agent\|routing" | sed 's/.*\[/[/'
 
 echo ""
 echo "--- Anthropic API Calls ---"
-grep "$DATE" "$LOG" | grep "anthropic" | wc -l | xargs echo "API Calls:"
+grep "$DATE" "$LOG" | grep "api.anthropic.com/v1/messages" | wc -l | xargs echo "API Calls:"
 
 echo ""
 echo "--- Blockierte Anfragen ---"

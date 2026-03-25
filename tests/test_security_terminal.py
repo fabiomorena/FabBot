@@ -414,3 +414,64 @@ class TestStopSpeaking:
 
         assert first is True
         assert second is False
+
+class TestFilterHitlMessages:
+    """Tests fuer _filter_hitl_messages() in agent/supervisor.py."""
+
+    def setup_method(self) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage
+        self.AIMessage = AIMessage
+        self.HumanMessage = HumanMessage
+        from agent.supervisor import _filter_hitl_messages
+        self.filter = _filter_hitl_messages
+
+    def test_normal_messages_pass_through(self) -> None:
+        """Normale Nachrichten werden unveraendert durchgeleitet."""
+        msgs = [
+            self.HumanMessage(content="Hallo"),
+            self.AIMessage(content="Hi, wie kann ich helfen?"),
+        ]
+        result = self.filter(msgs)
+        assert len(result) == 2
+        assert result[0].content == "Hallo"
+        assert result[1].content == "Hi, wie kann ich helfen?"
+
+    def test_confirm_terminal_replaced(self) -> None:
+        """__CONFIRM_TERMINAL__-AIMessage wird durch Platzhalter ersetzt."""
+        msgs = [self.AIMessage(content="__CONFIRM_TERMINAL__:df -h")]
+        result = self.filter(msgs)
+        assert len(result) == 1
+        assert result[0].content == "[Aktion wurde ausgefuehrt]"
+
+    def test_confirm_create_event_replaced(self) -> None:
+        """__CONFIRM_CREATE_EVENT__-AIMessage wird ersetzt."""
+        msgs = [self.AIMessage(content="__CONFIRM_CREATE_EVENT__::Meeting::2026-03-25")]
+        result = self.filter(msgs)
+        assert len(result) == 1
+        assert result[0].content == "[Aktion wurde ausgefuehrt]"
+
+    def test_screenshot_replaced(self) -> None:
+        """__SCREENSHOT__-AIMessage wird ersetzt."""
+        msgs = [self.AIMessage(content="__SCREENSHOT__:somedata")]
+        result = self.filter(msgs)
+        assert len(result) == 1
+        assert result[0].content == "[Aktion wurde ausgefuehrt]"
+
+    def test_human_message_with_hitl_prefix_removed(self) -> None:
+        """HumanMessage mit HITL-Prefix wird komplett entfernt."""
+        msgs = [self.HumanMessage(content="__CONFIRM_TERMINAL__:ls")]
+        result = self.filter(msgs)
+        assert len(result) == 0
+
+    def test_mixed_messages(self) -> None:
+        """Gemischte Messages: normale bleiben, HITL wird ersetzt."""
+        msgs = [
+            self.HumanMessage(content="Wie viel Platz?"),
+            self.AIMessage(content="__CONFIRM_TERMINAL__:df -h"),
+            self.HumanMessage(content="Bestaetigt"),
+        ]
+        result = self.filter(msgs)
+        assert len(result) == 3
+        assert result[0].content == "Wie viel Platz?"
+        assert result[1].content == "[Aktion wurde ausgefuehrt]"
+        assert result[2].content == "Bestaetigt"
