@@ -127,6 +127,7 @@ async def synthesize(text: str) -> bytes | None:
 
 async def speak_and_send(text: str, bot, chat_id: int) -> bool:
     """Spricht Text ueber Mac-Lautsprecher und schickt Sprachnachricht an Telegram."""
+    stop_speaking()  # Laufendes Audio stoppen bevor neue Ausgabe startet
     if not _tts_enabled:
         return False
 

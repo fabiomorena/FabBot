@@ -101,6 +101,11 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
             allowed = ", ".join(sorted(ALLOWED_SYSTEM_PROFILER_TYPES))
             return False, f"system_profiler Datatype nicht erlaubt. Erlaubt: {allowed}"
 
+    if base_cmd == "df":
+        # df darf keine Pfad-Argumente bekommen – nur Flags wie -h
+        for part in args:
+            if part.startswith("/"):
+                return False, f"df mit Pfad-Argument `{part}` nicht erlaubt. Nutze einfach: df -h"
     if base_cmd == "find":
         if args:
             search_path = os.path.expanduser(args[0])
