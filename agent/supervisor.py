@@ -27,7 +27,7 @@ Verfuegbare Agenten:
 - web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten, Wetter, ALLE Fragen die aktuelle oder externe Informationen erfordern
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
-- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Fragen, alles was kein konkreter Systembefehl oder externe Suche ist
+- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Mitteilungen (z.B. 'Ich gehe jetzt...', 'Ich bin zuhause'), alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
