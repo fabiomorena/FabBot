@@ -254,6 +254,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 25** ✅ UX fixes – TTS interrupt on new message, df path blocking, supervisor routing precision
 - **Phase 26** ✅ Local CD – post-merge Git Hook auto-restarts Launch Agent after git pull
 - **Phase 27** ✅ Bug fixes – web_agent robust JSON parsing, calendar macOS permissions, df path argument blocking
+- **Phase 28** ✅ CI fixes – langgraph-checkpoint-sqlite + aiosqlite in requirements-ci.txt, actions v5
 
 ---
 
