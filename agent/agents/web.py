@@ -68,7 +68,15 @@ def _extract_json(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
-    return text.strip()
+    text = text.strip()
+    # Leere Antwort abfangen
+    if not text:
+        return "UNSUPPORTED"
+    # JSON-Block extrahieren falls in Text eingebettet
+    match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
+    if match:
+        return match.group(0)
+    return text
 
 
 def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
