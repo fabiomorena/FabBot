@@ -84,6 +84,9 @@ def _clean_for_tts(text: str) -> str:
         cleaned_lines.append(line)
     text = "\n".join(cleaned_lines)
 
+    # Emojis entfernen
+    text = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', text, flags=re.UNICODE)
+
     # Mehrfache Leerzeilen reduzieren
     text = re.sub(r"\n{3,}", "\n\n", text)
 
