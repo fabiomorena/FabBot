@@ -1,0 +1,6 @@
+#!/bin/bash
+echo "🔄 FabBot: Änderungen erkannt – Bot wird neu gestartet..."
+launchctl stop com.fabbot.agent
+sleep 2
+launchctl start com.fabbot.agent
+echo "✅ FabBot neu gestartet."
