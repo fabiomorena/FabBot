@@ -252,6 +252,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 23** ✅ macOS permissions – Full Disk Access for Launch Agent, caffeinate docs
 - **Phase 24** ✅ Bug fixes – terminal HITL prefix, web_agent JSON logging, _filter_hitl_messages tests, review_log.sh precise API count
 - **Phase 25** ✅ UX fixes – TTS interrupt on new message, df path blocking, supervisor routing precision
+- **Phase 26** ✅ Local CD – post-merge Git Hook auto-restarts Launch Agent after git pull
 
 ---
 
