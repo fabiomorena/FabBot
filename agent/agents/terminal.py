@@ -19,7 +19,7 @@ FORBIDDEN_ARGS = {
     "/etc/passwd", "/etc/shadow", "/etc/sudoers",
     "~/.ssh", ".ssh/id_rsa", ".ssh/id_ed25519",
     ".ssh/authorized_keys", ".ssh/config",
-    "/private/etc", "/System", "/Library/LaunchDaemons",
+    "/private/etc", "/Library/LaunchDaemons",
     ".fabbot/local_api_token", "local_api_token",
     ".env", "id_rsa", "id_ed25519",
 }
@@ -27,7 +27,6 @@ FORBIDDEN_ARGS = {
 FORBIDDEN_PATH_PREFIXES = (
     "/etc/",
     "/private/etc/",
-    "/System/",
     "/Library/LaunchDaemons/",
     "/Library/LaunchAgents/",
 )
@@ -53,6 +52,7 @@ whoami, date, find, wc, sort, uniq, uptime, sw_vers, diskutil, system_profiler
 Wichtige Regeln fuer bestimmte Befehle:
 - Fuer Datumsabfragen IMMER dieses Format verwenden: date "+%d.%m.%Y, %H:%M Uhr"
   Beispiel-Output: 18.03.2026, 19:02 Uhr
+- Fuer Festplattenplatz IMMER nur: df -h (NIEMALS mit Pfad-Argument wie /System)
 
 Wenn die Anfrage keinen erlaubten Befehl erfordert, antworte mit: UNSUPPORTED
 """
@@ -102,10 +102,9 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
             return False, f"system_profiler Datatype nicht erlaubt. Erlaubt: {allowed}"
 
     if base_cmd == "df":
-        # df darf keine Pfad-Argumente bekommen – nur Flags wie -h
-        for part in args:
-            if part.startswith("/"):
-                return False, f"df mit Pfad-Argument `{part}` nicht erlaubt. Nutze einfach: df -h"
+        # Pfad-Argumente entfernen, nur Flags behalten
+        clean_args = [a for a in args if not a.startswith("/")]
+        return True, "df " + " ".join(clean_args) if clean_args else "df -h"
     if base_cmd == "find":
         if args:
             search_path = os.path.expanduser(args[0])
