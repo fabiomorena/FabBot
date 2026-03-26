@@ -242,3 +242,5 @@ zstandard==0.25.0
     # via langsmith
 
 pytest
+langgraph-checkpoint-sqlite==3.0.3
+aiosqlite==0.22.1
