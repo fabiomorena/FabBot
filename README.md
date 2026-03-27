@@ -260,6 +260,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 31** ✅ HITL memory fix – __MEMORY__ prefix prevents old results leaking into confirmation flow
 - **Phase 32** ✅ Async – supervisor_node fully async (ainvoke), all agents now non-blocking
 - **Phase 33** ✅ Morning Briefing – daily 07:30 Uhr, Wetter + Kalender + News + TTS
+- **Phase 34** ✅ Quality – 88 tests, MEMORY filter tests, briefing TTS fix, BRIEFING_TIME validation
 
 ---
 
