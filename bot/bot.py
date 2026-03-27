@@ -47,7 +47,7 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
         config = {"configurable": {"thread_id": str(chat_id)}}
         await agent_graph.aupdate_state(
             config,
-            {"messages": [AIMessage(content=result_text)]},
+            {"messages": [AIMessage(content=f"__MEMORY__:{result_text}")]},
         )
     except Exception as e:
         logger.warning(f"Memory update nach HITL fehlgeschlagen (nicht kritisch): {e}")

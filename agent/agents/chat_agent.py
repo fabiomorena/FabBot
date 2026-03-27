@@ -16,7 +16,7 @@ Typische Faelle fuer dich:
 - Kurze Folgefragen zum vorherigen Thema
 """
 
-_HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__")
+_HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")
 
 
 def _clean_messages_for_chat(messages: list) -> list:

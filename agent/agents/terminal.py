@@ -153,7 +153,9 @@ def execute_command(command: str) -> str:
 def terminal_agent(state: AgentState) -> AgentState:
     """Generiert einen Shell-Befehl via LLM und gibt ihn zur HITL-Bestaetigung weiter."""
     llm = get_llm()
-    messages = [SystemMessage(content=PROMPT)] + state["messages"]
+    # __MEMORY__-Messages filtern damit der LLM keine alten Ergebnisse nachahmt
+    filtered = [m for m in state["messages"] if not (hasattr(m, "content") and isinstance(m.content, str) and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__")))]
+    messages = [SystemMessage(content=PROMPT)] + filtered
     response = llm.invoke(messages)
     content = response.content
     if isinstance(content, list):

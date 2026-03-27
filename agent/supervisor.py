@@ -52,7 +52,7 @@ def _filter_hitl_messages(messages: list) -> list:
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
-        if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__")):
+        if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
             # HumanMessages mit HITL-Prefix werden komplett entfernt (sollten nicht vorkommen)
@@ -70,7 +70,8 @@ def supervisor_node(state: AgentState) -> AgentState:
     messages = state["messages"]
 
     # Sobald ein Agent geantwortet hat → FINISH
-    if messages and isinstance(messages[-1], AIMessage):
+    # __MEMORY__-Messages werden ignoriert (kommen von _update_memory in bot.py)
+    if messages and isinstance(messages[-1], AIMessage) and not messages[-1].content.startswith("__MEMORY__:"):
         return {"next_agent": "FINISH"}
 
     # HITL-Nachrichten aus Kontext filtern bevor Haiku routet
