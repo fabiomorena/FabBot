@@ -61,7 +61,7 @@ def _filter_hitl_messages(messages: list) -> list:
     return filtered
 
 
-def supervisor_node(state: AgentState) -> AgentState:
+async def supervisor_node(state: AgentState) -> AgentState:
     """Routing via Haiku – schnell und kostenguenstig.
     Jede AIMessage beendet den Graph (FINISH) – egal ob HITL-Prefix oder normale Antwort.
     Der HITL-Dispatch passiert in bot.py, nicht hier.
@@ -80,7 +80,7 @@ def supervisor_node(state: AgentState) -> AgentState:
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
     routing_messages = [last_human[-1]] if last_human else clean_messages[-1:]
     all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
-    response = llm.invoke(all_messages)
+    response = await llm.ainvoke(all_messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
