@@ -261,6 +261,8 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 32** ✅ Async – supervisor_node fully async (ainvoke), all agents now non-blocking
 - **Phase 33** ✅ Morning Briefing – daily 07:30 Uhr, Wetter + Kalender + News + TTS
 - **Phase 34** ✅ Quality – 88 tests, MEMORY filter tests, briefing TTS fix, BRIEFING_TIME validation
+- **Phase 35** ✅ Reminder Agent – SQLite-based reminders, natural language, proactive delivery
+- **Phase 36** ✅ Calendar fix – last HumanMessage only prevents list/create confusion
 
 ---
 
