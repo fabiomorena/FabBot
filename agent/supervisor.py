@@ -11,6 +11,7 @@ from agent.agents.file import file_agent
 from agent.agents.web import web_agent
 from agent.agents.calendar import calendar_agent
 from agent.agents.chat_agent import chat_agent
+from agent.agents.reminder_agent import reminder_agent
 
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -27,6 +28,7 @@ Verfuegbare Agenten:
 - web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten, Wetter, ALLE Fragen die aktuelle oder externe Informationen erfordern
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
+- reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
 - chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Mitteilungen (z.B. 'Ich gehe jetzt...', 'Ich bin zuhause'), alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
@@ -88,7 +90,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     valid = {
         "computer_agent", "terminal_agent", "file_agent",
-        "web_agent", "calendar_agent", "chat_agent", "FINISH"
+        "web_agent", "calendar_agent", "reminder_agent", "chat_agent", "FINISH"
     }
     if next_agent not in valid:
         next_agent = "chat_agent"
@@ -112,6 +114,7 @@ def _build_graph() -> StateGraph:
     graph.add_node("web_agent", web_agent)
     graph.add_node("calendar_agent", calendar_agent)
     graph.add_node("chat_agent", chat_agent)
+    graph.add_node("reminder_agent", reminder_agent)
 
     graph.set_entry_point("supervisor")
 
@@ -124,13 +127,14 @@ def _build_graph() -> StateGraph:
             "file_agent": "file_agent",
             "web_agent": "web_agent",
             "calendar_agent": "calendar_agent",
+            "reminder_agent": "reminder_agent",
             "chat_agent": "chat_agent",
             "FINISH": END,
         },
     )
 
     for agent in ["computer_agent", "terminal_agent", "file_agent",
-                  "web_agent", "calendar_agent", "chat_agent"]:
+                  "web_agent", "calendar_agent", "reminder_agent", "chat_agent"]:
         graph.add_edge(agent, "supervisor")
 
     return graph

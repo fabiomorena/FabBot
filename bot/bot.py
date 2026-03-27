@@ -413,6 +413,9 @@ async def _post_init(app: Application) -> None:
         from bot.briefing import run_briefing_scheduler
         asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
         logger.info("Morning Briefing Scheduler gestartet.")
+        from bot.reminders import run_reminder_scheduler
+        asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+        logger.info("Reminder Scheduler gestartet.")
 
 
 async def _post_shutdown(app: Application) -> None:
