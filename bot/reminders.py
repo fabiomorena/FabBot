@@ -69,6 +69,7 @@ def list_reminders(chat_id: int) -> list[dict]:
 
 def mark_sent(reminder_id: int) -> None:
     """Markiert eine Erinnerung als gesendet."""
+    _init_db()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE reminders SET sent=1 WHERE id=?", (reminder_id,))
         conn.commit()
