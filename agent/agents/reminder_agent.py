@@ -73,7 +73,10 @@ async def reminder_agent(state: AgentState) -> AgentState:
         hasattr(m, "content") and isinstance(m.content, str) and
         m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
     )]
-    messages = [SystemMessage(content=_build_prompt())] + filtered
+    # Nur letzte HumanMessage – verhindert Zeitberechnung auf Basis alter Messages
+    human_msgs = [m for m in filtered if hasattr(m, 'type') and m.type == 'human']
+    last_msg = [human_msgs[-1]] if human_msgs else filtered[-1:]
+    messages = [SystemMessage(content=_build_prompt())] + last_msg
     response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
