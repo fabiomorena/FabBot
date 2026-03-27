@@ -492,3 +492,48 @@ class TestFilterHitlMessages:
         assert result[0].content == "Wie viel Platz?"
         assert result[1].content == "[Aktion wurde ausgefuehrt]"
         assert result[2].content == "Bestaetigt"
+
+
+class TestFilterHitlMessagesMemory:
+    """Tests fuer __MEMORY__ Filtering in _filter_hitl_messages()."""
+
+    def setup_method(self) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage
+        self.AIMessage = AIMessage
+        self.HumanMessage = HumanMessage
+        from agent.supervisor import _filter_hitl_messages
+        self.filter = _filter_hitl_messages
+
+    def test_memory_message_replaced(self) -> None:
+        """__MEMORY__-AIMessage wird durch Platzhalter ersetzt."""
+        msgs = [self.AIMessage(content="__MEMORY__:df -h Ergebnis: 92GB frei")]
+        result = self.filter(msgs)
+        assert len(result) == 1
+        assert result[0].content == "[Aktion wurde ausgefuehrt]"
+
+    def test_memory_not_in_output(self) -> None:
+        """__MEMORY__-Inhalt ist nicht mehr im gefilterten State sichtbar."""
+        msgs = [
+            self.HumanMessage(content="Wie viel Platz?"),
+            self.AIMessage(content="__MEMORY__:Filesystem 92GB frei"),
+        ]
+        result = self.filter(msgs)
+        assert "92GB" not in result[-1].content
+        assert result[-1].content == "[Aktion wurde ausgefuehrt]"
+
+    def test_normal_ai_message_not_affected(self) -> None:
+        """Normale AIMessages werden nicht gefiltert."""
+        msgs = [self.AIMessage(content="Du hast 92GB frei.")]
+        result = self.filter(msgs)
+        assert result[0].content == "Du hast 92GB frei."
+
+    def test_mixed_memory_and_normal(self) -> None:
+        """Gemischt: MEMORY wird ersetzt, normale Messages bleiben."""
+        msgs = [
+            self.HumanMessage(content="Platz?"),
+            self.AIMessage(content="__MEMORY__:92GB frei"),
+            self.HumanMessage(content="Danke"),
+        ]
+        result = self.filter(msgs)
+        assert result[1].content == "[Aktion wurde ausgefuehrt]"
+        assert result[2].content == "Danke"

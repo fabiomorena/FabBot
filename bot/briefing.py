@@ -14,7 +14,14 @@ from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
 
-BRIEFING_TIME = os.getenv("BRIEFING_TIME", "07:30")
+_raw_time = os.getenv("BRIEFING_TIME", "07:30")
+try:
+    _h, _m = _raw_time.split(":")
+    assert 0 <= int(_h) <= 23 and 0 <= int(_m) <= 59
+    BRIEFING_TIME = _raw_time
+except Exception:
+    logger.warning(f"Ungültiges BRIEFING_TIME Format '{_raw_time}' – verwende 07:30")
+    BRIEFING_TIME = "07:30"
 
 
 def _get_calendar_today() -> str:
@@ -150,9 +157,7 @@ async def run_briefing_scheduler(bot, chat_id: int) -> None:
             # TTS
             from bot.tts import speak_and_send, is_tts_enabled
             if is_tts_enabled():
-                from bot.tts import _clean_for_tts, synthesize
-                clean = _clean_for_tts(briefing)
-                await speak_and_send(clean, bot, chat_id)
+                await speak_and_send(briefing, bot, chat_id)
             logger.info("Morning Briefing erfolgreich gesendet.")
         except Exception as e:
             logger.error(f"Morning Briefing Fehler: {e}")
