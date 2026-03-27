@@ -2,7 +2,7 @@ import re
 import json
 import subprocess
 from datetime import datetime, timedelta, date
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
@@ -144,7 +144,10 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
 
 async def calendar_agent(state: AgentState) -> AgentState:
     llm = get_llm()
-    messages = [SystemMessage(content=_build_prompt())] + state["messages"]
+    # Nur letzte HumanMessage – History verwirrt den LLM bei create vs list
+    human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+    last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
+    messages = [SystemMessage(content=_build_prompt())] + last_msg
     response = llm.invoke(messages)
     content = response.content
     if isinstance(content, list):
