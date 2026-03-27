@@ -74,7 +74,15 @@ async def _fetch_web(query: str) -> str:
                 data = resp.json()
                 results = data.get("results", [])
                 if results:
-                    return "\n".join(f"• {r['title']}" for r in results[:3])
+                    import re
+                    lines = []
+                    for r in results[:3]:
+                        title = r.get("title", "").split(" - ")[0].split(" | ")[0].strip()
+                        snippet = r.get("content", r.get("snippet", ""))
+                        snippet = re.sub(r"[#*_`]", "", snippet).strip()
+                        snippet = re.sub(r"\s+", " ", snippet)[:80].strip()
+                        lines.append(f"• {title}" + (f": {snippet}" if snippet else ""))
+                    return "\n".join(lines)
         return "Keine Ergebnisse."
     except Exception as e:
         logger.warning(f"Web-Suche Fehler im Briefing: {e}")
@@ -83,7 +91,12 @@ async def _fetch_web(query: str) -> str:
 
 async def generate_briefing() -> str:
     """Erstellt das komplette Morning Briefing."""
-    today_str = date.today().strftime("%A, %d.%m.%Y")
+    days_de = {
+        "Monday": "Montag", "Tuesday": "Dienstag", "Wednesday": "Mittwoch",
+        "Thursday": "Donnerstag", "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag"
+    }
+    weekday_de = days_de.get(date.today().strftime("%A"), date.today().strftime("%A"))
+    today_str = f"{weekday_de}, {date.today().strftime('%d.%m.%Y')}"
 
     # Parallel abrufen
     wetter_task = asyncio.create_task(_fetch_web("Wetter Berlin heute"))
