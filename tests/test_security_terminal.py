@@ -334,6 +334,23 @@ class TestCleanForTts:
         assert "Details" in result
 
 
+    def test_emoji_removed(self):
+        result = _clean_for_tts("Guten Morgen! 😊")
+        assert "😊" not in result
+        assert "Guten Morgen" in result
+    def test_multiple_emojis_removed(self):
+        result = _clean_for_tts("Super! 🎉🚀✅")
+        assert "🎉" not in result
+        assert "🚀" not in result
+        assert "✅" not in result
+        assert "Super" in result
+    def test_text_without_emoji_unchanged(self):
+        result = _clean_for_tts("Kein Emoji hier.")
+        assert result == "Kein Emoji hier."
+    def test_only_emoji_returns_empty(self):
+        result = _clean_for_tts("😊🎉")
+        assert result.strip() == ""
+
 class TestTtsToggle:
 
     def test_set_enabled(self):
