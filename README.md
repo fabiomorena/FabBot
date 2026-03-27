@@ -256,6 +256,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 27** ✅ Bug fixes – web_agent robust JSON parsing, calendar macOS permissions, df path argument blocking
 - **Phase 28** ✅ CI fixes – langgraph-checkpoint-sqlite + aiosqlite in requirements-ci.txt, actions v5
 - **Phase 29** ✅ Stability – moved project to internal SSD (no more SIGBUS crashes), emoji filter in TTS
+- **Phase 30** ✅ Quality – 84 tests, emoji-stripping tests, df /System fix, TTS emoji filter
 
 ---
 
