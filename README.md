@@ -263,6 +263,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 34** ✅ Quality – 88 tests, MEMORY filter tests, briefing TTS fix, BRIEFING_TIME validation
 - **Phase 35** ✅ Reminder Agent – SQLite-based reminders, natural language, proactive delivery
 - **Phase 36** ✅ Calendar fix – last HumanMessage only prevents list/create confusion
+- **Phase 37** ✅ Reminder Agent fixes – correct time calculation, last HumanMessage only
 
 ---
 
