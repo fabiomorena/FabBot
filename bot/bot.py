@@ -406,6 +406,13 @@ async def _post_init(app: Application) -> None:
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
+    # Morning Briefing Scheduler starten
+    allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+    if allowed_ids:
+        chat_id = int(allowed_ids.split(",")[0].strip())
+        from bot.briefing import run_briefing_scheduler
+        asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+        logger.info("Morning Briefing Scheduler gestartet.")
 
 
 async def _post_shutdown(app: Application) -> None:
