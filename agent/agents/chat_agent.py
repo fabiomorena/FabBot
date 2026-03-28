@@ -1,11 +1,17 @@
-from langchain_core.messages import SystemMessage, AIMessage
+import asyncio
+import logging
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm
 
-PROMPT = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
+logger = logging.getLogger(__name__)
 
-Beantworte die Frage des Users direkt aus dem Kontext des bisherigen Gespraechs.
-Kein Tool-Aufruf, kein Suchen – nur direkte, praezise Antworten basierend auf dem was bereits bekannt ist.
+_CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
+
+Beantworte die Frage des Users. Du hast Zugriff auf:
+1. Den persoenlichen Kontext des Users (Profil) – das ist deine primaere Wissensquelle
+2. Den bisherigen Gespraechsverlauf – fuer Folgefragen und Kontext
+Kein Tool-Aufruf, kein Suchen – nur direkte, praezise Antworten.
 
 Typische Faelle fuer dich:
 - "Was habe ich dich gerade gefragt?"
@@ -14,7 +20,32 @@ Typische Faelle fuer dich:
 - "Was meintest du mit X?"
 - "Danke" / allgemeine Hoeflichkeiten
 - Kurze Folgefragen zum vorherigen Thema
+- Persoenliche Fragen ueber den User (Wohnort, Projekte, Geraete, Praeferenzen)
 """
+
+
+def _build_chat_prompt() -> str:
+    """
+    Baut den Chat-Prompt mit vollständigem persönlichem Kontext.
+    Fail-safe: Bei jedem Fehler wird der Basis-Prompt zurückgegeben.
+    """
+    try:
+        from agent.profile import get_profile_context_full
+        ctx = get_profile_context_full()
+        if ctx:
+            return (
+                _CHAT_PROMPT_BASE
+                + "\nDer folgende Kontext ist deine primaere Wissensquelle ueber den User. "
+                + "Nutze ihn bevorzugt gegenueber dem Gespraechsverlauf:\n\n"
+                + ctx
+            )
+    except Exception:
+        pass
+    return _CHAT_PROMPT_BASE
+
+
+# Einmalig beim Modulimport gebaut – kein Overhead pro Aufruf
+PROMPT = _build_chat_prompt()
 
 _HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")
 
@@ -28,7 +59,6 @@ def _clean_messages_for_chat(messages: list) -> list:
         content = msg.content if hasattr(msg, "content") else ""
         if isinstance(content, str) and content.startswith(_HITL_PREFIXES):
             if isinstance(msg, AIMessage):
-                # HITL-Prefix durch lesbaren Text ersetzen
                 if content.startswith("__CONFIRM_TERMINAL__:"):
                     cmd = content[len("__CONFIRM_TERMINAL__:"):]
                     cleaned.append(AIMessage(content=f"[Terminal-Befehl ausgefuehrt: {cmd}]"))
@@ -47,10 +77,21 @@ def _clean_messages_for_chat(messages: list) -> list:
     return cleaned
 
 
+def _get_last_human_message(messages: list) -> str:
+    """Extrahiert den Text der letzten HumanMessage für den Auto-Learn-Hook."""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content).strip()
+            return str(content).strip()
+    return ""
+
+
 async def chat_agent(state: AgentState) -> AgentState:
     """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools.
     HITL-Nachrichten werden durch lesbare Platzhalter ersetzt.
-    Nutzt ainvoke() um den asyncio Event-Loop nicht zu blockieren.
+    Nach der Antwort: Auto-Learn-Hook als non-blocking Background-Task.
     """
     llm = get_llm()
     clean_messages = _clean_messages_for_chat(state["messages"])
@@ -59,4 +100,16 @@ async def chat_agent(state: AgentState) -> AgentState:
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+
+    # Auto-Learn: letzte HumanMessage als Background-Task analysieren
+    # Non-blocking – Antwort an User wird nicht verzögert
+    # Fail-safe – Fehler im Learner beeinflussen den Bot nicht
+    try:
+        human_text = _get_last_human_message(state["messages"])
+        if human_text:
+            from agent.profile_learner import apply_learning
+            asyncio.create_task(apply_learning(human_text))
+    except Exception as e:
+        logger.debug(f"Auto-Learn Task konnte nicht gestartet werden (ignoriert): {e}")
+
     return {"messages": [AIMessage(content=content.strip())]}
