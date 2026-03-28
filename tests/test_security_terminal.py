@@ -601,3 +601,121 @@ class TestIsSafeOutputPath:
         """LLM-generierter Slug mit eingebettetem Path-Traversal wird blockiert."""
         path = KNOWLEDGE_DIR / "../../.ssh/id_rsa"
         assert _is_safe_output_path(path) is False
+
+# ---------------------------------------------------------------------------
+# bot.py Tests – _invoke_with_retry()
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+from anthropic import APIStatusError
+
+
+def _make_529() -> APIStatusError:
+    """Erstellt einen echten APIStatusError mit status_code 529."""
+    response = MagicMock()
+    response.status_code = 529
+    return APIStatusError("overloaded", response=response, body={})
+
+
+def _make_api_error(status_code: int) -> APIStatusError:
+    """Erstellt einen APIStatusError mit beliebigem Status-Code."""
+    response = MagicMock()
+    response.status_code = status_code
+    return APIStatusError(f"error {status_code}", response=response, body={})
+
+
+class TestInvokeWithRetry:
+
+    @pytest.mark.asyncio
+    async def test_success_on_first_attempt(self) -> None:
+        """Erfolg beim ersten Versuch – kein Retry nötig."""
+        expected = {"messages": []}
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = expected
+
+        with patch("agent.supervisor.agent_graph", mock_graph):
+            from bot.bot import _invoke_with_retry
+            result = await _invoke_with_retry({}, {})
+
+        assert result == expected
+        assert mock_graph.ainvoke.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_on_529_then_success(self) -> None:
+        """529 beim ersten Versuch, Erfolg beim zweiten."""
+        expected = {"messages": []}
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = [_make_529(), expected]
+
+        with patch("agent.supervisor.agent_graph", mock_graph), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            from bot.bot import _invoke_with_retry
+            result = await _invoke_with_retry({}, {})
+
+        assert result == expected
+        assert mock_graph.ainvoke.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_twice_then_success(self) -> None:
+        """529 zweimal, Erfolg beim dritten Versuch."""
+        expected = {"messages": []}
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = [_make_529(), _make_529(), expected]
+
+        with patch("agent.supervisor.agent_graph", mock_graph), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            from bot.bot import _invoke_with_retry
+            result = await _invoke_with_retry({}, {})
+
+        assert result == expected
+        assert mock_graph.ainvoke.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_all_attempts_fail_raises(self) -> None:
+        """3x 529 – Exception wird nach letztem Versuch weitergereicht."""
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = [_make_529(), _make_529(), _make_529()]
+
+        with patch("agent.supervisor.agent_graph", mock_graph), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            from bot.bot import _invoke_with_retry
+            with pytest.raises(APIStatusError) as exc_info:
+                await _invoke_with_retry({}, {})
+
+        assert exc_info.value.status_code == 529
+        assert mock_graph.ainvoke.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_non_529_not_retried(self) -> None:
+        """Anderer API-Fehler (z.B. 400) wird sofort weitergereicht – kein Retry."""
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = _make_api_error(400)
+
+        with patch("agent.supervisor.agent_graph", mock_graph), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            from bot.bot import _invoke_with_retry
+            with pytest.raises(APIStatusError) as exc_info:
+                await _invoke_with_retry({}, {})
+
+        assert exc_info.value.status_code == 400
+        assert mock_graph.ainvoke.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_exponential_backoff_delays(self) -> None:
+        """Wartezeiten: 2s nach Versuch 1, 4s nach Versuch 2."""
+        expected = {"messages": []}
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = [_make_529(), _make_529(), expected]
+
+        sleep_calls = []
+
+        async def mock_sleep(delay):
+            sleep_calls.append(delay)
+
+        with patch("agent.supervisor.agent_graph", mock_graph), \
+             patch("asyncio.sleep", side_effect=mock_sleep):
+            from bot.bot import _invoke_with_retry
+            await _invoke_with_retry({}, {})
+
+        assert sleep_calls == [2.0, 4.0]
