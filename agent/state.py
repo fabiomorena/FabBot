@@ -10,6 +10,7 @@ AgentName = Literal[
     "web_agent",
     "calendar_agent",
     "chat_agent",
+    "memory_agent",
     "FINISH",
 ]
 

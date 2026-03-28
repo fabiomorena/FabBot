@@ -15,8 +15,13 @@ Phase 2: /remember Command
 - add_note_to_profile() → schreibt Note in YAML
 - reload_profile()      → Cache leeren nach Update
 
-Phase 3: Auto-Learning
-- write_profile()       → vollständiger YAML-Update (für profile_learner)
+Phase 3: Auto-Learning + Memory Agent
+- write_profile()       → vollständiger YAML-Update (für profile_learner + memory_agent)
+
+YAML-Struktur (Option 3 – Hybrid):
+Feste Sektionen: identity, work, projects, people, preferences, places, hardware, routines
+Freie Sektion:   custom (key/value Paare für alles andere)
+Notes:           via /remember oder Auto-Learning
 """
 
 import logging
@@ -26,27 +31,18 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Profil liegt im Projektwurzelverzeichnis (eine Ebene über agent/)
 _PROFILE_PATH = Path(__file__).parent.parent / "personal_profile.yaml"
-
-# Einmaliger Cache – wird beim ersten Aufruf befüllt
 _profile_cache: dict[str, Any] | None = None
 
 
 def load_profile() -> dict[str, Any]:
-    """
-    Lädt personal_profile.yaml. Cached nach erstem Aufruf.
-    Gibt leeres Dict zurück bei Fehler oder fehlendem File.
-    """
     global _profile_cache
     if _profile_cache is not None:
         return _profile_cache
-
     if not _PROFILE_PATH.exists():
         logger.warning(f"personal_profile.yaml nicht gefunden: {_PROFILE_PATH}")
         _profile_cache = {}
         return _profile_cache
-
     try:
         import yaml
         with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
@@ -61,130 +57,83 @@ def load_profile() -> dict[str, Any]:
 
 
 def reload_profile() -> dict[str, Any]:
-    """
-    Erzwingt Neu-Laden des Profils aus der YAML-Datei.
-    Wird nach /remember und nach write_profile() aufgerufen.
-    """
     global _profile_cache
     _profile_cache = None
     return load_profile()
 
 
 def add_note_to_profile(text: str) -> bool:
-    """
-    Fügt eine neue Note zum 'notes' Abschnitt in personal_profile.yaml hinzu.
-    Erstellt den Abschnitt falls er noch nicht existiert.
-    Ruft reload_profile() auf damit die Note sofort im Kontext aktiv ist.
-    Gibt True zurück bei Erfolg, False bei Fehler.
-    """
     if not text or not text.strip():
         return False
-
     if not _PROFILE_PATH.exists():
         logger.error("personal_profile.yaml nicht gefunden – Note kann nicht gespeichert werden.")
         return False
-
     try:
         import yaml
-
         with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
             profile = yaml.safe_load(f) or {}
-
         if "notes" not in profile or not isinstance(profile["notes"], list):
             profile["notes"] = []
-
         timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
         profile["notes"].append(f"[{timestamp}] {text.strip()}")
-
         with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
             yaml.dump(profile, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
         reload_profile()
         logger.info(f"Note zu Profil hinzugefügt: {text[:80]}")
         return True
-
     except Exception as e:
-        logger.error(f"Fehler beim Schreiben der Note in personal_profile.yaml: {e}")
+        logger.error(f"Fehler beim Schreiben der Note: {e}")
         return False
 
 
 def write_profile(profile: dict[str, Any]) -> bool:
-    """
-    Schreibt ein vollständiges Profil-Dict in personal_profile.yaml.
-    Wird von profile_learner nach bestandenem Review aufgerufen.
-    Leert den Cache danach automatisch.
-    Gibt True zurück bei Erfolg, False bei Fehler.
-    """
     if not profile or not isinstance(profile, dict):
         return False
-
     if not _PROFILE_PATH.exists():
         logger.error("personal_profile.yaml nicht gefunden – write_profile abgebrochen.")
         return False
-
     try:
         import yaml
-
-        # Finale Validierung vor dem Schreiben
         serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        yaml.safe_load(serialized)  # Wirft YAMLError wenn kaputt
-
+        yaml.safe_load(serialized)  # Finale Validierung
         with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
             f.write(serialized)
-
         reload_profile()
         logger.info("write_profile: Profil erfolgreich geschrieben.")
         return True
-
     except Exception as e:
         logger.error(f"write_profile Fehler: {e}")
         return False
 
 
 def get_profile_context_short() -> str:
-    """
-    Kurzer Kontext-String für den Supervisor (Haiku-Routing).
-    Nur Name, Standort und aktive High-Priority-Projekte.
-    Gibt leeren String zurück wenn kein Profil vorhanden.
-    """
     try:
         profile = load_profile()
         if not profile:
             return ""
-
         parts: list[str] = []
-
         identity = profile.get("identity", {})
         if isinstance(identity, dict):
             name = identity.get("name", "")
             location = identity.get("location", "")
             if name:
                 parts.append(f"User: {name}" + (f" ({location})" if location else ""))
-
         projects = profile.get("projects", {})
         active = projects.get("active", []) if isinstance(projects, dict) else []
         if isinstance(active, list):
             high = [
-                p["name"]
-                for p in active
+                p["name"] for p in active
                 if isinstance(p, dict) and p.get("priority") == "high" and p.get("name")
             ]
             if high:
                 parts.append(f"Aktive Projekte: {', '.join(high)}")
-
         return "\n".join(parts)
-
     except Exception as e:
         logger.error(f"get_profile_context_short Fehler (ignoriert): {e}")
         return ""
 
 
 def get_profile_context_full() -> str:
-    """
-    Vollständiger Kontext-String für den chat_agent.
-    Enthält Identität, Rolle, Projekte, Präferenzen, Hardware, Routinen, Personen und Notes.
-    Gibt leeren String zurück wenn kein Profil vorhanden.
-    """
     try:
         profile = load_profile()
         if not profile:
@@ -205,10 +154,14 @@ def get_profile_context_full() -> str:
         # Arbeit
         work = profile.get("work", {})
         if isinstance(work, dict) and work:
+            if v := work.get("employer"):
+                lines.append(f"Arbeitgeber: {v}")
             if v := work.get("role"):
                 lines.append(f"Rolle: {v}")
             if v := work.get("focus"):
                 lines.append(f"Fokus: {v}")
+            if v := work.get("job_context"):
+                lines.append(f"Job-Kontext: {v}")
 
         # Projekte
         projects = profile.get("projects", {})
@@ -242,6 +195,11 @@ def get_profile_context_full() -> str:
             dislikes = prefs.get("dislikes", [])
             if isinstance(dislikes, list) and dislikes:
                 lines.append(f"Vermeiden: {'; '.join(dislikes)}")
+            # Weitere Präferenzen (dynamisch gespeichert)
+            skip_keys = {"communication", "response_style", "dislikes", "language_for_answers"}
+            extra = {k: v for k, v in prefs.items() if k not in skip_keys and isinstance(v, str)}
+            for k, v in extra.items():
+                lines.append(f"Präferenz – {k}: {v}")
 
         # Hardware
         hw = profile.get("hardware", {})
@@ -272,11 +230,43 @@ def get_profile_context_full() -> str:
                         line += f": {context}"
                     lines.append(line)
 
-        # Notes – vom User via /remember oder Auto-Learning hinzugefügt
+        # Orte / Places
+        places = profile.get("places", [])
+        if isinstance(places, list) and places:
+            lines.append("Orte und Lieblingsplätze:")
+            for p in places:
+                if not isinstance(p, dict):
+                    continue
+                name = p.get("name", "")
+                place_type = p.get("type", "")
+                location = p.get("location", "")
+                context = p.get("context", "")
+                if name:
+                    line = f"  – {name}"
+                    if place_type:
+                        line += f" ({place_type})"
+                    if location:
+                        line += f" in {location}"
+                    if context:
+                        line += f": {context}"
+                    lines.append(line)
+
+        # Custom – freie Sektion
+        custom = profile.get("custom", [])
+        if isinstance(custom, list) and custom:
+            lines.append("Weitere persönliche Infos:")
+            for item in custom:
+                if isinstance(item, dict):
+                    key = item.get("key", "")
+                    value = item.get("value", "")
+                    if key and value:
+                        lines.append(f"  • {key}: {value}")
+
+        # Notes
         notes = profile.get("notes", [])
         if isinstance(notes, list) and notes:
             lines.append("Persönliche Notizen:")
-            for note in notes[-20:]:  # Max. 20 neueste Notes
+            for note in notes[-20:]:
                 lines.append(f"  • {note}")
 
         lines.append("=== Ende Kontext ===")

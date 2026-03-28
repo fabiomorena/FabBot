@@ -12,6 +12,7 @@ from agent.agents.web import web_agent
 from agent.agents.calendar import calendar_agent
 from agent.agents.chat_agent import chat_agent
 from agent.agents.reminder_agent import reminder_agent
+from agent.agents.memory_agent import memory_agent
 
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -29,7 +30,8 @@ Verfuegbare Agenten:
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
-- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Mitteilungen (z.B. 'Ich gehe jetzt...', 'Ich bin zuhause'), alles was kein konkreter Systembefehl oder externe Suche ist
+- memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen. Wird aufgerufen bei expliziten Befehlen wie: 'fuege X hinzu', 'merke dir X', 'speichere X', 'fuege X zum Kontext hinzu', 'aktualisiere mein Profil', 'vergiss X aus dem Profil'
+- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Mitteilungen (z.B. 'Ich gehe jetzt...', 'Ich bin zuhause'), persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen, Geraete), alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
@@ -41,44 +43,35 @@ terminal_agent
 file_agent
 web_agent
 calendar_agent
+reminder_agent
+memory_agent
 chat_agent
 FINISH
 """
 
 
 def _filter_hitl_messages(messages: list) -> list:
-    """Entfernt HITL-Nachrichten aus dem Kontext bevor sie an den LLM uebergeben werden.
-    Verhindert dass HITL-Prefixes (__CONFIRM_*, __SCREENSHOT__) vom LLM nachgeahmt werden.
-    HITL-AIMessages werden durch neutralen Platzhalter ersetzt damit der Gespraechsfluss erhalten bleibt.
-    """
+    """Entfernt HITL-Nachrichten aus dem Kontext bevor sie an den LLM uebergeben werden."""
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
         if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
-            # HumanMessages mit HITL-Prefix werden komplett entfernt (sollten nicht vorkommen)
             continue
         filtered.append(msg)
     return filtered
 
 
 async def supervisor_node(state: AgentState) -> AgentState:
-    """Routing via Haiku – schnell und kostenguenstig.
-    Jede AIMessage beendet den Graph (FINISH) – egal ob HITL-Prefix oder normale Antwort.
-    Der HITL-Dispatch passiert in bot.py, nicht hier.
-    """
+    """Routing via Haiku – schnell und kostenguenstig."""
     llm = get_fast_llm()
     messages = state["messages"]
 
-    # Sobald ein Agent geantwortet hat → FINISH
-    # __MEMORY__-Messages werden ignoriert (kommen von _update_memory in bot.py)
     if messages and isinstance(messages[-1], AIMessage) and not messages[-1].content.startswith("__MEMORY__:"):
         return {"next_agent": "FINISH"}
 
-    # HITL-Nachrichten aus Kontext filtern bevor Haiku routet
     clean_messages = _filter_hitl_messages(messages)
-    # Nur letzte HumanMessage fuer Routing – volle History verwirrt Haiku
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
     routing_messages = [last_human[-1]] if last_human else clean_messages[-1:]
     all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
@@ -90,7 +83,8 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     valid = {
         "computer_agent", "terminal_agent", "file_agent",
-        "web_agent", "calendar_agent", "reminder_agent", "chat_agent", "FINISH"
+        "web_agent", "calendar_agent", "reminder_agent",
+        "memory_agent", "chat_agent", "FINISH"
     }
     if next_agent not in valid:
         next_agent = "chat_agent"
@@ -99,12 +93,10 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
 
 def route(state: AgentState) -> AgentName:
-    """Gibt den naechsten Agent-Namen aus dem State zurueck."""
     return state["next_agent"]
 
 
 def _build_graph() -> StateGraph:
-    """Erstellt den StateGraph ohne Checkpointer."""
     graph = StateGraph(AgentState)
 
     graph.add_node("supervisor", supervisor_node)
@@ -115,6 +107,7 @@ def _build_graph() -> StateGraph:
     graph.add_node("calendar_agent", calendar_agent)
     graph.add_node("chat_agent", chat_agent)
     graph.add_node("reminder_agent", reminder_agent)
+    graph.add_node("memory_agent", memory_agent)
 
     graph.set_entry_point("supervisor")
 
@@ -128,20 +121,21 @@ def _build_graph() -> StateGraph:
             "web_agent": "web_agent",
             "calendar_agent": "calendar_agent",
             "reminder_agent": "reminder_agent",
+            "memory_agent": "memory_agent",
             "chat_agent": "chat_agent",
             "FINISH": END,
         },
     )
 
     for agent in ["computer_agent", "terminal_agent", "file_agent",
-                  "web_agent", "calendar_agent", "reminder_agent", "chat_agent"]:
+                  "web_agent", "calendar_agent", "reminder_agent",
+                  "memory_agent", "chat_agent"]:
         graph.add_edge(agent, "supervisor")
 
     return graph
 
 
 async def init_graph() -> None:
-    """Initialisiert den Graphen mit persistentem AsyncSqliteSaver."""
     global agent_graph, _db_conn
     import aiosqlite
     _db_conn = await aiosqlite.connect(str(_DB_PATH))
@@ -150,7 +144,6 @@ async def init_graph() -> None:
 
 
 async def close_graph() -> None:
-    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
     global _db_conn
     if _db_conn:
         await _db_conn.close()
