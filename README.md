@@ -40,8 +40,10 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 74 pytest tests on every push |
-| ✅ | Test suite – 74 pytest tests |
+| ✅ | GitHub Actions CI – runs 88 pytest tests on every push |
+| ✅ | Test suite – 88 pytest tests |
+| ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
+| ✅ | `/remember` – save personal notes to profile live from Telegram |
 
 ---
 
@@ -51,6 +53,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 FabBot/
 ├── main.py                  # Entrypoint
 ├── menubar.py               # macOS menubar app
+├── personal_profile.yaml    # Personal profile (local only, not in repo)
 ├── requirements.txt         # Direct dependencies
 ├── requirements.lock        # Pinned lock file (pip-compile)
 ├── requirements-ci.txt      # CI dependencies (no macOS-only packages)
@@ -60,7 +63,7 @@ FabBot/
 │   └── workflows/
 │       └── test.yml         # GitHub Actions CI – pip cache + pytest
 ├── tests/
-│   └── test_security_terminal.py  # pytest suite (74 tests)
+│   └── test_security_terminal.py  # pytest suite (88 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -68,6 +71,7 @@ FabBot/
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
 │   ├── security.py          # Two-stage injection guard, rate limiting, homoglyph normalization
 │   ├── audit.py             # Tamper-evident audit log
+│   ├── profile.py           # Personal context loader (YAML → agent prompts)
 │   └── agents/
 │       ├── chat_agent.py    # Context-aware conversation agent (no tools)
 │       ├── computer.py      # Desktop control (validated input)
@@ -75,6 +79,7 @@ FabBot/
 │       ├── file.py          # File operations
 │       ├── web.py           # Web search & fetch with content isolation
 │       ├── calendar.py      # Calendar management
+│       ├── reminder_agent.py # SQLite-based reminders, natural language
 │       └── clip_agent.py    # URL clipper with content isolation
 └── bot/
     ├── bot.py               # Telegram handlers, HITL TTS, post_init/post_shutdown hooks
@@ -82,7 +87,9 @@ FabBot/
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription (voice → text)
     ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice + stop)
-    └── search.py            # Local knowledge base search
+    ├── search.py            # Local knowledge base search
+    ├── briefing.py          # Morning briefing scheduler (07:30 daily)
+    └── reminders.py         # Reminder storage + proactive delivery
 ```
 
 **Stack:**
@@ -122,6 +129,12 @@ brew install ffmpeg
 cp .env.example .env   # fill in API keys
 ```
 
+Create your personal profile (not included in repo):
+
+```bash
+cp personal_profile.yaml.example personal_profile.yaml   # then edit with your details
+```
+
 ### macOS Permissions (required)
 
 FabBot runs as a background process and needs explicit permissions to access files and folders.
@@ -140,7 +153,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (74 tests)
+pytest tests/ -v      # Run tests (88 tests)
 ```
 
 ### Run as Launch Agent (auto-start on login)
@@ -174,12 +187,49 @@ tail -f ~/.fabbot/fabbot.log
 | "Wie ist das Wetter in Berlin?" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
 | "Was habe ich dich gerade gefragt?" | `chat_agent` |
+| "Erinnere mich morgen um 9 Uhr ans Meeting" | `reminder_agent` |
+| "Wo wohne ich?" / "Was sind meine Projekte?" | `chat_agent` → aus Profil |
 | 🎤 Voice note | Whisper → any agent |
 
 **Commands:**
 ```
-/start /ask /clip /search /tts on|off /stop /status /auditlog
+/start /ask /clip /search /remember /tts on|off /stop /status /auditlog
 ```
+
+---
+
+## Personal Context Layer
+
+FabBot uses a local `personal_profile.yaml` to give all agents persistent knowledge about you – projects, preferences, people, routines. This file is not committed to the repo.
+
+```yaml
+identity:
+  name: Fabio
+  location: Berlin, Deutschland
+
+projects:
+  active:
+    - name: FabBot
+      stack: [Python, LangGraph, Telegram]
+      priority: high
+
+people:
+  - name: Stephanie Priller
+    context: Steffi ist Fabios Freundin
+
+preferences:
+  communication: prägnant, direkt, technisch
+```
+
+**Two context levels:**
+- **Short** (Supervisor/Haiku): name + active projects – minimal overhead, routing unaffected
+- **Full** (chat_agent/Sonnet): everything including people, notes, preferences
+
+**Live updates via `/remember`:**
+```
+/remember ich arbeite gerade auch an Projekt X
+```
+Writes a timestamped note to `personal_profile.yaml`, active immediately without restart.
 
 ---
 
@@ -215,10 +265,10 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 ## Testing
 
 ```bash
-pytest tests/ -v   # 74 tests
+pytest tests/ -v   # 88 tests
 ```
 
-Coverage: security patterns · rate limiting · terminal allowlist · TTS cleaning · TTS toggle · stop_speaking() with mocked Popen
+Coverage: security patterns · rate limiting · terminal allowlist · TTS cleaning · TTS toggle · stop_speaking() with mocked Popen · HITL message filtering · memory prefix filtering
 
 ---
 
@@ -264,6 +314,9 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 35** ✅ Reminder Agent – SQLite-based reminders, natural language, proactive delivery
 - **Phase 36** ✅ Calendar fix – last HumanMessage only prevents list/create confusion
 - **Phase 37** ✅ Reminder Agent fixes – correct time calculation, last HumanMessage only
+- **Phase 38** ✅ Personal Context Layer – personal_profile.yaml, agent/profile.py, short+full context injection
+- **Phase 39** ✅ /remember command – live note-saving to profile from Telegram, instant activation
+- **Phase 40** ✅ Bug fixes – chat_agent profile priority, terminal last HumanMessage only, people section in context
 
 ---
 
