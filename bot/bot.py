@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
 
+# Retry-Konfiguration für 529 Overloaded
+_RETRY_MAX_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 2.0  # Sekunden – wird verdoppelt pro Versuch (2s, 4s, 8s)
+
 
 def _extract_content(msg) -> str:
     """Extrahiert Text aus einer LangChain Message – egal ob str oder list."""
@@ -51,6 +55,36 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
         )
     except Exception as e:
         logger.warning(f"Memory update nach HITL fehlgeschlagen (nicht kritisch): {e}")
+
+
+async def _invoke_with_retry(state: dict, config: dict) -> dict:
+    """
+    Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf.
+
+    Versuche: 3
+    Wartezeiten: 2s → 4s → 8s
+    Nur 529 (Overloaded) wird wiederholt – alle anderen Fehler werden
+    sofort weitergereicht.
+    """
+    from agent.supervisor import agent_graph
+
+    last_exception = None
+    for attempt in range(_RETRY_MAX_ATTEMPTS):
+        try:
+            return await agent_graph.ainvoke(state, config=config)
+        except APIStatusError as e:
+            if e.status_code == 529:
+                delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    f"Anthropic 529 Overloaded – Versuch {attempt + 1}/{_RETRY_MAX_ATTEMPTS}, "
+                    f"warte {delay:.0f}s..."
+                )
+                last_exception = e
+                if attempt < _RETRY_MAX_ATTEMPTS - 1:
+                    await asyncio.sleep(delay)
+            else:
+                raise  # Alle anderen APIStatusErrors sofort weitergeben
+    raise last_exception  # Nach allen Versuchen: Exception weitergeben
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +186,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/search <Begriff> – Notizen durchsuchen\n"
         "/search #Tag – Nach Tag suchen\n"
         "/search – Alle Notizen auflisten\n"
+        "/remember <Text> – Persönliche Notiz speichern\n"
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
         "/stop – Laufende Sprachausgabe stoppen\n"
         "/status – Agent Status\n"
@@ -260,6 +295,24 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
+async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Speichert eine persönliche Notiz in personal_profile.yaml."""
+    text = " ".join(ctx.args) if ctx.args else ""
+    if not text:
+        await update.message.reply_text(
+            "Verwendung: /remember <was ich mir merken soll>\n"
+            "Beispiel: /remember ich arbeite gerade auch an Projekt X"
+        )
+        return
+    from agent.profile import add_note_to_profile
+    success = add_note_to_profile(text)
+    if success:
+        await update.message.reply_text(f"✅ Gemerkt: {text}")
+    else:
+        await update.message.reply_text("❌ Fehler beim Speichern der Notiz.")
+
+
+@restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_message_text(update, ctx.bot, update.message.text)
 
@@ -300,7 +353,6 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
-    from agent.supervisor import agent_graph
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -319,11 +371,11 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             "telegram_chat_id": chat_id,
             "next_agent": None,
         }
+        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
-        result_state = await agent_graph.ainvoke(
-            state,
-            config={"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10},
-        )
+        # 529-Retry eingebaut – bis zu 3 Versuche mit exponentiellem Backoff
+        result_state = await _invoke_with_retry(state, config)
+
         ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
         response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
 
@@ -348,6 +400,24 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             pass
         await update.message.reply_text("Zu viele Anfragen – bitte kurz warten und nochmal versuchen.")
 
+    except APIStatusError as e:
+        if e.status_code == 529:
+            logger.error(f"Anthropic 529 Overloaded – alle {_RETRY_MAX_ATTEMPTS} Versuche fehlgeschlagen")
+            try:
+                await thinking.delete()
+            except Exception:
+                pass
+            await update.message.reply_text(
+                "Anthropic ist gerade überlastet – bitte in 1-2 Minuten nochmal versuchen."
+            )
+        else:
+            logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
+            try:
+                await thinking.delete()
+            except Exception:
+                pass
+            await update.message.reply_text(f"API Fehler ({e.status_code}) – bitte Administrator informieren.")
+
     except APIConnectionError as e:
         logger.warning(f"Anthropic connection error: {e}")
         try:
@@ -355,14 +425,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         except Exception:
             pass
         await update.message.reply_text("Verbindungsfehler zur KI – bitte nochmal versuchen.")
-
-    except APIStatusError as e:
-        logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
-        await update.message.reply_text(f"API Fehler ({e.status_code}) – bitte Administrator informieren.")
 
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error: {e}")
@@ -406,7 +468,6 @@ async def _post_init(app: Application) -> None:
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
-    # Morning Briefing Scheduler starten
     allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
     if allowed_ids:
         chat_id = int(allowed_ids.split(",")[0].strip())
@@ -450,6 +511,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("ask", cmd_ask, block=False))
     app.add_handler(CommandHandler("clip", cmd_clip, block=False))
     app.add_handler(CommandHandler("search", cmd_search, block=False))
+    app.add_handler(CommandHandler("remember", cmd_remember, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
