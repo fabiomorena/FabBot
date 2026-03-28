@@ -5,7 +5,7 @@ import json
 import ipaddress
 import httpx
 from datetime import date
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
 
 from agent.state import AgentState
@@ -72,10 +72,8 @@ def _extract_json(text: str) -> str:
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     text = text.strip()
-    # Leere Antwort abfangen
     if not text:
         return "UNSUPPORTED"
-    # JSON-Block extrahieren falls in Text eingebettet
     match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
     if match:
         return match.group(0)
@@ -140,7 +138,7 @@ async def _fetch_url(url: str) -> str:
         text = resp.text[:MAX_FETCH_SIZE]
         text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
         text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
-        text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)  # HTML-Kommentare entfernen
+        text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
         text = re.sub(r"<[^>]+>", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         return text[:MAX_FETCH_SIZE]
@@ -203,8 +201,13 @@ def _format_search_results(results: list[dict], source: str) -> str:
 async def web_agent(state: AgentState) -> AgentState:
     llm = get_llm()
 
-    messages = [SystemMessage(content=_build_prompt())] + state["messages"]
-    response = llm.invoke(messages)
+    # Nur letzte HumanMessage für JSON-Routing – verhindert dass LLM
+    # aus der History Natural Language statt JSON zurückgibt
+    human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+    last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
+    routing_messages = [SystemMessage(content=_build_prompt())] + last_msg
+
+    response = llm.invoke(routing_messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -237,7 +240,6 @@ async def web_agent(state: AgentState) -> AgentState:
             log_action("web_agent", "fetch", url[:200], state.get("telegram_chat_id"), status="executed")
             raw = await _fetch_url(url)
 
-            # Seiteninhalt in <document>-Tags isoliert – verhindert indirekte Prompt-Injection
             summary_messages = [
                 SystemMessage(content=_build_summarize_prompt()),
                 *state["messages"],
@@ -275,7 +277,6 @@ async def web_agent(state: AgentState) -> AgentState:
             if not raw_results:
                 return {"messages": [AIMessage(content="Keine Suchergebnisse gefunden.")]}
 
-            # Suchergebnisse in <document>-Tags isoliert – verhindert indirekte Prompt-Injection
             summary_messages = [
                 SystemMessage(content=_build_summarize_prompt()),
                 *state["messages"],
