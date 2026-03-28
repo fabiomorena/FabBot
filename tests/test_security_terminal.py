@@ -537,3 +537,67 @@ class TestFilterHitlMessagesMemory:
         result = self.filter(msgs)
         assert result[1].content == "[Aktion wurde ausgefuehrt]"
         assert result[2].content == "Danke"
+
+# ---------------------------------------------------------------------------
+# clip_agent.py Tests – _is_safe_output_path()
+# ---------------------------------------------------------------------------
+
+from pathlib import Path
+from agent.agents.clip_agent import _is_safe_output_path, KNOWLEDGE_DIR
+
+
+class TestIsSafeOutputPath:
+
+    def test_valid_path_inside_knowledge_dir(self) -> None:
+        """Pfad direkt in KNOWLEDGE_DIR ist erlaubt."""
+        path = KNOWLEDGE_DIR / "2026-03-28-mein-artikel.md"
+        assert _is_safe_output_path(path) is True
+
+    def test_valid_path_in_subdirectory(self) -> None:
+        """Pfad in Unterordner von KNOWLEDGE_DIR ist erlaubt."""
+        path = KNOWLEDGE_DIR / "subfolder" / "note.md"
+        assert _is_safe_output_path(path) is True
+
+    def test_knowledge_dir_itself(self) -> None:
+        """KNOWLEDGE_DIR selbst ist erlaubt."""
+        assert _is_safe_output_path(KNOWLEDGE_DIR) is True
+
+    def test_path_traversal_via_dotdot(self) -> None:
+        """Path-Traversal mit .. wird blockiert."""
+        path = KNOWLEDGE_DIR / ".." / "evil.md"
+        assert _is_safe_output_path(path) is False
+
+    def test_path_traversal_to_home(self) -> None:
+        """Pfad ins Home-Verzeichnis wird blockiert."""
+        path = Path.home() / "evil.md"
+        assert _is_safe_output_path(path) is False
+
+    def test_path_traversal_to_ssh(self) -> None:
+        """Pfad zu ~/.ssh wird blockiert."""
+        path = Path.home() / ".ssh" / "authorized_keys"
+        assert _is_safe_output_path(path) is False
+
+    def test_path_traversal_to_env(self) -> None:
+        """Pfad zur .env Datei wird blockiert."""
+        path = Path.home() / ".env"
+        assert _is_safe_output_path(path) is False
+
+    def test_sibling_directory_blocked(self) -> None:
+        """Geschwister-Verzeichnis neben KNOWLEDGE_DIR wird blockiert."""
+        path = KNOWLEDGE_DIR.parent / "AndererOrdner" / "note.md"
+        assert _is_safe_output_path(path) is False
+
+    def test_absolute_path_outside_blocked(self) -> None:
+        """Absoluter Pfad außerhalb KNOWLEDGE_DIR wird blockiert."""
+        path = Path("/tmp/evil.md")
+        assert _is_safe_output_path(path) is False
+
+    def test_etc_passwd_blocked(self) -> None:
+        """Zugriff auf /etc/passwd wird blockiert."""
+        path = Path("/etc/passwd")
+        assert _is_safe_output_path(path) is False
+
+    def test_llm_slug_with_traversal_blocked(self) -> None:
+        """LLM-generierter Slug mit eingebettetem Path-Traversal wird blockiert."""
+        path = KNOWLEDGE_DIR / "../../.ssh/id_rsa"
+        assert _is_safe_output_path(path) is False
