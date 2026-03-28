@@ -40,12 +40,14 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 105 pytest tests on every push |
-| ✅ | Test suite – 105 pytest tests |
+| ✅ | GitHub Actions CI – runs 140 pytest tests on every push |
+| ✅ | Test suite – 140 pytest tests |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
 | ✅ | 529 Retry – exponential backoff (2s/4s/8s) on Anthropic overload |
+| ✅ | Memory Agent – explicit profile updates via natural language (places, people, projects, custom) |
+| ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` |
 
 ---
 
@@ -77,6 +79,7 @@ FabBot/
 │   ├── profile_learner.py   # Auto-learning pipeline (Detector/Writer/Reviewer)
 │   └── agents/
 │       ├── chat_agent.py    # Context-aware conversation agent (no tools)
+│       ├── memory_agent.py  # Explicit profile updates (places, people, custom, delete)
 │       ├── computer.py      # Desktop control (validated input)
 │       ├── terminal.py      # Shell command execution, German date format
 │       ├── file.py          # File operations
@@ -156,7 +159,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (105 tests)
+pytest tests/ -v      # Run tests (140 tests)
 ```
 
 ### Run as Launch Agent (auto-start on login)
@@ -268,10 +271,10 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 ## Testing
 
 ```bash
-pytest tests/ -v   # 105 tests
+pytest tests/ -v   # 140 tests
 ```
 
-Coverage: security patterns · rate limiting · terminal allowlist · TTS cleaning · TTS toggle · stop_speaking() with mocked Popen · HITL message filtering · memory prefix filtering · _is_safe_output_path Path-Traversal · _invoke_with_retry 529 exponential backoff
+Coverage: security patterns · rate limiting · terminal allowlist · TTS cleaning · TTS toggle · stop_speaking() with mocked Popen · HITL message filtering · memory prefix filtering · _is_safe_output_path Path-Traversal · _invoke_with_retry 529 exponential backoff · memory_agent _apply_memory_update · profile context sections
 
 ---
 
@@ -324,6 +327,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 42** ✅ 529 Retry-Mechanismus – exponential backoff (2s/4s/8s), 3 Versuche, 6 Tests
 - **Phase 43** ✅ Auto-Learning Pipeline – Haiku Detector + Python Writer + Haiku Reviewer + Fallback zu Note
 - **Phase 44** ✅ Bug fix – web_agent last HumanMessage only, verhindert Natural-Language statt JSON
+- **Phase 45** ✅ Memory Agent – explizite Profil-Updates via Sprache, Hybrid-Struktur (places/custom), 140 Tests
 
 ---
 
