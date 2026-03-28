@@ -128,10 +128,8 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
     """
     try:
         llm = get_llm()
-        # Letzte HumanMessage + etwas Kontext für Sonnet
+        # Letzten 6 Messages als Kontext für Sonnet (ohne HITL-Prefixes)
         human_msgs = [m for m in messages if isinstance(m, HumanMessage)]
-        last_msg = [human_msgs[-1]] if human_msgs else []
-        # Letzten 3 Messages als Kontext (ohne HITL-Prefixes)
         context_msgs = []
         for m in messages[-6:]:
             content = m.content if hasattr(m, "content") else ""
