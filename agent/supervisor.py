@@ -17,7 +17,6 @@ from agent.agents.memory_agent import memory_agent
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Globale Referenzen – werden in init_graph() gesetzt
 agent_graph = None
 _db_conn = None
 
@@ -30,12 +29,16 @@ Verfuegbare Agenten:
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
-- memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen. NUR bei expliziten Befehlen mit direktem Objekt was gespeichert werden soll: 'fuege Saporito hinzu', 'merke dir dass ich Yoga mache', 'speichere Marco als Kollegen', 'vergiss den Eintrag X', 'fuege X zum Kontext hinzu'. NICHT fuer allgemeine Aussagen, Berichte, Kommentare oder Fragen ohne expliziten Speicher-Befehl.
-- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Mitteilungen (z.B. 'Ich gehe jetzt...', 'Ich bin zuhause'), persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen, Geraete), alles was kein konkreter Systembefehl oder externe Suche ist
+- memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen.
+  NUR bei expliziten Speicher-Befehlen MIT konkretem Inhalt:
+  JA: 'merke dir dass ich Yoga mache', 'fuege Saporito als Restaurant hinzu', 'speichere Marco als Kollegen', 'vergiss den Eintrag X', 'fuege X zum Kontext hinzu'
+  NEIN: 'ich habe X verbessert', 'ich war bei X', 'X funktioniert jetzt', 'ich habe X gemacht', allgemeine Berichte oder Mitteilungen ohne Speicher-Absicht
+- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Berichte und Mitteilungen ('ich habe X gemacht', 'X funktioniert jetzt', 'ich war bei X'), persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen), alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
 - Sonst: waehle den passenden Agenten
+- Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 
 WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes, keine Erklaerung):
 computer_agent
