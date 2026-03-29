@@ -30,7 +30,7 @@ Verfuegbare Agenten:
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
-- memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen. Wird aufgerufen bei expliziten Befehlen wie: 'fuege X hinzu', 'merke dir X', 'speichere X', 'fuege X zum Kontext hinzu', 'aktualisiere mein Profil', 'vergiss X aus dem Profil'
+- memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen. NUR bei expliziten Befehlen mit direktem Objekt was gespeichert werden soll: 'fuege Saporito hinzu', 'merke dir dass ich Yoga mache', 'speichere Marco als Kollegen', 'vergiss den Eintrag X', 'fuege X zum Kontext hinzu'. NICHT fuer allgemeine Aussagen, Berichte, Kommentare oder Fragen ohne expliziten Speicher-Befehl.
 - chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Mitteilungen (z.B. 'Ich gehe jetzt...', 'Ich bin zuhause'), persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen, Geraete), alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
