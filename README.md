@@ -187,15 +187,28 @@ tail -f ~/.fabbot/fabbot.log
 | Message | Routed to |
 |--------|-----------|
 | "Was steht morgen in meinem Kalender?" | `calendar_agent` |
+| "Erstelle einen Termin morgen um 10 Uhr" | `calendar_agent` |
 | "Zeig mir den Inhalt von ~/Downloads" | `file_agent` |
+| "Schreibe eine Datei nach ~/Desktop/notiz.txt" | `file_agent` |
 | "Wie viel freier Speicher ist noch?" | `terminal_agent` |
 | "Was ist heute für ein Datum?" | `terminal_agent` → `18.03.2026, 19:06 Uhr` |
+| "Welche Prozesse laufen gerade?" | `terminal_agent` |
 | "Suche nach den neuesten KI News" | `web_agent` |
 | "Wie ist das Wetter in Berlin?" | `web_agent` |
+| "Ruf mir die Seite example.com ab" | `web_agent` |
 | "Mach einen Screenshot" | `computer_agent` |
+| "Öffne Safari" | `computer_agent` |
 | "Was habe ich dich gerade gefragt?" | `chat_agent` |
-| "Erinnere mich morgen um 9 Uhr ans Meeting" | `reminder_agent` |
+| "Fass das nochmal zusammen" | `chat_agent` |
 | "Wo wohne ich?" / "Was sind meine Projekte?" | `chat_agent` → aus Profil |
+| "Ich habe heute gut geschlafen" | `chat_agent` |
+| "Erinnere mich morgen um 9 Uhr ans Meeting" | `reminder_agent` |
+| "Was sind meine offenen Erinnerungen?" | `reminder_agent` |
+| "Lösche Erinnerung #3" | `reminder_agent` |
+| "Merke dir dass Saporito mein Lieblings-Italiener ist" | `memory_agent` |
+| "Füge Marco als Kollegen hinzu" | `memory_agent` |
+| "Speichere Insieme von Valentino Vivace als Lieblingslied" | `memory_agent` |
+| "Vergiss den Eintrag über Bonial als Projekt" | `memory_agent` |
 | 🎤 Voice note | Whisper → any agent |
 
 **Commands:**
@@ -330,6 +343,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 44** ✅ Bug fix – web_agent last HumanMessage only, verhindert Natural-Language statt JSON
 - **Phase 45** ✅ Memory Agent – explizite Profil-Updates via Sprache, Hybrid-Struktur (places/custom), 140 Tests
 - **Phase 46** ✅ Media-Kategorie – Lieder/Filme/Podcasts/Bücher korrekt als `media` speichern
+- **Phase 47** ✅ Supervisor Fix – memory_agent False-Positives mit JA/NEIN-Beispielen und Fallback-Regel
 
 ---
 
