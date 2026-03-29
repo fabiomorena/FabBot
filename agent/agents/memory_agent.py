@@ -1,11 +1,8 @@
 """
-Memory Agent für FabBot – Phase 45.
-
-Verarbeitet explizite Befehle des Users zum Speichern, Aktualisieren
-oder Löschen persönlicher Informationen im Profil.
+Memory Agent für FabBot – Phase 45/46.
 
 Unterstützte Kategorien (Option 3 – Hybrid):
-Feste Sektionen: people, projects, places, preferences, work, identity
+Feste Sektionen: people, projects, places, media, preferences, work, identity
 Freie Sektion:   custom (key/value Paare für alles andere)
 
 Pipeline:
@@ -32,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Parser-Prompt (Sonnet – Stufe 1)
-# Sonnet weil er Kontext + Nuancen versteht
 # ---------------------------------------------------------------------------
 
 _PARSER_PROMPT = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
@@ -43,7 +39,7 @@ Antworte NUR mit reinem JSON – kein Markdown, keine Erklärung.
 Format:
 {
   "action": "save|update|delete",
-  "category": "people|project|place|preference|job|location|custom",
+  "category": "people|project|place|media|preference|job|location|custom",
   "data": { ... }
 }
 
@@ -58,6 +54,9 @@ project:
 place:
   {"name": "Ortsname", "type": "restaurant|bar|cafe|gym|shop|sonstige", "location": "Stadtteil, Stadt", "context": "Warum relevant, mit wem, wie oft"}
 
+media:
+  {"title": "Titel", "type": "song|album|film|serie|podcast|buch|künstler", "artist": "Künstler/Regisseur/Autor (optional)", "context": "Warum relevant, z.B. Lieblingslied, gerade gehört"}
+
 preference:
   {"key": "aussagekraeftiger_schluessel", "value": "Wert als Text"}
 
@@ -71,18 +70,22 @@ custom:
   {"key": "aussagekraeftiger_schluessel", "value": "Wert als Text"}
 
 Für delete:
-  {"name": "Name des Eintrags" } oder {"key": "Schlüssel"}
+  {"name": "Name des Eintrags"} oder {"key": "Schlüssel"} oder {"title": "Titel"}
 
 Wichtige Regeln:
 - Restaurants, Bars, Cafés, Gyms, Lieblingsläden → IMMER category=place
+- Lieder, Alben, Filme, Serien, Podcasts, Bücher, Künstler → IMMER category=media
 - Firmen wo der User arbeitet → category=job (NICHT project)
 - Eigene Software-Projekte die der User baut → category=project
 - Wenn unklar welche Kategorie: category=custom mit sinnvollem key
 - Extrahiere alle relevanten Details aus dem Gesprächskontext
 
 Beispiele:
-"füge Saporito zum Kontext hinzu" (Kontext: Saporito ist ein Italiener in Friedrichshain, gehe mit Steffi hin)
-→ {"action": "save", "category": "place", "data": {"name": "Saporito", "type": "restaurant", "location": "Friedrichshain, Berlin", "context": "Lieblings-Italiener, gehe oft mit Steffi hin"}}
+"füge Saporito zum Kontext hinzu – Lieblings-Italiener in Friedrichshain"
+→ {"action": "save", "category": "place", "data": {"name": "Saporito", "type": "restaurant", "location": "Friedrichshain, Berlin", "context": "Lieblings-Italiener"}}
+
+"merke dir dass Insieme von Valentino Vivace mein Lieblingslied ist"
+→ {"action": "save", "category": "media", "data": {"title": "Insieme", "type": "song", "artist": "Valentino Vivace", "context": "Lieblingslied"}}
 
 "merke dir dass ich gerne Yoga mache"
 → {"action": "save", "category": "custom", "data": {"key": "hobby_yoga", "value": "macht gerne Yoga"}}
@@ -92,6 +95,9 @@ Beispiele:
 
 "vergiss den Eintrag über Bonial als Projekt"
 → {"action": "delete", "category": "project", "data": {"name": "Bonial"}}
+
+"mein Lieblingsfilm ist Blade Runner"
+→ {"action": "save", "category": "media", "data": {"title": "Blade Runner", "type": "film", "context": "Lieblingsfilm"}}
 """
 
 # ---------------------------------------------------------------------------
@@ -129,7 +135,6 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
     try:
         llm = get_llm()
         # Letzten 6 Messages als Kontext für Sonnet (ohne HITL-Prefixes)
-        human_msgs = [m for m in messages if isinstance(m, HumanMessage)]
         context_msgs = []
         for m in messages[-6:]:
             content = m.content if hasattr(m, "content") else ""
@@ -165,12 +170,12 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
 def _apply_memory_update(profile: dict, action: str, category: str, data: dict) -> dict | None:
     """
     Wendet das geparste Update auf das Profil-Dict an.
-    Gibt updated dict zurück, oder None bei Fehler/Duplikat.
+    Gibt updated dict zurück, oder None bei Fehler.
     Modifiziert das Original nicht (deepcopy).
     """
     updated = copy.deepcopy(profile)
 
-    if action == "save" or action == "update":
+    if action in ("save", "update"):
 
         if category == "people":
             name = data.get("name", "").strip()
@@ -197,7 +202,6 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                 updated["projects"]["active"] = []
             for p in updated["projects"]["active"]:
                 if isinstance(p, dict) and p.get("name", "").lower() == name.lower():
-                    # Update existing
                     if desc := data.get("description", ""):
                         p["description"] = desc
                     if stack := data.get("stack", []):
@@ -222,7 +226,6 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                 updated["places"] = []
             for p in updated["places"]:
                 if isinstance(p, dict) and p.get("name", "").lower() == name.lower():
-                    # Update existing place
                     for key in ("type", "location", "context"):
                         if v := data.get(key, "").strip():
                             p[key] = v
@@ -232,6 +235,35 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                 if v := data.get(key, "").strip():
                     new_place[key] = v
             updated["places"].append(new_place)
+            return updated
+
+        elif category == "media":
+            title = data.get("title", "").strip()
+            if not title:
+                return None
+            media_type = data.get("type", "").strip()
+            artist = data.get("artist", "").strip()
+            context = data.get("context", "").strip()
+            if "media" not in updated or not isinstance(updated["media"], list):
+                updated["media"] = []
+            # Update wenn gleicher Titel + Typ
+            for m in updated["media"]:
+                if isinstance(m, dict) and m.get("title", "").lower() == title.lower():
+                    if media_type:
+                        m["type"] = media_type
+                    if artist:
+                        m["artist"] = artist
+                    if context:
+                        m["context"] = context
+                    return updated
+            new_media: dict[str, Any] = {"title": title}
+            if media_type:
+                new_media["type"] = media_type
+            if artist:
+                new_media["artist"] = artist
+            if context:
+                new_media["context"] = context
+            updated["media"].append(new_media)
             return updated
 
         elif category == "preference":
@@ -312,6 +344,15 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                 ]
             return updated
 
+        elif category == "media":
+            title = data.get("title", "").strip().lower()
+            if "media" in updated and isinstance(updated["media"], list):
+                updated["media"] = [
+                    m for m in updated["media"]
+                    if not (isinstance(m, dict) and m.get("title", "").lower() == title)
+                ]
+            return updated
+
         elif category == "custom":
             key = data.get("key", "").strip().lower()
             if "custom" in updated and isinstance(updated["custom"], list):
@@ -347,7 +388,7 @@ async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
         verdict = content.strip().upper()
         is_valid = verdict == "VALID"
         if not is_valid:
-            logger.warning("MemoryAgent Reviewer: INVALID")
+            logger.warning(f"MemoryAgent Reviewer: INVALID – verdict='{verdict}'")
         return is_valid
     except Exception as e:
         logger.error(f"MemoryAgent Reviewer Fehler: {e}")
@@ -362,13 +403,13 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
     """Baut eine lesbare Bestätigungsnachricht für den User."""
     icons = {
         "people": "👤", "project": "🚀", "place": "📍",
-        "preference": "⚙️", "job": "💼", "location": "🏠",
-        "custom": "📝",
+        "media": "🎵", "preference": "⚙️", "job": "💼",
+        "location": "🏠", "custom": "📝",
     }
     icon = icons.get(category, "✅")
 
     if action == "delete":
-        name = data.get("name") or data.get("key", "Eintrag")
+        name = data.get("name") or data.get("title") or data.get("key", "Eintrag")
         return f"🗑️ Gelöscht: {name}"
 
     if category == "place":
@@ -384,6 +425,20 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
         if context:
             parts.append(f"Kontext: {context}")
         return "\n".join(parts)
+
+    elif category == "media":
+        title = data.get("title", "")
+        media_type = data.get("type", "")
+        artist = data.get("artist", "")
+        context = data.get("context", "")
+        parts = [f"{icon} Gespeichert: **{title}**"]
+        if artist:
+            parts.append(f"von {artist}")
+        if media_type:
+            parts.append(f"({media_type})")
+        if context:
+            parts.append(f"– {context}")
+        return " ".join(parts)
 
     elif category == "people":
         return f"{icon} Person gespeichert: **{data.get('name', '')}** – {data.get('context', '')}"
@@ -427,7 +482,7 @@ async def memory_agent(state: AgentState) -> AgentState:
         data = parsed.get("data", {})
 
         if action == "error" or not data:
-            return {"messages": [AIMessage(content="Ich konnte nicht verstehen was gespeichert werden soll. Bitte formuliere es klarer, z.B. 'Merke dir dass Saporito mein Lieblings-Restaurant in Friedrichshain ist'.")]}
+            return {"messages": [AIMessage(content="Ich konnte nicht verstehen was gespeichert werden soll. Bitte formuliere es klarer, z.B. 'Merke dir dass Insieme von Valentino Vivace mein Lieblingslied ist'.")]}
 
         # Stufe 2: Python-seitiger Update
         current_profile = load_profile()

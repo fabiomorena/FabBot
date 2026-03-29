@@ -251,6 +251,27 @@ def get_profile_context_full() -> str:
                         line += f": {context}"
                     lines.append(line)
 
+        # Media – Lieblingslieder, Filme, Bücher etc.
+        media = profile.get("media", [])
+        if isinstance(media, list) and media:
+            lines.append("Lieblingsmedien:")
+            for m in media:
+                if not isinstance(m, dict):
+                    continue
+                title = m.get("title", "")
+                media_type = m.get("type", "")
+                artist = m.get("artist", "")
+                context = m.get("context", "")
+                if title:
+                    line = f"  – {title}"
+                    if artist:
+                        line += f" von {artist}"
+                    if media_type:
+                        line += f" ({media_type})"
+                    if context:
+                        line += f": {context}"
+                    lines.append(line)
+
         # Custom – freie Sektion
         custom = profile.get("custom", [])
         if isinstance(custom, list) and custom:
