@@ -47,7 +47,8 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
 | ✅ | 529 Retry – exponential backoff (2s/4s/8s) on Anthropic overload |
 | ✅ | Memory Agent – explicit profile updates via natural language (places, people, projects, custom) |
-| ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` |
+| ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` + `media` |
+| ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
 
 ---
 
@@ -328,6 +329,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 43** ✅ Auto-Learning Pipeline – Haiku Detector + Python Writer + Haiku Reviewer + Fallback zu Note
 - **Phase 44** ✅ Bug fix – web_agent last HumanMessage only, verhindert Natural-Language statt JSON
 - **Phase 45** ✅ Memory Agent – explizite Profil-Updates via Sprache, Hybrid-Struktur (places/custom), 140 Tests
+- **Phase 46** ✅ Media-Kategorie – Lieder/Filme/Podcasts/Bücher korrekt als `media` speichern
 
 ---
 
