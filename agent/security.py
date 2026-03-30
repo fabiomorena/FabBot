@@ -10,6 +10,13 @@ Weitere Schichten:
 - Rate Limiting (max 20 Nachrichten / 60 Sekunden pro User)
 - Input-Laenge (max 2000 Zeichen)
 - Null-Byte-Entfernung
+
+Design:
+- sanitize_input()       → sync,  (bool, str)  – kein __SUSPICIOUS__-Präfix
+- sanitize_input_async() → async, (bool, str)  – LLM-Guard bei Verdacht
+  Beide geben saubere Strings zurück – kein interner Präfix im Rückgabewert.
+  Der LLM-Guard-Bedarf wird durch erneutes _pattern_check() bestimmt,
+  nicht durch String-Encoding.
 """
 import logging
 import re
@@ -91,7 +98,6 @@ _INJECTION_PATTERNS = [
 ]
 
 _SUSPICIOUS_PATTERNS = [
-    # Praezisere Muster um false positives zu reduzieren
     r"system\s*prompt",
     r"ignore\s+(all|previous|instructions|your)",
     r"vergiss\s+(alle|meine|vorherigen|deine)",
@@ -113,14 +119,14 @@ def _pattern_check(text: str) -> tuple[bool, int, str]:
     """
     Prueft Text auf Injection-Muster.
     Gibt zurueck: (hard_block, suspicion_score, reason)
-    - hard_block=True → sofort blockieren
+    - hard_block=True  → sofort blockieren
     - suspicion_score > 0 → LLM-Guard aufrufen
     """
     normalized = _normalize(text.lower())
 
     for pattern in _INJECTION_PATTERNS:
         if re.search(pattern, normalized):
-            return True, 0, f"Ungültige Eingabe erkannt."
+            return True, 0, "Ungültige Eingabe erkannt."
 
     score = 0
     for pattern in _SUSPICIOUS_PATTERNS:
@@ -138,6 +144,7 @@ async def _llm_guard(text: str) -> bool:
     """
     Prueft verdaechtige Eingaben via Haiku.
     Gibt True zurueck wenn die Eingabe sicher ist, False wenn Injection erkannt.
+    Fail-open: Bei Fehler → True (sicher durchlassen).
     """
     try:
         from agent.llm import get_fast_llm
@@ -160,7 +167,6 @@ async def _llm_guard(text: str) -> bool:
         return is_safe
 
     except Exception as e:
-        # Bei Fehler im Guard: sicher durchlassen (fail-open)
         logger.error(f"LLM-Guard Fehler (fail-open): {e}")
         return True
 
@@ -188,14 +194,17 @@ def check_rate_limit(user_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Haupt-Einstiegspunkt
+# Haupt-Einstiegspunkte
 # ---------------------------------------------------------------------------
 
 def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
     """
     Synchroner Input-Check (Pattern + Rate Limit).
     Fuer den LLM-Guard: sanitize_input_async() verwenden.
+
     Gibt zurueck: (is_safe, clean_text_or_reason)
+    Niemals mit internem Präfix im Rückgabewert.
+    Verdächtige Eingaben: (True, original_text) – LLM-Guard via async-Caller.
     """
     if not text or not text.strip():
         return False, "Leere Eingabe."
@@ -215,10 +224,9 @@ def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
     if hard_block:
         return False, reason
 
-    # score > 0 → LLM-Guard noetig, als verdaechtig markieren fuer async-Caller
-    if score > 0:
-        return True, f"__SUSPICIOUS__{text}"
-
+    # Verdächtig aber nicht hard-blocked → sauber zurückgeben
+    # sanitize_input_async() erkennt den LLM-Guard-Bedarf selbst
+    # via erneutem _pattern_check() – kein String-Encoding nötig
     return True, text
 
 
@@ -226,18 +234,21 @@ async def sanitize_input_async(text: str, user_id: int = 0) -> tuple[bool, str]:
     """
     Asynchroner Input-Check mit LLM-Guard fuer verdaechtige Eingaben.
     Sollte bevorzugt in bot.py verwendet werden.
+
+    Gibt zurueck: (is_safe, clean_text_or_reason)
+    Niemals mit internem Präfix – immer der ursprüngliche Text oder Fehlergrund.
     """
     ok, result = sanitize_input(text, user_id)
     if not ok:
         return False, result
 
-    # LLM-Guard fuer verdaechtige Eingaben
-    if result.startswith("__SUSPICIOUS__"):
-        original = result[len("__SUSPICIOUS__"):]
-        logger.info(f"LLM-Guard aktiviert fuer verdaechtige Eingabe.")
-        is_safe = await _llm_guard(original)
+    # LLM-Guard-Bedarf durch erneutes _pattern_check() bestimmen
+    # (kein String-Prefix-Encoding – sauber und race-condition-frei)
+    _, score, _ = _pattern_check(result)
+    if score > 0:
+        logger.info("LLM-Guard aktiviert fuer verdaechtige Eingabe.")
+        is_safe = await _llm_guard(result)
         if not is_safe:
             return False, "Ungültige Eingabe erkannt."
-        return True, original
 
     return True, result
