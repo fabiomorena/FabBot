@@ -2,6 +2,7 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+import asyncio
 
 from agent.state import AgentState, AgentName
 from agent.llm import get_fast_llm
@@ -19,6 +20,7 @@ _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 agent_graph = None
 _db_conn = None
+_init_lock = asyncio.Lock()  # Verhindert Double-Init bei gleichzeitigen Aufrufen
 
 SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, eine der folgenden Antworten zurueckzugeben.
 
@@ -139,14 +141,26 @@ def _build_graph() -> StateGraph:
 
 
 async def init_graph() -> None:
+    """
+    Initialisiert den Graphen mit persistentem AsyncSqliteSaver.
+    Guard gegen Double-Init: early-return wenn bereits initialisiert.
+    asyncio.Lock verhindert Race Condition bei gleichzeitigen Aufrufen.
+    """
     global agent_graph, _db_conn
-    import aiosqlite
-    _db_conn = await aiosqlite.connect(str(_DB_PATH))
-    checkpointer = AsyncSqliteSaver(_db_conn)
-    agent_graph = _build_graph().compile(checkpointer=checkpointer)
+
+    async with _init_lock:
+        # Early-return wenn bereits initialisiert – verhindert Connection Leak
+        if agent_graph is not None:
+            return
+
+        import aiosqlite
+        _db_conn = await aiosqlite.connect(str(_DB_PATH))
+        checkpointer = AsyncSqliteSaver(_db_conn)
+        agent_graph = _build_graph().compile(checkpointer=checkpointer)
 
 
 async def close_graph() -> None:
+    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
     global _db_conn
     if _db_conn:
         await _db_conn.close()
