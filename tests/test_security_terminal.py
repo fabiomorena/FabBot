@@ -2690,3 +2690,230 @@ class TestGenerateBriefing:
 
         assert isinstance(result, str)
         assert len(result) > 0
+
+# ---------------------------------------------------------------------------
+# profile_learner.py Tests – _detect_new_info() mit gemocktem LLM
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestDetectNewInfo:
+    """Tests für _detect_new_info() im profile_learner."""
+
+    def _mock_llm_response(self, content: str):
+        """Hilfsfunktion: erstellt einen gemockten LLM-Response."""
+        mock_response = MagicMock()
+        mock_response.content = content
+        return mock_response
+
+    @pytest.mark.asyncio
+    async def test_organic_person_detected(self) -> None:
+        """Organische Erwähnung einer Person → learned: true, type: person."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            '{"learned": true, "type": "person", "data": {"name": "Marco", "context": "Kollege"}}'
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Ich habe heute mit meinem neuen Kollegen Marco gesprochen")
+
+        assert result.get("learned") is True
+        assert result.get("type") == "person"
+
+    @pytest.mark.asyncio
+    async def test_explicit_command_not_learned(self) -> None:
+        """Expliziter Speicher-Befehl → learned: false (memory_agent zuständig)."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            '{"learned": false}'
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("füge Saporito als Restaurant hinzu")
+
+        assert result.get("learned") is False
+
+    @pytest.mark.asyncio
+    async def test_smalltalk_not_learned(self) -> None:
+        """Smalltalk → learned: false."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            '{"learned": false}'
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Danke!")
+
+        assert result.get("learned") is False
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_not_learned(self) -> None:
+        """LLM gibt kein gültiges JSON → learned: false, kein Crash."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            "Das ist kein JSON"
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Test Nachricht")
+
+        assert result.get("learned") is False
+
+    @pytest.mark.asyncio
+    async def test_llm_error_returns_not_learned(self) -> None:
+        """LLM-Fehler → learned: false, kein Crash (fail-safe)."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=Exception("API down"))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Test Nachricht")
+
+        assert result.get("learned") is False
+
+    @pytest.mark.asyncio
+    async def test_missing_learned_key_returns_not_learned(self) -> None:
+        """JSON ohne 'learned' Key → learned: false."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            '{"type": "person", "data": {}}'
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Test")
+
+        assert result.get("learned") is False
+
+    @pytest.mark.asyncio
+    async def test_place_detected(self) -> None:
+        """Organische Erwähnung eines Orts → learned: true, type: place."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            '{"learned": true, "type": "place", "data": {"name": "Saporito", "type": "restaurant"}}'
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Gestern war ich mit Steffi im Saporito, tolles Essen")
+
+        assert result.get("learned") is True
+        assert result.get("type") == "place"
+
+    @pytest.mark.asyncio
+    async def test_json_with_markdown_fences_parsed(self) -> None:
+        """JSON in Markdown-Code-Fences wird korrekt geparst."""
+        from agent.profile_learner import _detect_new_info
+
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke = AsyncMock(return_value=self._mock_llm_response(
+            '```json\n{"learned": false}\n```'
+        ))
+
+        with patch("agent.llm.get_fast_llm", return_value=mock_llm):
+            result = await _detect_new_info("Was ist das Wetter?")
+
+        assert result.get("learned") is False
+
+
+# ---------------------------------------------------------------------------
+# confirm.py Tests – request_confirmation() Timeout-Verhalten
+# ---------------------------------------------------------------------------
+
+class TestRequestConfirmation:
+    """Tests für request_confirmation() in bot/confirm.py."""
+
+    @pytest.mark.asyncio
+    async def test_confirmation_accepted(self) -> None:
+        """User bestätigt → True wird zurückgegeben."""
+        from bot.confirm import request_confirmation, _pending
+
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        import asyncio
+
+        async def auto_confirm():
+            await asyncio.sleep(0.05)
+            for conf_id, future in list(_pending.items()):
+                if not future.done():
+                    future.set_result(True)
+                    break
+
+        asyncio.create_task(auto_confirm())
+        result = await request_confirmation(fake_bot, 12345, "terminal_agent", "df -h")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_confirmation_rejected(self) -> None:
+        """User lehnt ab → False wird zurückgegeben."""
+        from bot.confirm import request_confirmation, _pending
+
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        import asyncio
+
+        async def auto_reject():
+            await asyncio.sleep(0.05)
+            for conf_id, future in list(_pending.items()):
+                if not future.done():
+                    future.set_result(False)
+                    break
+
+        asyncio.create_task(auto_reject())
+        result = await request_confirmation(fake_bot, 12345, "terminal_agent", "df -h")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_confirmation_timeout(self) -> None:
+        """Timeout → False + Nachricht an User."""
+        from bot.confirm import request_confirmation
+
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        with patch("bot.confirm.TIMEOUT_SECONDS", 0.1):
+            result = await request_confirmation(fake_bot, 12345, "terminal_agent", "df -h")
+
+        assert result is False
+        # Timeout-Nachricht wurde gesendet
+        assert fake_bot.send_message.call_count >= 2  # Initial + Timeout
+
+    @pytest.mark.asyncio
+    async def test_confirmation_sends_keyboard(self) -> None:
+        """Bestätigungsanfrage sendet Inline-Keyboard."""
+        from bot.confirm import request_confirmation, _pending
+        from telegram import InlineKeyboardMarkup
+
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        import asyncio
+
+        async def auto_confirm():
+            await asyncio.sleep(0.05)
+            for conf_id, future in list(_pending.items()):
+                if not future.done():
+                    future.set_result(True)
+                    break
+
+        asyncio.create_task(auto_confirm())
+        await request_confirmation(fake_bot, 12345, "test_agent", "test action")
+
+        call_kwargs = fake_bot.send_message.call_args[1]
+        assert "reply_markup" in call_kwargs
+        assert isinstance(call_kwargs["reply_markup"], InlineKeyboardMarkup)
