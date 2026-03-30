@@ -1280,3 +1280,308 @@ class TestLearnerApplyUpdateCustom:
         profile = {"custom": []}
         learner_apply_update(profile, "custom", {"key": "test", "value": "x"})
         assert profile["custom"] == []
+
+
+# ---------------------------------------------------------------------------
+# profile_learner.py Tests – _apply_update() restliche Typen
+# ---------------------------------------------------------------------------
+
+class TestLearnerApplyUpdatePerson:
+    """Tests für _apply_update() im profile_learner – person-Typ."""
+
+    def test_save_new_person(self) -> None:
+        """Neue Person wird gespeichert."""
+        profile = {}
+        result = learner_apply_update(profile, "person", {"name": "Anna", "context": "Freundin"})
+        assert result is not None
+        assert "people" in result
+        assert result["people"][0]["name"] == "Anna"
+
+    def test_save_person_creates_list(self) -> None:
+        """people-Liste wird angelegt wenn nicht vorhanden."""
+        profile = {"identity": {"name": "Fabio"}}
+        result = learner_apply_update(profile, "person", {"name": "Marco", "context": "Kollege"})
+        assert result is not None
+        assert len(result["people"]) == 1
+
+    def test_update_existing_person(self) -> None:
+        """Bestehende Person wird aktualisiert, kein Duplikat."""
+        profile = {"people": [{"name": "Marco", "context": "Kollege"}]}
+        result = learner_apply_update(profile, "person", {"name": "Marco", "context": "Vorgesetzter"})
+        assert result is not None
+        assert len(result["people"]) == 1
+        assert result["people"][0]["context"] == "Vorgesetzter"
+
+    def test_update_person_case_insensitive(self) -> None:
+        """Namensvergleich ist case-insensitive."""
+        profile = {"people": [{"name": "marco", "context": "Kollege"}]}
+        result = learner_apply_update(profile, "person", {"name": "Marco", "context": "Chef"})
+        assert result is not None
+        assert len(result["people"]) == 1
+
+    def test_save_person_missing_name_returns_none(self) -> None:
+        """Fehlender Name → None."""
+        result = learner_apply_update({}, "person", {"name": "", "context": "?"})
+        assert result is None
+
+    def test_original_not_modified(self) -> None:
+        """Original-Dict wird nicht verändert (deepcopy)."""
+        profile = {"people": []}
+        learner_apply_update(profile, "person", {"name": "Test", "context": "x"})
+        assert profile["people"] == []
+
+
+class TestLearnerApplyUpdateProject:
+    """Tests für _apply_update() im profile_learner – project-Typ."""
+
+    def test_save_new_project(self) -> None:
+        """Neues Projekt wird gespeichert."""
+        profile = {}
+        result = learner_apply_update(profile, "project", {
+            "name": "NeueApp", "description": "Test", "priority": "high"
+        })
+        assert result is not None
+        assert any(p["name"] == "NeueApp" for p in result["projects"]["active"])
+
+    def test_save_duplicate_project_returns_none(self) -> None:
+        """Duplikat-Projekt im Learner → None."""
+        profile = {"projects": {"active": [{"name": "FabBot", "priority": "high"}]}}
+        result = learner_apply_update(profile, "project", {"name": "FabBot"})
+        assert result is None
+
+    def test_save_project_missing_name_returns_none(self) -> None:
+        """Fehlender Name → None."""
+        result = learner_apply_update({}, "project", {"name": "", "description": "test"})
+        assert result is None
+
+    def test_save_project_default_priority(self) -> None:
+        """Kein priority → default 'medium'."""
+        profile = {}
+        result = learner_apply_update(profile, "project", {"name": "TestApp"})
+        assert result is not None
+        assert result["projects"]["active"][0]["priority"] == "medium"
+
+
+class TestLearnerApplyUpdateJob:
+    """Tests für _apply_update() im profile_learner – job-Typ."""
+
+    def test_save_job_lands_in_work(self) -> None:
+        """Job wird in work-Sektion gespeichert, nicht als Projekt."""
+        profile = {"work": {"focus": "KI"}}
+        result = learner_apply_update(profile, "job", {"employer": "Google", "role": "Engineer"})
+        assert result is not None
+        assert result["work"]["employer"] == "Google"
+        assert result["work"]["role"] == "Engineer"
+        assert result["work"]["focus"] == "KI"  # Bestehende Felder erhalten
+
+    def test_save_job_missing_employer_returns_none(self) -> None:
+        """Fehlender Arbeitgeber → None."""
+        result = learner_apply_update({}, "job", {"employer": "", "role": "Dev"})
+        assert result is None
+
+    def test_save_job_creates_work_section(self) -> None:
+        """work-Sektion wird angelegt wenn nicht vorhanden."""
+        profile = {}
+        result = learner_apply_update(profile, "job", {"employer": "Bonial", "role": "Teamlead"})
+        assert result is not None
+        assert "work" in result
+        assert result["work"]["employer"] == "Bonial"
+
+
+class TestLearnerApplyUpdateLocation:
+    """Tests für _apply_update() im profile_learner – location-Typ."""
+
+    def test_save_location_lands_in_identity(self) -> None:
+        """Standort landet in identity-Sektion."""
+        profile = {"identity": {"name": "Fabio", "location": "Berlin"}}
+        result = learner_apply_update(profile, "location", {"location": "München"})
+        assert result is not None
+        assert result["identity"]["location"] == "München"
+        assert result["identity"]["name"] == "Fabio"  # Name erhalten
+
+    def test_save_location_creates_identity(self) -> None:
+        """identity-Sektion wird angelegt wenn nicht vorhanden."""
+        profile = {}
+        result = learner_apply_update(profile, "location", {"location": "Hamburg"})
+        assert result is not None
+        assert result["identity"]["location"] == "Hamburg"
+
+    def test_save_location_missing_returns_none(self) -> None:
+        """Fehlender Standort → None."""
+        result = learner_apply_update({}, "location", {"location": ""})
+        assert result is None
+
+
+class TestLearnerApplyUpdateUnknownType:
+    """Tests für unbekannte Typen im profile_learner."""
+
+    def test_unknown_type_returns_none(self) -> None:
+        """Unbekannter Typ → None."""
+        result = learner_apply_update({}, "unknown_type", {"key": "test", "value": "x"})
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# profile.py Tests – write_profile() und add_note_to_profile()
+# ---------------------------------------------------------------------------
+
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+
+class TestWriteProfile:
+    """Tests für write_profile() in profile.py."""
+
+    def test_write_valid_profile(self) -> None:
+        """Gültiges Profil wird erfolgreich geschrieben."""
+        import yaml
+        from agent.profile import write_profile
+
+        profile = {"identity": {"name": "Fabio"}, "work": {"role": "Engineer"}}
+
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
+            yaml.dump({"dummy": True}, f)
+            tmp_path = Path(f.name)
+
+        try:
+            with patch("agent.profile._PROFILE_PATH", tmp_path), \
+                 patch("agent.profile._profile_cache", None):
+                result = write_profile(profile)
+            assert result is True
+            written = yaml.safe_load(tmp_path.read_text())
+            assert written["identity"]["name"] == "Fabio"
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def test_write_empty_dict_returns_false(self) -> None:
+        """Leeres Dict → False."""
+        from agent.profile import write_profile
+        result = write_profile({})
+        assert result is False
+
+    def test_write_none_returns_false(self) -> None:
+        """None → False."""
+        from agent.profile import write_profile
+        result = write_profile(None)
+        assert result is False
+
+    def test_write_missing_file_returns_false(self) -> None:
+        """Fehlendes File → False."""
+        from agent.profile import write_profile
+        with patch("agent.profile._PROFILE_PATH", Path("/nonexistent/profile.yaml")):
+            result = write_profile({"identity": {"name": "Test"}})
+        assert result is False
+
+
+class TestAddNoteToProfile:
+    """Tests für add_note_to_profile() in profile.py."""
+
+    def test_add_note_success(self) -> None:
+        """Note wird erfolgreich hinzugefügt."""
+        import yaml
+        from agent.profile import add_note_to_profile
+
+        profile = {"identity": {"name": "Fabio"}}
+
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
+            yaml.dump(profile, f, allow_unicode=True)
+            tmp_path = Path(f.name)
+
+        try:
+            with patch("agent.profile._PROFILE_PATH", tmp_path), \
+                 patch("agent.profile._profile_cache", None):
+                result = add_note_to_profile("Test-Notiz")
+            assert result is True
+            written = yaml.safe_load(tmp_path.read_text())
+            assert "notes" in written
+            assert any("Test-Notiz" in n for n in written["notes"])
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def test_add_note_empty_text_returns_false(self) -> None:
+        """Leerer Text → False."""
+        from agent.profile import add_note_to_profile
+        assert add_note_to_profile("") is False
+        assert add_note_to_profile("   ") is False
+
+    def test_add_note_missing_file_returns_false(self) -> None:
+        """Fehlendes File → False."""
+        from agent.profile import add_note_to_profile
+        with patch("agent.profile._PROFILE_PATH", Path("/nonexistent/profile.yaml")):
+            result = add_note_to_profile("Test")
+        assert result is False
+
+    def test_add_multiple_notes(self) -> None:
+        """Mehrere Notes werden alle gespeichert."""
+        import yaml
+        from agent.profile import add_note_to_profile
+
+        profile = {}
+
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
+            yaml.dump(profile, f)
+            tmp_path = Path(f.name)
+
+        try:
+            with patch("agent.profile._PROFILE_PATH", tmp_path), \
+                 patch("agent.profile._profile_cache", None):
+                add_note_to_profile("Erste Notiz")
+            with patch("agent.profile._PROFILE_PATH", tmp_path), \
+                 patch("agent.profile._profile_cache", None):
+                add_note_to_profile("Zweite Notiz")
+            written = yaml.safe_load(tmp_path.read_text())
+            assert len(written["notes"]) == 2
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# profile.py Tests – get_profile_context_short()
+# ---------------------------------------------------------------------------
+
+from agent.profile import get_profile_context_short
+
+
+class TestProfileContextShort:
+
+    def test_name_and_location_appear(self) -> None:
+        """Name und Standort erscheinen im kurzen Kontext."""
+        profile = {"identity": {"name": "Fabio", "location": "Berlin"}}
+        with patch("agent.profile.load_profile", return_value=profile):
+            ctx = get_profile_context_short()
+        assert "Fabio" in ctx
+        assert "Berlin" in ctx
+
+    def test_only_high_priority_projects(self) -> None:
+        """Nur high-priority Projekte erscheinen."""
+        profile = {
+            "identity": {"name": "Fabio"},
+            "projects": {"active": [
+                {"name": "FabBot", "priority": "high"},
+                {"name": "Nebenprojekt", "priority": "low"},
+            ]}
+        }
+        with patch("agent.profile.load_profile", return_value=profile):
+            ctx = get_profile_context_short()
+        assert "FabBot" in ctx
+        assert "Nebenprojekt" not in ctx
+
+    def test_empty_profile_returns_empty_string(self) -> None:
+        """Leeres Profil → leerer String."""
+        with patch("agent.profile.load_profile", return_value={}):
+            ctx = get_profile_context_short()
+        assert ctx == ""
+
+    def test_no_projects_still_shows_name(self) -> None:
+        """Kein Projekt-Abschnitt → Name erscheint trotzdem."""
+        profile = {"identity": {"name": "Fabio"}}
+        with patch("agent.profile.load_profile", return_value=profile):
+            ctx = get_profile_context_short()
+        assert "Fabio" in ctx
+
+    def test_profile_error_returns_empty_string(self) -> None:
+        """Fehler beim Laden → leerer String, kein Crash."""
+        with patch("agent.profile.load_profile", side_effect=Exception("DB error")):
+            ctx = get_profile_context_short()
+        assert ctx == ""
