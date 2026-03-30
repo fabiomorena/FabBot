@@ -305,7 +305,7 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
     from agent.profile import add_note_to_profile
-    success = add_note_to_profile(text)
+    success = await add_note_to_profile(text)
     if success:
         await update.message.reply_text(f"✅ Gemerkt: {text}")
     else:

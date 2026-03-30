@@ -1444,7 +1444,8 @@ from unittest.mock import patch
 class TestWriteProfile:
     """Tests für write_profile() in profile.py."""
 
-    def test_write_valid_profile(self) -> None:
+    @pytest.mark.asyncio
+    async def test_write_valid_profile(self) -> None:
         """Gültiges Profil wird erfolgreich geschrieben."""
         import yaml
         from agent.profile import write_profile
@@ -1458,37 +1459,41 @@ class TestWriteProfile:
         try:
             with patch("agent.profile._PROFILE_PATH", tmp_path), \
                  patch("agent.profile._profile_cache", None):
-                result = write_profile(profile)
+                result = await write_profile(profile)
             assert result is True
             written = yaml.safe_load(tmp_path.read_text())
             assert written["identity"]["name"] == "Fabio"
         finally:
             tmp_path.unlink(missing_ok=True)
 
-    def test_write_empty_dict_returns_false(self) -> None:
+    @pytest.mark.asyncio
+    async def test_write_empty_dict_returns_false(self) -> None:
         """Leeres Dict → False."""
         from agent.profile import write_profile
-        result = write_profile({})
+        result = await write_profile({})
         assert result is False
 
-    def test_write_none_returns_false(self) -> None:
+    @pytest.mark.asyncio
+    async def test_write_none_returns_false(self) -> None:
         """None → False."""
         from agent.profile import write_profile
-        result = write_profile(None)
+        result = await write_profile(None)
         assert result is False
 
-    def test_write_missing_file_returns_false(self) -> None:
+    @pytest.mark.asyncio
+    async def test_write_missing_file_returns_false(self) -> None:
         """Fehlendes File → False."""
         from agent.profile import write_profile
         with patch("agent.profile._PROFILE_PATH", Path("/nonexistent/profile.yaml")):
-            result = write_profile({"identity": {"name": "Test"}})
+            result = await write_profile({"identity": {"name": "Test"}})
         assert result is False
 
 
 class TestAddNoteToProfile:
     """Tests für add_note_to_profile() in profile.py."""
 
-    def test_add_note_success(self) -> None:
+    @pytest.mark.asyncio
+    async def test_add_note_success(self) -> None:
         """Note wird erfolgreich hinzugefügt."""
         import yaml
         from agent.profile import add_note_to_profile
@@ -1502,7 +1507,7 @@ class TestAddNoteToProfile:
         try:
             with patch("agent.profile._PROFILE_PATH", tmp_path), \
                  patch("agent.profile._profile_cache", None):
-                result = add_note_to_profile("Test-Notiz")
+                result = await add_note_to_profile("Test-Notiz")
             assert result is True
             written = yaml.safe_load(tmp_path.read_text())
             assert "notes" in written
@@ -1510,20 +1515,23 @@ class TestAddNoteToProfile:
         finally:
             tmp_path.unlink(missing_ok=True)
 
-    def test_add_note_empty_text_returns_false(self) -> None:
+    @pytest.mark.asyncio
+    async def test_add_note_empty_text_returns_false(self) -> None:
         """Leerer Text → False."""
         from agent.profile import add_note_to_profile
-        assert add_note_to_profile("") is False
-        assert add_note_to_profile("   ") is False
+        assert await add_note_to_profile("") is False
+        assert await add_note_to_profile("   ") is False
 
-    def test_add_note_missing_file_returns_false(self) -> None:
+    @pytest.mark.asyncio
+    async def test_add_note_missing_file_returns_false(self) -> None:
         """Fehlendes File → False."""
         from agent.profile import add_note_to_profile
         with patch("agent.profile._PROFILE_PATH", Path("/nonexistent/profile.yaml")):
-            result = add_note_to_profile("Test")
+            result = await add_note_to_profile("Test")
         assert result is False
 
-    def test_add_multiple_notes(self) -> None:
+    @pytest.mark.asyncio
+    async def test_add_multiple_notes(self) -> None:
         """Mehrere Notes werden alle gespeichert."""
         import yaml
         from agent.profile import add_note_to_profile
@@ -1537,10 +1545,10 @@ class TestAddNoteToProfile:
         try:
             with patch("agent.profile._PROFILE_PATH", tmp_path), \
                  patch("agent.profile._profile_cache", None):
-                add_note_to_profile("Erste Notiz")
+                await add_note_to_profile("Erste Notiz")
             with patch("agent.profile._PROFILE_PATH", tmp_path), \
                  patch("agent.profile._profile_cache", None):
-                add_note_to_profile("Zweite Notiz")
+                await add_note_to_profile("Zweite Notiz")
             written = yaml.safe_load(tmp_path.read_text())
             assert len(written["notes"]) == 2
         finally:

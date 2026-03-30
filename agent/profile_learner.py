@@ -234,7 +234,7 @@ async def apply_learning(human_message: str) -> None:
 
         if info_type == "note":
             text = data.get("text", human_message[:200])
-            add_note_to_profile(text)
+            await add_note_to_profile(text)
             return
 
         current_profile = load_profile()
@@ -242,7 +242,7 @@ async def apply_learning(human_message: str) -> None:
 
         if updated_profile is None:
             fallback = f"[Auto] {info_type}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            add_note_to_profile(fallback)
+            await add_note_to_profile(fallback)
             return
 
         original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -251,17 +251,17 @@ async def apply_learning(human_message: str) -> None:
         is_valid = await _review_yaml(original_yaml, new_yaml)
         if not is_valid:
             fallback = f"[Auto] {info_type}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            add_note_to_profile(fallback)
+            await add_note_to_profile(fallback)
             return
 
         try:
             yaml.safe_load(new_yaml)
         except yaml.YAMLError as e:
             logger.error(f"ProfileLearner: YAML-Validierung fehlgeschlagen: {e}")
-            add_note_to_profile(f"[Auto] {info_type}: {json.dumps(data, ensure_ascii=False)[:150]}")
+            await add_note_to_profile(f"[Auto] {info_type}: {json.dumps(data, ensure_ascii=False)[:150]}")
             return
 
-        write_profile(updated_profile)
+        await write_profile(updated_profile)
         logger.info(f"ProfileLearner: Profil aktualisiert – type={info_type}")
 
     except Exception as e:

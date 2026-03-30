@@ -22,8 +22,14 @@ YAML-Struktur (Option 3 – Hybrid):
 Feste Sektionen: identity, work, projects, people, preferences, places, hardware, routines
 Freie Sektion:   custom (key/value Paare für alles andere)
 Notes:           via /remember oder Auto-Learning
+
+Thread-Safety:
+- _profile_write_lock (asyncio.Lock) schützt alle YAML Read-Write-Operationen
+  gegen gleichzeitige Updates (TOCTOU-Problem).
+- load_profile() ist read-only und benötigt keinen Lock.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -34,8 +40,17 @@ logger = logging.getLogger(__name__)
 _PROFILE_PATH = Path(__file__).parent.parent / "personal_profile.yaml"
 _profile_cache: dict[str, Any] | None = None
 
+# Lock für alle Schreiboperationen auf personal_profile.yaml
+# Verhindert TOCTOU bei gleichzeitigen memory_agent / profile_learner Aufrufen
+_profile_write_lock = asyncio.Lock()
+
 
 def load_profile() -> dict[str, Any]:
+    """
+    Lädt personal_profile.yaml. Cached nach erstem Aufruf.
+    Read-only – kein Lock nötig.
+    Gibt leeres Dict zurück bei Fehler oder fehlendem File.
+    """
     global _profile_cache
     if _profile_cache is not None:
         return _profile_cache
@@ -57,12 +72,21 @@ def load_profile() -> dict[str, Any]:
 
 
 def reload_profile() -> dict[str, Any]:
+    """
+    Erzwingt Neu-Laden des Profils aus der YAML-Datei.
+    Wird nach Schreiboperationen aufgerufen.
+    """
     global _profile_cache
     _profile_cache = None
     return load_profile()
 
 
-def add_note_to_profile(text: str) -> bool:
+async def add_note_to_profile(text: str) -> bool:
+    """
+    Fügt eine neue Note zum 'notes' Abschnitt in personal_profile.yaml hinzu.
+    Verwendet _profile_write_lock gegen gleichzeitige Schreibzugriffe.
+    Gibt True zurück bei Erfolg, False bei Fehler.
+    """
     if not text or not text.strip():
         return False
     if not _PROFILE_PATH.exists():
@@ -70,14 +94,15 @@ def add_note_to_profile(text: str) -> bool:
         return False
     try:
         import yaml
-        with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
-            profile = yaml.safe_load(f) or {}
-        if "notes" not in profile or not isinstance(profile["notes"], list):
-            profile["notes"] = []
-        timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
-        profile["notes"].append(f"[{timestamp}] {text.strip()}")
-        with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
-            yaml.dump(profile, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        async with _profile_write_lock:
+            with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
+                profile = yaml.safe_load(f) or {}
+            if "notes" not in profile or not isinstance(profile["notes"], list):
+                profile["notes"] = []
+            timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
+            profile["notes"].append(f"[{timestamp}] {text.strip()}")
+            with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(profile, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
         reload_profile()
         logger.info(f"Note zu Profil hinzugefügt: {text[:80]}")
         return True
@@ -86,7 +111,12 @@ def add_note_to_profile(text: str) -> bool:
         return False
 
 
-def write_profile(profile: dict[str, Any]) -> bool:
+async def write_profile(profile: dict[str, Any]) -> bool:
+    """
+    Schreibt ein vollständiges Profil-Dict in personal_profile.yaml.
+    Verwendet _profile_write_lock gegen gleichzeitige Schreibzugriffe.
+    Gibt True zurück bei Erfolg, False bei Fehler.
+    """
     if not profile or not isinstance(profile, dict):
         return False
     if not _PROFILE_PATH.exists():
@@ -95,9 +125,10 @@ def write_profile(profile: dict[str, Any]) -> bool:
     try:
         import yaml
         serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        yaml.safe_load(serialized)  # Finale Validierung
-        with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
-            f.write(serialized)
+        yaml.safe_load(serialized)  # Finale Validierung vor dem Schreiben
+        async with _profile_write_lock:
+            with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
+                f.write(serialized)
         reload_profile()
         logger.info("write_profile: Profil erfolgreich geschrieben.")
         return True
@@ -107,6 +138,10 @@ def write_profile(profile: dict[str, Any]) -> bool:
 
 
 def get_profile_context_short() -> str:
+    """
+    Kurzer Kontext-String für den Supervisor (Haiku-Routing).
+    Nur Name, Standort und aktive High-Priority-Projekte.
+    """
     try:
         profile = load_profile()
         if not profile:
@@ -134,6 +169,11 @@ def get_profile_context_short() -> str:
 
 
 def get_profile_context_full() -> str:
+    """
+    Vollständiger Kontext-String für den chat_agent.
+    Enthält alle Sektionen: Identität, Arbeit, Projekte, Präferenzen,
+    Hardware, Routinen, Personen, Orte, Media, Custom, Notes.
+    """
     try:
         profile = load_profile()
         if not profile:
@@ -195,7 +235,6 @@ def get_profile_context_full() -> str:
             dislikes = prefs.get("dislikes", [])
             if isinstance(dislikes, list) and dislikes:
                 lines.append(f"Vermeiden: {'; '.join(dislikes)}")
-            # Weitere Präferenzen (dynamisch gespeichert)
             skip_keys = {"communication", "response_style", "dislikes", "language_for_answers"}
             extra = {k: v for k, v in prefs.items() if k not in skip_keys and isinstance(v, str)}
             for k, v in extra.items():
@@ -251,7 +290,7 @@ def get_profile_context_full() -> str:
                         line += f": {context}"
                     lines.append(line)
 
-        # Media – Lieblingslieder, Filme, Bücher etc.
+        # Media
         media = profile.get("media", [])
         if isinstance(media, list) and media:
             lines.append("Lieblingsmedien:")
@@ -272,7 +311,7 @@ def get_profile_context_full() -> str:
                         line += f": {context}"
                     lines.append(line)
 
-        # Custom – freie Sektion
+        # Custom
         custom = profile.get("custom", [])
         if isinstance(custom, list) and custom:
             lines.append("Weitere persönliche Infos:")

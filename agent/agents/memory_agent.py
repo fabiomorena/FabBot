@@ -490,7 +490,7 @@ async def memory_agent(state: AgentState) -> AgentState:
 
         if updated_profile is None:
             fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            add_note_to_profile(fallback)
+            await add_note_to_profile(fallback)
             logger.warning(f"MemoryAgent: _apply_memory_update returned None – Fallback zu Note")
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")]}
@@ -507,7 +507,7 @@ async def memory_agent(state: AgentState) -> AgentState:
         is_valid = await _review_yaml(original_yaml, new_yaml)
         if not is_valid:
             fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            add_note_to_profile(fallback)
+            await add_note_to_profile(fallback)
             logger.warning("MemoryAgent: Reviewer abgelehnt – Fallback zu Note")
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert – YAML-Review fehlgeschlagen)_")]}
@@ -517,11 +517,11 @@ async def memory_agent(state: AgentState) -> AgentState:
             yaml.safe_load(new_yaml)
         except yaml.YAMLError as e:
             logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
-            add_note_to_profile(f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}")
+            await add_note_to_profile(f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}")
             return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – als Notiz gespeichert.")]}
 
         # Schreiben
-        success = write_profile(updated_profile)
+        success = await write_profile(updated_profile)
         if not success:
             return {"messages": [AIMessage(content="Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")]}
 
