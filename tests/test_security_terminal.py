@@ -2242,3 +2242,451 @@ class TestSynthesizeWithMock:
 
         if captured_text:
             assert len(captured_text[0]) <= TTS_MAX_CHARS + 10  # +10 für "..."
+            
+# ---------------------------------------------------------------------------
+# file.py Tests – is_path_allowed()
+# ---------------------------------------------------------------------------
+
+from agent.agents.file import is_path_allowed
+from pathlib import Path
+
+
+class TestIsPathAllowed:
+
+    def test_downloads_allowed(self) -> None:
+        """~/Downloads ist erlaubt."""
+        path = Path.home() / "Downloads" / "test.txt"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is True
+
+    def test_documents_allowed(self) -> None:
+        """~/Documents ist erlaubt."""
+        path = Path.home() / "Documents" / "test.txt"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is True
+
+    def test_desktop_allowed(self) -> None:
+        """~/Desktop ist erlaubt."""
+        path = Path.home() / "Desktop" / "test.txt"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is True
+
+    def test_ssh_blocked(self) -> None:
+        """~/.ssh ist blockiert."""
+        path = Path.home() / ".ssh" / "id_rsa"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is False
+
+    def test_fabbot_dir_blocked(self) -> None:
+        """~/.fabbot ist blockiert."""
+        path = Path.home() / ".fabbot" / "audit.log"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is False
+
+    def test_env_file_blocked(self) -> None:
+        """~/.env ist blockiert."""
+        path = Path.home() / ".env"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is False
+
+    def test_library_blocked(self) -> None:
+        """~/Library ist blockiert."""
+        path = Path.home() / "Library" / "test.txt"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is False
+
+    def test_path_traversal_blocked(self) -> None:
+        """Path-Traversal mit .. wird blockiert."""
+        path = Path.home() / "Downloads" / ".." / ".ssh" / "id_rsa"
+        allowed, _ = is_path_allowed(path)
+        assert allowed is False
+
+    def test_root_path_blocked(self) -> None:
+        """Root-Pfad /etc wird blockiert."""
+        path = Path("/etc/passwd")
+        allowed, _ = is_path_allowed(path)
+        assert allowed is False
+
+    def test_allowed_returns_reason(self) -> None:
+        """Erlaubter Pfad gibt aufgelösten Pfad zurück."""
+        path = Path.home() / "Downloads" / "test.txt"
+        allowed, reason = is_path_allowed(path)
+        assert allowed is True
+        assert len(reason) > 0
+
+    def test_blocked_returns_reason(self) -> None:
+        """Blockierter Pfad gibt Grund zurück."""
+        path = Path.home() / ".ssh" / "id_rsa"
+        allowed, reason = is_path_allowed(path)
+        assert allowed is False
+        assert len(reason) > 0
+
+
+# ---------------------------------------------------------------------------
+# computer.py Tests – _validate_typewrite_text(), _validate_app_name()
+# ---------------------------------------------------------------------------
+
+from agent.agents.computer import _validate_typewrite_text, _validate_app_name, TYPEWRITE_MAX_CHARS
+
+
+class TestValidateTypewriteText:
+
+    def test_normal_text_allowed(self) -> None:
+        """Normaler Text wird durchgelassen."""
+        ok, result = _validate_typewrite_text("Hello World")
+        assert ok is True
+
+    def test_empty_text_blocked(self) -> None:
+        """Leerer Text wird blockiert."""
+        ok, _ = _validate_typewrite_text("")
+        assert ok is False
+
+    def test_too_long_text_blocked(self) -> None:
+        """Text über MAX_CHARS wird blockiert."""
+        ok, _ = _validate_typewrite_text("a" * (TYPEWRITE_MAX_CHARS + 1))
+        assert ok is False
+
+    def test_exactly_max_length_allowed(self) -> None:
+        """Text genau auf MAX_CHARS wird durchgelassen."""
+        ok, _ = _validate_typewrite_text("a" * TYPEWRITE_MAX_CHARS)
+        assert ok is True
+
+    def test_null_byte_blocked(self) -> None:
+        """Null-Byte wird blockiert."""
+        ok, _ = _validate_typewrite_text("hello\x00world")
+        assert ok is False
+
+    def test_control_char_blocked(self) -> None:
+        """Steuerzeichen wird blockiert."""
+        ok, _ = _validate_typewrite_text("hello\x01world")
+        assert ok is False
+
+    def test_newline_allowed(self) -> None:
+        """Newline ist erlaubt (im Whitespace-Bereich)."""
+        ok, _ = _validate_typewrite_text("line1\nline2")
+        assert ok is True
+
+
+class TestValidateAppName:
+
+    def test_normal_app_allowed(self) -> None:
+        """Normaler App-Name wird durchgelassen."""
+        ok, result = _validate_app_name("Safari")
+        assert ok is True
+        assert result == "Safari"
+
+    def test_app_with_spaces_allowed(self) -> None:
+        """App-Name mit Leerzeichen wird durchgelassen."""
+        ok, result = _validate_app_name("Google Chrome")
+        assert ok is True
+
+    def test_app_with_dots_allowed(self) -> None:
+        """App-Name mit Punkt wird durchgelassen."""
+        ok, result = _validate_app_name("com.apple.Safari")
+        assert ok is True
+
+    def test_empty_app_name_blocked(self) -> None:
+        """Leerer App-Name wird blockiert."""
+        ok, _ = _validate_app_name("")
+        assert ok is False
+
+    def test_whitespace_only_blocked(self) -> None:
+        """Nur Whitespace wird blockiert."""
+        ok, _ = _validate_app_name("   ")
+        assert ok is False
+
+    def test_semicolon_blocked(self) -> None:
+        """Semikolon im App-Namen wird blockiert."""
+        ok, _ = _validate_app_name("Safari; rm -rf /")
+        assert ok is False
+
+    def test_slash_blocked(self) -> None:
+        """Slash im App-Namen wird blockiert."""
+        ok, _ = _validate_app_name("/Applications/Safari")
+        assert ok is False
+
+    def test_too_long_blocked(self) -> None:
+        """Zu langer App-Name wird blockiert."""
+        ok, _ = _validate_app_name("A" * 65)
+        assert ok is False
+
+    def test_name_stripped(self) -> None:
+        """Whitespace wird von App-Namen getrimmt."""
+        ok, result = _validate_app_name("  Safari  ")
+        assert ok is True
+        assert result == "Safari"
+
+
+# ---------------------------------------------------------------------------
+# web.py Tests – _format_search_results()
+# ---------------------------------------------------------------------------
+
+from agent.agents.web import _format_search_results
+
+
+class TestFormatSearchResults:
+
+    def test_empty_results_returns_empty(self) -> None:
+        """Leere Ergebnisliste → leerer String."""
+        result = _format_search_results([], "Tavily")
+        assert result == ""
+
+    def test_single_result_formatted(self) -> None:
+        """Einzelnes Ergebnis wird korrekt formatiert."""
+        results = [{"title": "Test Artikel", "url": "https://example.com", "content": "Inhalt hier"}]
+        result = _format_search_results(results, "Tavily")
+        assert "Test Artikel" in result
+        assert "example.com" in result
+        assert "Tavily" in result
+
+    def test_source_label_included(self) -> None:
+        """Source-Label erscheint in der Ausgabe."""
+        results = [{"title": "T", "url": "https://x.com", "content": "c"}]
+        result_tavily = _format_search_results(results, "Tavily")
+        result_brave = _format_search_results(results, "Brave")
+        assert "Tavily" in result_tavily
+        assert "Brave" in result_brave
+
+    def test_max_5_results(self) -> None:
+        """Maximal 5 Ergebnisse werden angezeigt."""
+        results = [
+            {"title": f"Artikel {i}", "url": f"https://example{i}.com", "content": "x"}
+            for i in range(10)
+        ]
+        result = _format_search_results(results, "Tavily")
+        assert result.count("https://example") == 5
+
+    def test_content_truncated(self) -> None:
+        """Langer Content wird gekürzt."""
+        long_content = "x" * 1000
+        results = [{"title": "T", "url": "https://x.com", "content": long_content}]
+        result = _format_search_results(results, "Tavily")
+        # Content wird auf 500 Zeichen gekürzt
+        assert len(result) < 1000 + 200  # 200 für URL/Titel Overhead
+
+
+# ---------------------------------------------------------------------------
+# clip_agent.py Tests – _slugify()
+# ---------------------------------------------------------------------------
+
+from agent.agents.clip_agent import _slugify
+
+
+class TestSlugify:
+
+    def test_normal_title(self) -> None:
+        """Normaler Titel wird korrekt zu Slug."""
+        result = _slugify("Hello World")
+        assert result == "hello-world"
+
+    def test_umlauts_converted(self) -> None:
+        """Umlaute werden konvertiert."""
+        assert "ue" in _slugify("Über")
+        assert "oe" in _slugify("Böse")
+        assert "ss" in _slugify("Straße")
+
+    def test_special_chars_removed(self) -> None:
+        """Sonderzeichen werden entfernt."""
+        result = _slugify("Hello! World?")
+        assert "!" not in result
+        assert "?" not in result
+
+    def test_spaces_to_hyphens(self) -> None:
+        """Leerzeichen werden zu Bindestrichen."""
+        result = _slugify("hello world test")
+        assert "-" in result
+        assert " " not in result
+
+    def test_max_60_chars(self) -> None:
+        """Slug wird auf 60 Zeichen begrenzt."""
+        long_title = "sehr langer titel " * 10
+        result = _slugify(long_title)
+        assert len(result) <= 60
+
+    def test_empty_string(self) -> None:
+        """Leerer String ergibt leeren Slug."""
+        result = _slugify("")
+        assert result == ""
+
+    def test_lowercase(self) -> None:
+        """Slug ist immer lowercase."""
+        result = _slugify("HELLO WORLD")
+        assert result == result.lower()
+
+
+# ---------------------------------------------------------------------------
+# terminal.py Tests – execute_command() mit gemocktem subprocess
+# ---------------------------------------------------------------------------
+
+import subprocess
+from unittest.mock import patch, MagicMock
+from agent.agents.terminal import execute_command
+
+
+class TestExecuteCommand:
+
+    def test_successful_command(self) -> None:
+        """Erfolgreich ausgeführter Befehl gibt Output zurück."""
+        mock_result = MagicMock()
+        mock_result.stdout = "output here"
+        mock_result.stderr = ""
+        with patch("subprocess.run", return_value=mock_result):
+            result = execute_command("df -h")
+        assert result == "output here"
+
+    def test_stderr_fallback(self) -> None:
+        """Wenn stdout leer, wird stderr zurückgegeben."""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.stderr = "error message"
+        with patch("subprocess.run", return_value=mock_result):
+            result = execute_command("df -h")
+        assert result == "error message"
+
+    def test_empty_output_returns_placeholder(self) -> None:
+        """Leerer Output gibt Platzhalter zurück."""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+        with patch("subprocess.run", return_value=mock_result):
+            result = execute_command("df -h")
+        assert result == "(kein Output)"
+
+    def test_timeout_returns_message(self) -> None:
+        """Timeout gibt Fehlermeldung zurück."""
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("df", 15)):
+            result = execute_command("df -h")
+        assert "Timeout" in result or "timeout" in result.lower()
+
+    def test_long_output_truncated(self) -> None:
+        """Sehr langer Output wird gekürzt."""
+        mock_result = MagicMock()
+        mock_result.stdout = "x" * 5000
+        mock_result.stderr = ""
+        with patch("subprocess.run", return_value=mock_result):
+            result = execute_command("df -h")
+        assert len(result) <= 3100  # 3000 + "... (Output gekuerzt)"
+        assert "gekuerzt" in result
+
+
+# ---------------------------------------------------------------------------
+# search.py Tests – search_knowledge(), list_knowledge()
+# ---------------------------------------------------------------------------
+
+import tempfile
+from bot.search import search_knowledge, list_knowledge, KNOWLEDGE_DIR
+
+
+class TestSearchKnowledge:
+
+    def _create_test_note(self, tmp_dir: Path, filename: str, content: str) -> None:
+        """Hilfsfunktion: erstellt eine Markdown-Notiz."""
+        (tmp_dir / filename).write_text(content, encoding="utf-8")
+
+    def test_search_finds_matching_note(self) -> None:
+        """Suche findet Notiz mit passendem Begriff."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._create_test_note(tmp_path, "2026-01-01-test.md",
+                "# Test Artikel\n**Tags:** #test\n## Zusammenfassung\nDas ist ein Test über Python.")
+            with patch("bot.search.KNOWLEDGE_DIR", tmp_path):
+                result = search_knowledge("Python")
+            assert "Test Artikel" in result
+
+    def test_search_no_results(self) -> None:
+        """Suche ohne Treffer gibt entsprechende Meldung zurück."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._create_test_note(tmp_path, "2026-01-01-test.md",
+                "# Anderer Artikel\n## Zusammenfassung\nNichts relevantes.")
+            with patch("bot.search.KNOWLEDGE_DIR", tmp_path):
+                result = search_knowledge("XYZNichtVorhanden")
+            assert "Keine Notizen gefunden" in result or "keine" in result.lower()
+
+    def test_search_missing_dir(self) -> None:
+        """Fehlender Wissens-Ordner gibt hilfreiche Meldung."""
+        with patch("bot.search.KNOWLEDGE_DIR", Path("/nonexistent/wissen")):
+            result = search_knowledge("test")
+        assert "nicht gefunden" in result.lower() or "Wissen" in result
+
+    def test_tag_search(self) -> None:
+        """Tag-Suche findet Notiz mit passendem Tag."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._create_test_note(tmp_path, "2026-01-01-test.md",
+                "# Tag Test\n**Tags:** #python #ki\n## Zusammenfassung\nTest.")
+            with patch("bot.search.KNOWLEDGE_DIR", tmp_path):
+                result = search_knowledge("#python")
+            assert "Tag Test" in result
+
+    def test_list_knowledge_empty(self) -> None:
+        """Leerer Ordner gibt entsprechende Meldung."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("bot.search.KNOWLEDGE_DIR", Path(tmp)):
+                result = list_knowledge()
+        assert "keine" in result.lower() or "Notizen" in result
+
+    def test_list_knowledge_shows_files(self) -> None:
+        """list_knowledge zeigt vorhandene Notizen."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._create_test_note(tmp_path, "2026-01-01-artikel.md",
+                "# Mein Artikel\n**Tags:** #test\n## Zusammenfassung\nInhalt.")
+            with patch("bot.search.KNOWLEDGE_DIR", tmp_path):
+                result = list_knowledge()
+        assert "Mein Artikel" in result
+
+
+# ---------------------------------------------------------------------------
+# briefing.py Tests – generate_briefing() Struktur
+# ---------------------------------------------------------------------------
+
+class TestGenerateBriefing:
+
+    @pytest.mark.asyncio
+    async def test_briefing_contains_sections(self) -> None:
+        """Briefing enthält alle erwarteten Sektionen."""
+        from bot.briefing import generate_briefing
+
+        async def fake_fetch(query):
+            return "Fake Ergebnis"
+
+        with patch("bot.briefing._fetch_web", side_effect=fake_fetch), \
+             patch("bot.briefing._get_calendar_today", return_value="Keine Termine heute."):
+            result = await generate_briefing()
+
+        assert "Guten Morgen" in result
+        assert "Wetter" in result
+        assert "Termine" in result
+        assert "News" in result
+
+    @pytest.mark.asyncio
+    async def test_briefing_contains_date(self) -> None:
+        """Briefing enthält das aktuelle Datum."""
+        from bot.briefing import generate_briefing
+        from datetime import date
+
+        async def fake_fetch(query):
+            return "x"
+
+        with patch("bot.briefing._fetch_web", side_effect=fake_fetch), \
+             patch("bot.briefing._get_calendar_today", return_value="Keine Termine."):
+            result = await generate_briefing()
+
+        year = str(date.today().year)
+        assert year in result
+
+    @pytest.mark.asyncio
+    async def test_briefing_web_error_does_not_crash(self) -> None:
+        """Fehler bei Web-Fetch bricht Briefing nicht ab."""
+        from bot.briefing import generate_briefing
+
+        async def failing_fetch(query):
+            return "Web-Suche nicht verfügbar."
+
+        with patch("bot.briefing._fetch_web", side_effect=failing_fetch), \
+             patch("bot.briefing._get_calendar_today", return_value="Keine Termine."):
+            result = await generate_briefing()  # darf nicht crashen
+
+        assert isinstance(result, str)
+        assert len(result) > 0
