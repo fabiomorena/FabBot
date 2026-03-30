@@ -134,13 +134,15 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
     """
     try:
         llm = get_llm()
-        # Letzten 6 Messages als Kontext für Sonnet (ohne HITL-Prefixes)
-        context_msgs = []
-        for m in messages[-6:]:
-            content = m.content if hasattr(m, "content") else ""
-            if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
+        # Erst filtern, dann slicen – verhindert dass HITL-Messages den
+        # Kontext-Window verkleinern und echte Nachrichten verdrängen.
+        all_filtered = []
+        for m in messages:
+            c = m.content if hasattr(m, "content") else ""
+            if isinstance(c, str) and c.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
                 continue
-            context_msgs.append(m)
+            all_filtered.append(m)
+        context_msgs = all_filtered[-6:]
 
         response = await llm.ainvoke(
             [SystemMessage(content=_PARSER_PROMPT)] + context_msgs

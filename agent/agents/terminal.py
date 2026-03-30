@@ -8,11 +8,13 @@ from agent.llm import get_llm
 from agent.protocol import Proto
 
 ALLOWED_COMMANDS = {
-    "ls", "pwd", "echo", "cat", "head", "tail", "grep",
+    "ls", "pwd", "cat", "head", "tail", "grep",
     "df", "du", "top", "ps", "uname", "whoami", "date",
     "find", "wc", "sort", "uniq", "uptime", "sw_vers",
     "diskutil", "system_profiler",
 }
+# echo bewusst entfernt: kein legitimer Use Case für den Bot,
+# aber Risiko für Environment-Variable-Exposure (echo $HOME etc.)
 
 FORBIDDEN_ARGS = {
     "--exec", "-exec", "--delete", "-delete",
@@ -46,7 +48,7 @@ PROMPT = """Du bist ein spezialisierter Terminal-Agent auf einem Mac.
 Deine Aufgabe: Analysiere die Anfrage und antworte mit einem einzigen, sicheren Shell-Befehl.
 Antworte NUR mit dem Befehl - keine Erklaerung, kein Markdown, keine Backticks.
 
-Erlaubte Befehle: ls, pwd, echo, cat, head, tail, grep, df, du, top, ps, uname,
+Erlaubte Befehle: ls, pwd, cat, head, tail, grep, df, du, top, ps, uname,
 whoami, date, find, wc, sort, uniq, uptime, sw_vers, diskutil, system_profiler
 
 Wichtige Regeln fuer bestimmte Befehle:
@@ -102,9 +104,8 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
             return False, f"system_profiler Datatype nicht erlaubt. Erlaubt: {allowed}"
 
     if base_cmd == "df":
-        # Pfad-Argumente entfernen, nur Flags behalten
-        clean_args = [a for a in args if not a.startswith("/")]
-        return True, "df " + " ".join(clean_args) if clean_args else "df -h"
+        # Pfad-Argumente werden in sanitize_command() entfernt
+        return True, command
     if base_cmd == "find":
         if args:
             search_path = os.path.expanduser(args[0])
@@ -130,15 +131,41 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
     return True, command
 
 
+def sanitize_command(command: str) -> str:
+    """
+    Bereinigt einen bereits validierten Befehl vor der Ausführung.
+    Trennung von Validierung (is_command_allowed) und Transformation.
+    Aktuell: df – Pfad-Argumente entfernen, nur Flags behalten.
+    """
+    try:
+        parts = shlex.split(command.strip())
+    except ValueError:
+        return command
+
+    if not parts:
+        return command
+
+    base_cmd = os.path.basename(parts[0])
+    args = parts[1:]
+
+    if base_cmd == "df":
+        clean_args = [a for a in args if not a.startswith("/")]
+        return "df " + " ".join(clean_args) if clean_args else "df -h"
+
+    return command
+
+
 def execute_command(command: str) -> str:
     """Fuehrt einen validierten Befehl sicher aus und gibt den Output zurueck."""
     try:
         parts = shlex.split(command.strip())
+        import pathlib
         result = subprocess.run(
             parts,
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
+            cwd=str(pathlib.Path.home()),  # sicheres Arbeitsverzeichnis – kein Bot-Source-Exposure
         )
         output = result.stdout.strip() or result.stderr.strip() or "(kein Output)"
         if len(output) > 3000:
@@ -187,6 +214,7 @@ def terminal_agent_execute(command: str, chat_id: int) -> str:
         log_action("terminal_agent", command[:200], f"toctou-blocked: {reason}", chat_id, status="blocked")
         return f"Blockiert (Re-Validierung): {reason}"
 
+    command = sanitize_command(command)
     log_action("terminal_agent", command[:200], "executing", chat_id, status="confirmed")
     output = execute_command(command)
     log_action("terminal_agent", command[:200], f"done, {len(output)}b output", chat_id, status="executed")
