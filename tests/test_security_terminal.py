@@ -29,6 +29,11 @@ class TestNormalize:
 
 
 class TestSanitizeInput:
+    def setup_method(self) -> None:
+        """Rate-Limit-Store vor jedem Test leeren – verhindert Testinterferenz."""
+        from agent.security import _rate_limit_store
+        _rate_limit_store.clear()
+
     def test_empty_input(self):
         ok, msg = sanitize_input("")
         assert not ok
@@ -108,6 +113,11 @@ class TestSanitizeInput:
 
 
 class TestCheckRateLimit:
+    def setup_method(self) -> None:
+        """Rate-Limit-Store vor jedem Test leeren – verhindert Testinterferenz."""
+        from agent.security import _rate_limit_store
+        _rate_limit_store.clear()
+
     def test_first_message_allowed(self):
         assert check_rate_limit(77777) is True
 
@@ -626,6 +636,13 @@ def _make_api_error(status_code: int) -> APIStatusError:
 
 
 class TestInvokeWithRetry:
+    """Tests für _invoke_with_retry() in bot/bot.py."""
+
+    @classmethod
+    def setup_class(cls) -> None:
+        """Import einmalig auf Klassen-Ebene – verhindert Cache-Probleme."""
+        from bot.bot import _invoke_with_retry
+        cls._invoke_with_retry = staticmethod(_invoke_with_retry)
 
     @pytest.mark.asyncio
     async def test_success_on_first_attempt(self) -> None:
@@ -635,8 +652,7 @@ class TestInvokeWithRetry:
         mock_graph.ainvoke.return_value = expected
 
         with patch("agent.supervisor.agent_graph", mock_graph):
-            from bot.bot import _invoke_with_retry
-            result = await _invoke_with_retry({}, {})
+            result = await self._invoke_with_retry({}, {})
 
         assert result == expected
         assert mock_graph.ainvoke.call_count == 1
@@ -650,8 +666,7 @@ class TestInvokeWithRetry:
 
         with patch("agent.supervisor.agent_graph", mock_graph), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            from bot.bot import _invoke_with_retry
-            result = await _invoke_with_retry({}, {})
+            result = await self._invoke_with_retry({}, {})
 
         assert result == expected
         assert mock_graph.ainvoke.call_count == 2
@@ -665,8 +680,7 @@ class TestInvokeWithRetry:
 
         with patch("agent.supervisor.agent_graph", mock_graph), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            from bot.bot import _invoke_with_retry
-            result = await _invoke_with_retry({}, {})
+            result = await self._invoke_with_retry({}, {})
 
         assert result == expected
         assert mock_graph.ainvoke.call_count == 3
@@ -679,9 +693,8 @@ class TestInvokeWithRetry:
 
         with patch("agent.supervisor.agent_graph", mock_graph), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            from bot.bot import _invoke_with_retry
             with pytest.raises(APIStatusError) as exc_info:
-                await _invoke_with_retry({}, {})
+                await self._invoke_with_retry({}, {})
 
         assert exc_info.value.status_code == 529
         assert mock_graph.ainvoke.call_count == 3
@@ -694,9 +707,8 @@ class TestInvokeWithRetry:
 
         with patch("agent.supervisor.agent_graph", mock_graph), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            from bot.bot import _invoke_with_retry
             with pytest.raises(APIStatusError) as exc_info:
-                await _invoke_with_retry({}, {})
+                await self._invoke_with_retry({}, {})
 
         assert exc_info.value.status_code == 400
         assert mock_graph.ainvoke.call_count == 1
@@ -715,8 +727,7 @@ class TestInvokeWithRetry:
 
         with patch("agent.supervisor.agent_graph", mock_graph), \
              patch("asyncio.sleep", side_effect=mock_sleep):
-            from bot.bot import _invoke_with_retry
-            await _invoke_with_retry({}, {})
+            await self._invoke_with_retry({}, {})
 
         assert sleep_calls == [2.0, 4.0]
 
@@ -2855,8 +2866,9 @@ class TestRequestConfirmation:
                     future.set_result(True)
                     break
 
-        asyncio.create_task(auto_confirm())
+        task = asyncio.create_task(auto_confirm())
         result = await request_confirmation(fake_bot, 12345, "terminal_agent", "df -h")
+        await task
         assert result is True
 
     @pytest.mark.asyncio
@@ -2876,8 +2888,9 @@ class TestRequestConfirmation:
                     future.set_result(False)
                     break
 
-        asyncio.create_task(auto_reject())
+        task = asyncio.create_task(auto_reject())
         result = await request_confirmation(fake_bot, 12345, "terminal_agent", "df -h")
+        await task
         assert result is False
 
     @pytest.mark.asyncio
@@ -2913,8 +2926,9 @@ class TestRequestConfirmation:
                     future.set_result(True)
                     break
 
-        asyncio.create_task(auto_confirm())
+        task = asyncio.create_task(auto_confirm())
         await request_confirmation(fake_bot, 12345, "test_agent", "test action")
+        await task
 
         call_kwargs = fake_bot.send_message.call_args[1]
         assert "reply_markup" in call_kwargs
