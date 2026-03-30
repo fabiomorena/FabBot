@@ -49,6 +49,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | Memory Agent – explicit profile updates via natural language (places, people, projects, custom) |
 | ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` + `media` |
 | ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
+| ✅ | Health Check – daily 06:00 system status report (Terminal, API, Web, Calendar, Profile, DB) |
 
 ---
 
@@ -96,7 +97,8 @@ FabBot/
     ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice + stop)
     ├── search.py            # Local knowledge base search
     ├── briefing.py          # Morning briefing scheduler (07:30 daily)
-    └── reminders.py         # Reminder storage + proactive delivery
+    ├── reminders.py         # Reminder storage + proactive delivery
+    └── health_check.py      # Daily health check scheduler (06:00, 6 components)
 ```
 
 **Stack:**
@@ -344,6 +346,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 45** ✅ Memory Agent – explizite Profil-Updates via Sprache, Hybrid-Struktur (places/custom), 140 Tests
 - **Phase 46** ✅ Media-Kategorie – Lieder/Filme/Podcasts/Bücher korrekt als `media` speichern
 - **Phase 47** ✅ Supervisor Fix – memory_agent False-Positives mit JA/NEIN-Beispielen und Fallback-Regel
+- **Phase 48** ✅ Health Check – täglich 06:00 Uhr, 6 Komponenten parallel geprüft, Telegram-Report
 
 ---
 
