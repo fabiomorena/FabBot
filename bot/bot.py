@@ -477,6 +477,9 @@ async def _post_init(app: Application) -> None:
         from bot.reminders import run_reminder_scheduler
         asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
         logger.info("Reminder Scheduler gestartet.")
+        from bot.health_check import run_health_check_scheduler
+        asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+        logger.info("Health Check Scheduler gestartet.")
 
 
 async def _post_shutdown(app: Application) -> None:
