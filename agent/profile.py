@@ -125,7 +125,15 @@ async def write_profile(profile: dict[str, Any]) -> bool:
     try:
         import yaml
         serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        yaml.safe_load(serialized)  # Finale Validierung vor dem Schreiben
+        # Finale Validierung: Round-Trip prüfen – verhindert stille Typ-Coercion
+        # (z.B. yes → True, 1.0 → 1) die Daten verändern würden
+        round_tripped = yaml.safe_load(serialized)
+        if round_tripped != profile:
+            logger.error(
+                f"write_profile: Round-Trip Mismatch – YAML-Coercion erkannt, Schreiben abgebrochen. "
+                f"Diff-Keys: {set(str(round_tripped)) ^ set(str(profile))}"
+            )
+            return False
         async with _profile_write_lock:
             with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
                 f.write(serialized)

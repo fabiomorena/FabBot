@@ -176,11 +176,23 @@ async def _llm_guard(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def check_rate_limit(user_id: int) -> bool:
-    """Prueft ob der User das Rate-Limit ueberschritten hat."""
+    """
+    Prueft ob der User das Rate-Limit ueberschritten hat.
+
+    Eviction-Strategie: Wenn MAX_STORE_SIZE erreicht, wird der User
+    mit dem aeltesten letzten Timestamp entfernt (nicht blind FIFO).
+    Verhindert stilles Loss des Rate-Limitings fuer aktive User.
+    """
     now = time()
     if user_id not in _rate_limit_store:
         if len(_rate_limit_store) >= MAX_STORE_SIZE:
-            _rate_limit_store.popitem(last=False)
+            # Evict User mit aeltestem letzten Timestamp – nicht blind FIFO
+            oldest_user = min(
+                _rate_limit_store,
+                key=lambda uid: _rate_limit_store[uid][-1] if _rate_limit_store[uid] else 0,
+            )
+            logger.info(f"Rate-Limit Store voll – evict user={oldest_user}")
+            del _rate_limit_store[oldest_user]
         _rate_limit_store[user_id] = []
 
     timestamps = [t for t in _rate_limit_store[user_id] if now - t < RATE_LIMIT_WINDOW]
