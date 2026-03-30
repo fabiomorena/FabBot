@@ -1044,3 +1044,239 @@ class TestProfileContextFullNewSections:
             ctx = get_profile_context_full()
         assert "Yoga" in ctx
         assert "läuft morgens" in ctx
+
+# ---------------------------------------------------------------------------
+# health_check.py Tests – run_health_check() + _build_confirmation
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+
+
+class TestHealthCheckOutput:
+    """Tests für run_health_check() – Ausgabeformat und Fehlerbehandlung."""
+
+    @pytest.mark.asyncio
+    async def test_all_checks_pass(self) -> None:
+        """Alle Checks grün → '✅ Alle Systeme normal' in Nachricht."""
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        with patch("bot.health_check._check_terminal", return_value=(True, "ok")), \
+             patch("bot.health_check._check_anthropic", return_value=(True, "ok")), \
+             patch("bot.health_check._check_web", return_value=(True, "ok")), \
+             patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
+             patch("bot.health_check._check_profile", return_value=(True, "ok")), \
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+            from bot.health_check import run_health_check
+            await run_health_check(fake_bot, 12345)
+
+        fake_bot.send_message.assert_called_once()
+        text = fake_bot.send_message.call_args[1]["text"]
+        assert "Alle Systeme normal" in text
+        assert "✅" in text
+        assert "❌" not in text
+
+    @pytest.mark.asyncio
+    async def test_one_check_fails(self) -> None:
+        """Ein Check schlägt fehl → '⚠️ Probleme erkannt' in Nachricht."""
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        with patch("bot.health_check._check_terminal", return_value=(True, "ok")), \
+             patch("bot.health_check._check_anthropic", return_value=(False, "Timeout")), \
+             patch("bot.health_check._check_web", return_value=(True, "ok")), \
+             patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
+             patch("bot.health_check._check_profile", return_value=(True, "ok")), \
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+            from bot.health_check import run_health_check
+            await run_health_check(fake_bot, 12345)
+
+        text = fake_bot.send_message.call_args[1]["text"]
+        assert "Probleme erkannt" in text
+        assert "❌" in text
+        assert "Anthropic API" in text
+
+    @pytest.mark.asyncio
+    async def test_all_checks_fail(self) -> None:
+        """Alle Checks schlagen fehl → alle ❌ in Nachricht."""
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        with patch("bot.health_check._check_terminal", return_value=(False, "err")), \
+             patch("bot.health_check._check_anthropic", return_value=(False, "err")), \
+             patch("bot.health_check._check_web", return_value=(False, "err")), \
+             patch("bot.health_check._check_calendar", return_value=(False, "err")), \
+             patch("bot.health_check._check_profile", return_value=(False, "err")), \
+             patch("bot.health_check._check_memory_db", return_value=(False, "err")):
+            from bot.health_check import run_health_check
+            await run_health_check(fake_bot, 12345)
+
+        text = fake_bot.send_message.call_args[1]["text"]
+        assert "Probleme erkannt" in text
+        assert text.count("❌") == 6
+
+    @pytest.mark.asyncio
+    async def test_check_exception_does_not_crash(self) -> None:
+        """Exception in einem Check → Bot sendet trotzdem, andere Checks laufen weiter."""
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        with patch("bot.health_check._check_terminal", side_effect=RuntimeError("boom")), \
+             patch("bot.health_check._check_anthropic", return_value=(True, "ok")), \
+             patch("bot.health_check._check_web", return_value=(True, "ok")), \
+             patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
+             patch("bot.health_check._check_profile", return_value=(True, "ok")), \
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+            from bot.health_check import run_health_check
+            await run_health_check(fake_bot, 12345)  # darf nicht crashen
+
+        # Bot hat trotzdem gesendet
+        fake_bot.send_message.assert_called_once()
+        text = fake_bot.send_message.call_args[1]["text"]
+        assert "Health Check" in text
+
+    @pytest.mark.asyncio
+    async def test_message_contains_all_component_names(self) -> None:
+        """Alle 6 Komponenten-Namen erscheinen in der Nachricht."""
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock()
+
+        with patch("bot.health_check._check_terminal", return_value=(True, "ok")), \
+             patch("bot.health_check._check_anthropic", return_value=(True, "ok")), \
+             patch("bot.health_check._check_web", return_value=(True, "ok")), \
+             patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
+             patch("bot.health_check._check_profile", return_value=(True, "ok")), \
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+            from bot.health_check import run_health_check
+            await run_health_check(fake_bot, 12345)
+
+        text = fake_bot.send_message.call_args[1]["text"]
+        for component in ["Terminal", "Anthropic API", "Web-Suche", "Kalender", "Profil", "Memory DB"]:
+            assert component in text, f"'{component}' fehlt in der Nachricht"
+
+    @pytest.mark.asyncio
+    async def test_send_error_does_not_crash(self) -> None:
+        """Wenn bot.send_message fehlschlägt, crasht run_health_check nicht."""
+        fake_bot = AsyncMock()
+        fake_bot.send_message = AsyncMock(side_effect=Exception("Telegram down"))
+
+        with patch("bot.health_check._check_terminal", return_value=(True, "ok")), \
+             patch("bot.health_check._check_anthropic", return_value=(True, "ok")), \
+             patch("bot.health_check._check_web", return_value=(True, "ok")), \
+             patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
+             patch("bot.health_check._check_profile", return_value=(True, "ok")), \
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+            from bot.health_check import run_health_check
+            await run_health_check(fake_bot, 12345)  # darf nicht crashen
+
+
+# ---------------------------------------------------------------------------
+# profile_learner.py Tests – _apply_update() für place + custom
+# ---------------------------------------------------------------------------
+
+from agent.profile_learner import _apply_update as learner_apply_update
+
+
+class TestLearnerApplyUpdatePlace:
+    """Tests für _apply_update() im profile_learner – place-Typ."""
+
+    def test_save_new_place(self) -> None:
+        """Neuer Ort wird korrekt gespeichert."""
+        profile = {}
+        result = learner_apply_update(profile, "place", {
+            "name": "Saporito", "type": "restaurant",
+            "location": "Friedrichshain", "context": "Lieblings-Italiener"
+        })
+        assert result is not None
+        assert "places" in result
+        assert result["places"][0]["name"] == "Saporito"
+        assert result["places"][0]["type"] == "restaurant"
+
+    def test_save_place_creates_list(self) -> None:
+        """places-Liste wird angelegt wenn nicht vorhanden."""
+        profile = {"identity": {"name": "Fabio"}}
+        result = learner_apply_update(profile, "place", {"name": "Zur Linde"})
+        assert result is not None
+        assert "places" in result
+        assert len(result["places"]) == 1
+
+    def test_save_duplicate_place_returns_none(self) -> None:
+        """Duplikat-Ort im Learner → None (kein doppelter Eintrag)."""
+        profile = {"places": [{"name": "Saporito", "type": "restaurant"}]}
+        result = learner_apply_update(profile, "place", {"name": "Saporito"})
+        assert result is None
+
+    def test_save_place_case_insensitive_duplicate(self) -> None:
+        """Duplikat-Check ist case-insensitive."""
+        profile = {"places": [{"name": "saporito"}]}
+        result = learner_apply_update(profile, "place", {"name": "SAPORITO"})
+        assert result is None
+
+    def test_save_place_missing_name_returns_none(self) -> None:
+        """Fehlender Name → None."""
+        result = learner_apply_update({}, "place", {"name": "", "type": "restaurant"})
+        assert result is None
+
+    def test_save_place_partial_data(self) -> None:
+        """Nur name – kein type/location/context – wird trotzdem gespeichert."""
+        profile = {}
+        result = learner_apply_update(profile, "place", {"name": "Zur Linde"})
+        assert result is not None
+        assert result["places"][0]["name"] == "Zur Linde"
+        assert "type" not in result["places"][0]
+
+    def test_original_not_modified(self) -> None:
+        """Original-Dict wird nicht verändert (deepcopy)."""
+        profile = {"places": []}
+        learner_apply_update(profile, "place", {"name": "Test"})
+        assert profile["places"] == []
+
+
+class TestLearnerApplyUpdateCustom:
+    """Tests für _apply_update() im profile_learner – custom-Typ."""
+
+    def test_save_new_custom(self) -> None:
+        """Neuer Custom-Eintrag wird gespeichert."""
+        profile = {}
+        result = learner_apply_update(profile, "custom", {
+            "key": "hobby_yoga", "value": "macht gerne Yoga"
+        })
+        assert result is not None
+        assert "custom" in result
+        assert result["custom"][0] == {"key": "hobby_yoga", "value": "macht gerne Yoga"}
+
+    def test_save_custom_creates_list(self) -> None:
+        """custom-Liste wird angelegt wenn nicht vorhanden."""
+        profile = {"identity": {"name": "Fabio"}}
+        result = learner_apply_update(profile, "custom", {"key": "sport", "value": "läuft"})
+        assert result is not None
+        assert "custom" in result
+
+    def test_save_duplicate_custom_returns_none(self) -> None:
+        """Duplikat-Custom im Learner → None."""
+        profile = {"custom": [{"key": "hobby_yoga", "value": "macht Yoga"}]}
+        result = learner_apply_update(profile, "custom", {"key": "hobby_yoga", "value": "neu"})
+        assert result is None
+
+    def test_save_custom_case_insensitive_duplicate(self) -> None:
+        """Duplikat-Check ist case-insensitive."""
+        profile = {"custom": [{"key": "hobby_yoga", "value": "macht Yoga"}]}
+        result = learner_apply_update(profile, "custom", {"key": "HOBBY_YOGA", "value": "neu"})
+        assert result is None
+
+    def test_save_custom_missing_key_returns_none(self) -> None:
+        """Fehlender Key → None."""
+        result = learner_apply_update({}, "custom", {"key": "", "value": "test"})
+        assert result is None
+
+    def test_save_custom_missing_value_returns_none(self) -> None:
+        """Fehlender Value → None."""
+        result = learner_apply_update({}, "custom", {"key": "test", "value": ""})
+        assert result is None
+
+    def test_original_not_modified(self) -> None:
+        """Original-Dict wird nicht verändert (deepcopy)."""
+        profile = {"custom": []}
+        learner_apply_update(profile, "custom", {"key": "test", "value": "x"})
+        assert profile["custom"] == []
