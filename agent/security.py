@@ -264,3 +264,4 @@ async def sanitize_input_async(text: str, user_id: int = 0) -> tuple[bool, str]:
             return False, "Ungültige Eingabe erkannt."
 
     return True, result
+
