@@ -2917,3 +2917,144 @@ class TestRequestConfirmation:
         call_kwargs = fake_bot.send_message.call_args[1]
         assert "reply_markup" in call_kwargs
         assert isinstance(call_kwargs["reply_markup"], InlineKeyboardMarkup)
+
+# ---------------------------------------------------------------------------
+# confirm.py Tests – handle_confirmation_callback()
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
+
+
+class TestHandleConfirmationCallback:
+    """Tests für handle_confirmation_callback() in bot/confirm.py."""
+
+    def _make_query(self, data: str) -> MagicMock:
+        """Hilfsfunktion: erstellt einen gemockten CallbackQuery."""
+        query = MagicMock()
+        query.data = data
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+        return query
+
+    def _make_update(self, data: str) -> MagicMock:
+        """Hilfsfunktion: erstellt einen gemockten Update mit CallbackQuery."""
+        update = MagicMock()
+        update.callback_query = self._make_query(data)
+        return update
+
+    @pytest.mark.asyncio
+    async def test_confirm_sets_future_true(self) -> None:
+        """Confirm-Button setzt Future auf True."""
+        from bot.confirm import handle_confirmation_callback, _pending
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        conf_id = "test-confirm-123"
+        _pending[conf_id] = future
+
+        update = self._make_update(f"confirm:{conf_id}")
+        await handle_confirmation_callback(update, None)
+
+        assert future.done()
+        assert future.result() is True
+        _pending.pop(conf_id, None)
+
+    @pytest.mark.asyncio
+    async def test_reject_sets_future_false(self) -> None:
+        """Reject-Button setzt Future auf False."""
+        from bot.confirm import handle_confirmation_callback, _pending
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        conf_id = "test-reject-456"
+        _pending[conf_id] = future
+
+        update = self._make_update(f"reject:{conf_id}")
+        await handle_confirmation_callback(update, None)
+
+        assert future.done()
+        assert future.result() is False
+        _pending.pop(conf_id, None)
+
+    @pytest.mark.asyncio
+    async def test_confirm_edits_message(self) -> None:
+        """Confirm-Button editiert die Nachricht."""
+        from bot.confirm import handle_confirmation_callback, _pending
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        conf_id = "test-edit-789"
+        _pending[conf_id] = future
+
+        update = self._make_update(f"confirm:{conf_id}")
+        await handle_confirmation_callback(update, None)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        _pending.pop(conf_id, None)
+
+    @pytest.mark.asyncio
+    async def test_reject_edits_message(self) -> None:
+        """Reject-Button editiert die Nachricht."""
+        from bot.confirm import handle_confirmation_callback, _pending
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        conf_id = "test-edit-reject-101"
+        _pending[conf_id] = future
+
+        update = self._make_update(f"reject:{conf_id}")
+        await handle_confirmation_callback(update, None)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        _pending.pop(conf_id, None)
+
+    @pytest.mark.asyncio
+    async def test_unknown_callback_data_no_crash(self) -> None:
+        """Unbekannte callback_data crasht nicht."""
+        from bot.confirm import handle_confirmation_callback
+
+        update = self._make_update("unknown:data")
+        await handle_confirmation_callback(update, None)  # darf nicht crashen
+
+    @pytest.mark.asyncio
+    async def test_empty_callback_data_no_crash(self) -> None:
+        """Leere callback_data crasht nicht."""
+        from bot.confirm import handle_confirmation_callback
+
+        update = self._make_update("")
+        await handle_confirmation_callback(update, None)  # darf nicht crashen
+
+    @pytest.mark.asyncio
+    async def test_already_done_future_no_crash(self) -> None:
+        """Bereits erledigte Future crasht nicht."""
+        from bot.confirm import handle_confirmation_callback, _pending
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        future.set_result(True)  # bereits erledigt
+        conf_id = "test-done-202"
+        _pending[conf_id] = future
+
+        update = self._make_update(f"confirm:{conf_id}")
+        await handle_confirmation_callback(update, None)  # darf nicht crashen
+        _pending.pop(conf_id, None)
+
+    @pytest.mark.asyncio
+    async def test_unknown_id_no_crash(self) -> None:
+        """Unbekannte Confirmation-ID crasht nicht."""
+        from bot.confirm import handle_confirmation_callback
+
+        update = self._make_update("confirm:nicht-vorhanden-999")
+        await handle_confirmation_callback(update, None)  # darf nicht crashen
+
+    @pytest.mark.asyncio
+    async def test_callback_answered(self) -> None:
+        """callback_query.answer() wird immer aufgerufen."""
+        from bot.confirm import handle_confirmation_callback
+
+        update = self._make_update("confirm:nicht-vorhanden-888")
+        await handle_confirmation_callback(update, None)
+
+        update.callback_query.answer.assert_called_once()
