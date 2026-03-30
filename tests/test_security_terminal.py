@@ -2177,6 +2177,7 @@ class TestSynthesizeWithMock:
     """Tests für synthesize() mit gemocktem edge-tts."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not __import__("importlib").util.find_spec("edge_tts"), reason="edge_tts not installed")
     async def test_synthesize_returns_bytes_when_available(self) -> None:
         """synthesize() gibt bytes zurück wenn edge-tts verfügbar ist."""
         from bot.tts import synthesize
@@ -2217,6 +2218,7 @@ class TestSynthesizeWithMock:
         assert result is None
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not __import__("importlib").util.find_spec("edge_tts"), reason="edge_tts not installed")
     async def test_synthesize_truncates_long_text(self) -> None:
         """Sehr langer Text wird auf TTS_MAX_CHARS gekürzt."""
         from bot.tts import synthesize, TTS_MAX_CHARS
