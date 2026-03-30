@@ -1585,3 +1585,237 @@ class TestProfileContextShort:
         with patch("agent.profile.load_profile", side_effect=Exception("DB error")):
             ctx = get_profile_context_short()
         assert ctx == ""
+
+# ---------------------------------------------------------------------------
+# web.py Tests – _is_ssrf_blocked()
+# ---------------------------------------------------------------------------
+
+from agent.agents.web import _is_ssrf_blocked as web_is_ssrf_blocked
+
+
+class TestWebIsSSRFBlocked:
+
+    # --- Erlaubte URLs ---
+
+    def test_valid_https_url_allowed(self) -> None:
+        """Normale HTTPS-URL wird durchgelassen."""
+        blocked, _ = web_is_ssrf_blocked("https://www.google.com")
+        assert blocked is False
+
+    def test_valid_http_url_allowed(self) -> None:
+        """Normale HTTP-URL wird durchgelassen."""
+        blocked, _ = web_is_ssrf_blocked("http://example.com/page")
+        assert blocked is False
+
+    def test_valid_url_with_path_allowed(self) -> None:
+        """URL mit Pfad und Query wird durchgelassen."""
+        blocked, _ = web_is_ssrf_blocked("https://api.tavily.com/search?q=test")
+        assert blocked is False
+
+    # --- Nicht-HTTP-Protokolle ---
+
+    def test_ftp_blocked(self) -> None:
+        """FTP-URL wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("ftp://example.com/file")
+        assert blocked is True
+
+    def test_file_protocol_blocked(self) -> None:
+        """file://-URL wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("file:///etc/passwd")
+        assert blocked is True
+
+    def test_no_protocol_blocked(self) -> None:
+        """URL ohne Protokoll wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("example.com/page")
+        assert blocked is True
+
+    # --- Localhost ---
+
+    def test_localhost_blocked(self) -> None:
+        """localhost wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://localhost/api")
+        assert blocked is True
+
+    def test_localhost_with_port_blocked(self) -> None:
+        """localhost mit Port wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://localhost:8080/api")
+        assert blocked is True
+
+    def test_ip6_localhost_blocked(self) -> None:
+        """ip6-localhost wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://ip6-localhost/api")
+        assert blocked is True
+
+    # --- Loopback IPs ---
+
+    def test_loopback_127_blocked(self) -> None:
+        """127.0.0.1 wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://127.0.0.1/api")
+        assert blocked is True
+
+    def test_loopback_127_x_blocked(self) -> None:
+        """127.0.0.2 wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://127.0.0.2/api")
+        assert blocked is True
+
+    # --- Private IPs ---
+
+    def test_private_ip_10_blocked(self) -> None:
+        """10.x.x.x wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://10.0.0.1/api")
+        assert blocked is True
+
+    def test_private_ip_192_168_blocked(self) -> None:
+        """192.168.x.x wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://192.168.1.1/api")
+        assert blocked is True
+
+    def test_private_ip_172_blocked(self) -> None:
+        """172.16.x.x wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://172.16.0.1/api")
+        assert blocked is True
+
+    # --- Lokale Hostnamen ---
+
+    def test_local_hostname_blocked(self) -> None:
+        """.local Hostname wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://mymachine.local/api")
+        assert blocked is True
+
+    def test_internal_hostname_blocked(self) -> None:
+        """.internal Hostname wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://service.internal/api")
+        assert blocked is True
+
+    def test_localhost_suffix_blocked(self) -> None:
+        """.localhost Suffix wird blockiert."""
+        blocked, _ = web_is_ssrf_blocked("http://app.localhost/api")
+        assert blocked is True
+
+    # --- Fehlermeldungen ---
+
+    def test_blocked_returns_reason(self) -> None:
+        """Bei blockierter URL wird ein Grund zurückgegeben."""
+        blocked, reason = web_is_ssrf_blocked("http://localhost/api")
+        assert blocked is True
+        assert len(reason) > 0
+
+    def test_allowed_returns_empty_reason(self) -> None:
+        """Bei erlaubter URL ist der Grund leer."""
+        blocked, reason = web_is_ssrf_blocked("https://example.com")
+        assert blocked is False
+        assert reason == ""
+
+
+# ---------------------------------------------------------------------------
+# clip_agent.py Tests – _is_ssrf_blocked()
+# ---------------------------------------------------------------------------
+
+from agent.agents.clip_agent import _is_ssrf_blocked as clip_is_ssrf_blocked
+
+
+class TestClipAgentIsSSRFBlocked:
+
+    # --- Erlaubte URLs ---
+
+    def test_valid_https_url_allowed(self) -> None:
+        """Normale HTTPS-URL wird durchgelassen."""
+        blocked, _ = clip_is_ssrf_blocked("https://www.example.com/artikel")
+        assert blocked is False
+
+    def test_valid_http_url_allowed(self) -> None:
+        """Normale HTTP-URL wird durchgelassen."""
+        blocked, _ = clip_is_ssrf_blocked("http://news.ycombinator.com")
+        assert blocked is False
+
+    # --- Nicht-HTTP-Protokolle ---
+
+    def test_ftp_blocked(self) -> None:
+        """FTP-URL wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("ftp://example.com/file")
+        assert blocked is True
+
+    def test_no_protocol_blocked(self) -> None:
+        """URL ohne Protokoll wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("example.com")
+        assert blocked is True
+
+    # --- Localhost ---
+
+    def test_localhost_blocked(self) -> None:
+        """localhost wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://localhost")
+        assert blocked is True
+
+    def test_localhost_with_port_blocked(self) -> None:
+        """localhost mit Port wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://localhost:3000")
+        assert blocked is True
+
+    # --- Loopback IPs ---
+
+    def test_loopback_127_blocked(self) -> None:
+        """127.0.0.1 wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://127.0.0.1")
+        assert blocked is True
+
+    # --- Private IPs ---
+
+    def test_private_ip_10_blocked(self) -> None:
+        """10.x.x.x wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://10.0.0.1/clip")
+        assert blocked is True
+
+    def test_private_ip_192_168_blocked(self) -> None:
+        """192.168.x.x wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://192.168.0.1/clip")
+        assert blocked is True
+
+    # --- Lokale Hostnamen ---
+
+    def test_local_hostname_blocked(self) -> None:
+        """.local Hostname wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://printer.local")
+        assert blocked is True
+
+    def test_internal_hostname_blocked(self) -> None:
+        """.internal Hostname wird blockiert."""
+        blocked, _ = clip_is_ssrf_blocked("http://db.internal")
+        assert blocked is True
+
+    # --- Fehlermeldungen ---
+
+    def test_blocked_returns_reason(self) -> None:
+        """Bei blockierter URL wird ein Grund zurückgegeben."""
+        blocked, reason = clip_is_ssrf_blocked("http://192.168.1.1")
+        assert blocked is True
+        assert len(reason) > 0
+
+    def test_allowed_returns_empty_reason(self) -> None:
+        """Bei erlaubter URL ist der Grund leer."""
+        blocked, reason = clip_is_ssrf_blocked("https://example.com")
+        assert blocked is False
+        assert reason == ""
+
+    # --- Konsistenz zwischen web und clip ---
+
+    def test_web_and_clip_agree_on_localhost(self) -> None:
+        """Beide Implementierungen blockieren localhost gleich."""
+        url = "http://localhost/api"
+        web_blocked, _ = web_is_ssrf_blocked(url)
+        clip_blocked, _ = clip_is_ssrf_blocked(url)
+        assert web_blocked == clip_blocked
+
+    def test_web_and_clip_agree_on_private_ip(self) -> None:
+        """Beide Implementierungen blockieren private IPs gleich."""
+        url = "http://192.168.1.100/api"
+        web_blocked, _ = web_is_ssrf_blocked(url)
+        clip_blocked, _ = clip_is_ssrf_blocked(url)
+        assert web_blocked == clip_blocked
+
+    def test_web_and_clip_agree_on_valid_url(self) -> None:
+        """Beide Implementierungen erlauben valide URLs gleich."""
+        url = "https://www.anthropic.com"
+        web_blocked, _ = web_is_ssrf_blocked(url)
+        clip_blocked, _ = clip_is_ssrf_blocked(url)
+        assert web_blocked == clip_blocked
