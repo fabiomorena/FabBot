@@ -40,8 +40,8 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 140 pytest tests on every push |
-| ✅ | Test suite – 140 pytest tests |
+| ✅ | GitHub Actions CI – runs 329 pytest tests on every push |
+| ✅ | Test suite – 329 pytest tests |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -162,7 +162,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (140 tests)
+pytest tests/ -v      # Run tests (329 tests)
 ```
 
 ### Run as Launch Agent (auto-start on login)
@@ -287,10 +287,10 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 ## Testing
 
 ```bash
-pytest tests/ -v   # 140 tests
+pytest tests/ -v   # 329 tests
 ```
 
-Coverage: security patterns · rate limiting · terminal allowlist · TTS cleaning · TTS toggle · stop_speaking() with mocked Popen · HITL message filtering · memory prefix filtering · _is_safe_output_path Path-Traversal · _invoke_with_retry 529 exponential backoff · memory_agent _apply_memory_update · profile context sections
+Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check
 
 ---
 
@@ -347,6 +347,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 46** ✅ Media-Kategorie – Lieder/Filme/Podcasts/Bücher korrekt als `media` speichern
 - **Phase 47** ✅ Supervisor Fix – memory_agent False-Positives mit JA/NEIN-Beispielen und Fallback-Regel
 - **Phase 48** ✅ Health Check – täglich 06:00 Uhr, 6 Komponenten parallel geprüft, Telegram-Report
+- **Phase 49** ✅ Stabilität – 329 Tests: SSRF, security, agent logic, bot infra, profile, confirm
 
 ---
 
