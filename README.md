@@ -41,6 +41,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
 | ✅ | GitHub Actions CI – runs 329 pytest tests on every push |
+| ✅ | Code Quality – `__SUSPICIOUS__`-Präfix entfernt, Double-Init Guard, YAML Lock, Rate-Limit Eviction |
 | ✅ | Test suite – 329 pytest tests |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
@@ -347,7 +348,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 46** ✅ Media-Kategorie – Lieder/Filme/Podcasts/Bücher korrekt als `media` speichern
 - **Phase 47** ✅ Supervisor Fix – memory_agent False-Positives mit JA/NEIN-Beispielen und Fallback-Regel
 - **Phase 48** ✅ Health Check – täglich 06:00 Uhr, 6 Komponenten parallel geprüft, Telegram-Report
-- **Phase 49** ✅ Stabilität – 329 Tests: SSRF, security, agent logic, bot infra, profile, confirm
+- **Phase 49** ✅ Stabilität + Code Quality – 329 Tests, security fixes, asyncio.Lock YAML, Rate-Limit Eviction, Round-Trip Check
 
 ---
 
