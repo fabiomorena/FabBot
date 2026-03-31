@@ -80,10 +80,10 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
             return False, f"Operator `{char}` ist nicht erlaubt."
 
     args = parts[1:]
-    args_str = " ".join(args).lower()
+    args_lower = [a.lower() for a in args]
 
     for forbidden in FORBIDDEN_ARGS:
-        if forbidden.lower() in args_str:
+        if forbidden.lower() in args_lower:
             return False, f"Argument `{forbidden}` ist nicht erlaubt."
 
     for part in args:

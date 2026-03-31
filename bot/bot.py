@@ -472,13 +472,25 @@ async def _post_init(app: Application) -> None:
     if allowed_ids:
         chat_id = int(allowed_ids.split(",")[0].strip())
         from bot.briefing import run_briefing_scheduler
-        asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+        _task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+        _task_briefing.add_done_callback(
+            lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception() else None
+        )
         logger.info("Morning Briefing Scheduler gestartet.")
         from bot.reminders import run_reminder_scheduler
-        asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+        _task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+        _task_reminders.add_done_callback(
+            lambda t: logger.error(f"Reminder Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception() else None
+        )
         logger.info("Reminder Scheduler gestartet.")
         from bot.health_check import run_health_check_scheduler
-        asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+        _task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+        _task_health.add_done_callback(
+            lambda t: logger.error(f"Health Check Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception() else None
+        )
         logger.info("Health Check Scheduler gestartet.")
 
 

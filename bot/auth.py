@@ -17,6 +17,11 @@ def _load_allowed_ids() -> frozenset[int]:
         )
         return frozenset()
     ids = frozenset(int(uid.strip()) for uid in raw.split(",") if uid.strip())
+    if not ids:
+        raise RuntimeError(
+            "TELEGRAM_ALLOWED_USER_IDS ist leer – Bot-Start abgebrochen. "
+            "Bitte mindestens eine User-ID in .env eintragen."
+        )
     logger.info(f"Bot-Zugriff erlaubt fuer {len(ids)} User-ID(s).")
     return ids
 
