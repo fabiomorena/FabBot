@@ -25,6 +25,7 @@ from agent.agents.clip_agent import clip_agent, clip_agent_write
 logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
+_scheduler_tasks: list = []  # Referenzen auf Scheduler-Tasks
 
 # Retry-Konfiguration für 529 Overloaded
 _RETRY_MAX_ATTEMPTS = 3
@@ -472,21 +473,24 @@ async def _post_init(app: Application) -> None:
     if allowed_ids:
         chat_id = int(allowed_ids.split(",")[0].strip())
         from bot.briefing import run_briefing_scheduler
-        _task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+        task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+        _scheduler_tasks.append(task_briefing)
         _task_briefing.add_done_callback(
             lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Morning Briefing Scheduler gestartet.")
         from bot.reminders import run_reminder_scheduler
-        _task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+        task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+        _scheduler_tasks.append(task_reminders)
         _task_reminders.add_done_callback(
             lambda t: logger.error(f"Reminder Scheduler unerwartet beendet: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Reminder Scheduler gestartet.")
         from bot.health_check import run_health_check_scheduler
-        _task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+        task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+        _scheduler_tasks.append(task_health)
         _task_health.add_done_callback(
             lambda t: logger.error(f"Health Check Scheduler unerwartet beendet: {t.exception()}")
             if not t.cancelled() and t.exception() else None
@@ -496,6 +500,11 @@ async def _post_init(app: Application) -> None:
 
 async def _post_shutdown(app: Application) -> None:
     """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
+    for task in _scheduler_tasks:
+        if not task.done():
+            task.cancel()
+    if _scheduler_tasks:
+        logger.info(f"{len(_scheduler_tasks)} Scheduler-Tasks abgebrochen.")
     from agent.supervisor import close_graph
     await close_graph()
     logger.info("SqliteSaver-Verbindung geschlossen.")
