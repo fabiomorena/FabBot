@@ -48,7 +48,7 @@ async def analyze_image(
     image_bytes: bytes,
     caption: str,
     chat_id: int,
-    media_type: str = "image/jpeg",
+
 ) -> str:
     """
     Analysiert ein Bild via Claude Sonnet Vision.
@@ -57,13 +57,15 @@ async def analyze_image(
     if len(image_bytes) > MAX_IMAGE_BYTES:
         return f"Bild zu groß (max. 5 MB, erhalten: {len(image_bytes) // 1024} KB)."
 
+    media_type = "image/jpeg"  # Telegram liefert immer JPEG
     try:
         img_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
         llm = get_llm()
 
         question = caption.strip() if caption.strip() else "Beschreibe dieses Bild detailliert."
 
-        response = await llm.ainvoke([
+        import asyncio
+        response = await asyncio.wait_for(llm.ainvoke([
             HumanMessage(content=[
                 {
                     "type": "text",

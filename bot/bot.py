@@ -317,7 +317,6 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet eingehende Fotos via Claude Sonnet Vision mit HITL."""
-    import base64
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 

@@ -245,7 +245,7 @@ projects:
       priority: high
 
 people:
-  - name: Stephanie Priller
+  - name: Stephanie 
     context: Steffi ist Fabios Freundin
 
 preferences:
