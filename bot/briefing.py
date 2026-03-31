@@ -25,33 +25,46 @@ except Exception:
 
 
 def _get_calendar_today() -> str:
-    """Holt heutige Kalender-Termine via AppleScript."""
+    """Holt heutige Kalender-Termine via AppleScript (Temp-Datei)."""
+    import tempfile, os, time
     today = date.today().strftime("%d.%m.%Y")
-    cmd = [
-        "osascript",
-        "-e", f'set startDate to date "{today}"',
-        "-e", f'set endDate to date "{today}" + (23 * hours) + (59 * minutes)',
-        "-e", 'set output to ""',
-        "-e", 'tell application "Calendar"',
-        "-e", '    repeat with cal in calendars',
-        "-e", '        set evts to (every event of cal whose start date >= startDate and start date <= endDate)',
-        "-e", '        repeat with evt in evts',
-        "-e", '            set evtStart to start date of evt',
-        "-e", '            set h to hours of evtStart as string',
-        "-e", '            set m to minutes of evtStart',
-        "-e", '            if m < 10 then',
-        "-e", '                set mStr to "0" & (m as string)',
-        "-e", '            else',
-        "-e", '                set mStr to m as string',
-        "-e", '            end if',
-        "-e", '            set output to output & (summary of evt) & "|" & h & ":" & mStr & linefeed',
-        "-e", '        end repeat',
-        "-e", '    end repeat',
-        "-e", 'end tell',
-        "-e", 'return output',
+    script_lines = [
+        f'set startDate to date "{today}"',
+        f'set endDate to date "{today}" + (23 * hours) + (59 * minutes)',
+        'set output to ""',
+        'tell application "Calendar"',
+        '    repeat with cal in calendars',
+        '        set evts to (every event of cal whose start date >= startDate and start date <= endDate)',
+        '        repeat with evt in evts',
+        '            set evtStart to start date of evt',
+        '            set h to hours of evtStart as string',
+        '            set m to minutes of evtStart',
+        '            if m < 10 then',
+        '                set mStr to "0" & (m as string)',
+        '            else',
+        '                set mStr to m as string',
+        '            end if',
+        '            set output to output & (summary of evt) & "|" & h & ":" & mStr & linefeed',
+        '        end repeat',
+        '    end repeat',
+        'end tell',
+        'return output',
     ]
+    script = "\n".join(script_lines)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # Calendar.app aktivieren damit AppleScript nicht haengt
+        subprocess.run(["open", "-a", "Calendar"], check=False, timeout=5)
+        time.sleep(2)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".applescript", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(script)
+            tmp_path = f.name
+        result = subprocess.run(
+            ["osascript", tmp_path],
+            capture_output=True, text=True, timeout=30
+        )
+        os.unlink(tmp_path)
         if result.returncode != 0 or not result.stdout.strip():
             return "Keine Termine heute."
         lines = []
@@ -60,12 +73,11 @@ def _get_calendar_today() -> str:
                 continue
             parts = line.split("|")
             if len(parts) >= 2:
-                lines.append(f"• {parts[1]} Uhr – {parts[0]}")
+                lines.append(f"\u2022 {parts[1]} Uhr \u2013 {parts[0]}")
         return "\n".join(lines) if lines else "Keine Termine heute."
     except Exception as e:
         logger.warning(f"Kalender-Fehler im Briefing: {e}")
-        return "Kalender nicht verfügbar."
-
+        return "Kalender nicht verf\u00fcgbar."
 
 async def _fetch_web(query: str) -> str:
     """Einfache Web-Suche via Tavily oder Brave."""
