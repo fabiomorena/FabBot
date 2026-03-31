@@ -9,7 +9,7 @@ A personal AI assistant that runs locally on macOS, controlled via Telegram and 
 ## Overview
 
 ```
-You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → calendar_agent / terminal_agent / file_agent / web_agent / chat_agent / ...
+You → Telegram (text or voice or photo) → Security Guard → Supervisor (Haiku) → calendar_agent / terminal_agent / file_agent / web_agent / chat_agent / vision_agent / ...
 ```
 
 ---
@@ -52,6 +52,7 @@ You → Telegram (text or voice) → Security Guard → Supervisor (Haiku) → c
 | ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` + `media` |
 | ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
 | ✅ | Health Check – daily 06:00 system status report (Terminal, API, Web, Calendar, Profile, DB) |
+| ✅ | Vision Agent – photo analysis via Claude Sonnet Vision with HITL (objects, OCR, scene description) |
 
 ---
 
@@ -71,7 +72,7 @@ FabBot/
 │   └── workflows/
 │       └── test.yml         # GitHub Actions CI – pip cache + pytest
 ├── tests/
-│   └── test_security_terminal.py  # pytest suite (88 tests)
+│   └── test_security_terminal.py  # pytest suite (329 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -84,6 +85,7 @@ FabBot/
 │   └── agents/
 │       ├── chat_agent.py    # Context-aware conversation agent (no tools)
 │       ├── memory_agent.py  # Explicit profile updates (places, people, custom, delete)
+│       ├── vision_agent.py  # Photo analysis via Claude Sonnet Vision
 │       ├── computer.py      # Desktop control (validated input)
 │       ├── terminal.py      # Shell command execution, German date format
 │       ├── file.py          # File operations
@@ -93,7 +95,7 @@ FabBot/
 │       └── clip_agent.py    # URL clipper with content isolation
 └── bot/
     ├── bot.py               # Telegram handlers, HITL TTS, post_init/post_shutdown hooks
-    ├── auth.py              # User whitelist (cached at startup, warns if empty)
+    ├── auth.py              # User whitelist (cached at startup, RuntimeError if empty)
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription (voice → text)
     ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice + stop)
@@ -152,6 +154,9 @@ FabBot runs as a background process and needs explicit permissions to access fil
 
 **Full Disk Access** (for `/search`, `file_agent`, `terminal_agent`):
 `System Settings → Privacy & Security → Full Disk Access → + → .venv/bin/python`
+
+**Calendar Access** (for `calendar_agent`, `briefing`):
+Start the bot once directly from Terminal (`python main.py`) and send a calendar request via Telegram to trigger the permission dialog.
 
 **Prevent idle sleep** (to keep bot running while away):
 ```bash
@@ -213,6 +218,8 @@ tail -f ~/.fabbot/fabbot.log
 | "Füge Marco als Kollegen hinzu" | `memory_agent` |
 | "Speichere Insieme von Valentino Vivace als Lieblingslied" | `memory_agent` |
 | "Vergiss den Eintrag über Bonial als Projekt" | `memory_agent` |
+| 📷 Foto + "Was siehst du?" | `vision_agent` → Objekterkennung, OCR, Beschreibung |
+| 📷 Foto + "Was steht hier?" | `vision_agent` → Texterkennung (OCR) |
 | 🎤 Voice note | Whisper → any agent |
 
 **Commands:**
@@ -269,6 +276,9 @@ Writes a timestamped note to `personal_profile.yaml`, active immediately without
 
 Fetched web content is wrapped in `<document>` tags before LLM processing. HTML comments stripped. Explicit instruction to ignore content inside document tags.
 
+### Vision Agent security
+Photo captions are sanitized through the full injection guard pipeline before analysis. No identification of private individuals. Audit log records metadata only (no image data).
+
 ### Additional layers
 User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist · Shell operator blocking · Path traversal guard · SSRF protection · TOCTOU re-validation · HITL confirmation · Audit log
 
@@ -281,6 +291,7 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 | Supervisor (routing) | claude-haiku-4-5 | ~4x faster, simple classification |
 | LLM-Guard (security) | claude-haiku-4-5 | fast, cost-efficient screening |
 | All agents (answers) | claude-sonnet-4 | full quality for responses |
+| Vision Agent | claude-sonnet-4 | multimodal vision capability |
 
 ~40% faster response time vs. Sonnet-only.
 
@@ -351,6 +362,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 48** ✅ Health Check – täglich 06:00 Uhr, 6 Komponenten parallel geprüft, Telegram-Report
 - **Phase 49** ✅ Stabilität + Code Quality – 329 Tests, security fixes, asyncio.Lock YAML, Rate-Limit Eviction, Round-Trip Check
 - **Phase 50** ✅ Security Hardening – FORBIDDEN_ARGS per-Token, echo entfernt, sanitize_command(), cwd=home, Reviewer YAML 8000, filter-then-slice
+- **Phase 51** ✅ Vision Agent – Foto-Analyse via Claude Sonnet Vision mit HITL, Objekterkennung, OCR, Szenenbeschreibung + Bug fixes (Briefing Kalender, auth RuntimeError, task refs, profile lock)
 
 ---
 
