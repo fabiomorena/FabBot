@@ -13,6 +13,7 @@ Security:
 - Rate Limiting via security.py (bereits aktiv)
 """
 
+import asyncio
 import base64
 import logging
 from langchain_core.messages import HumanMessage
@@ -23,6 +24,9 @@ from agent.llm import get_llm
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# Telegram liefert immer JPEG
+_MEDIA_TYPE = "image/jpeg"
 
 VISION_SYSTEM_PROMPT = """Du bist ein präziser Bild-Analyse-Assistent.
 
@@ -48,7 +52,6 @@ async def analyze_image(
     image_bytes: bytes,
     caption: str,
     chat_id: int,
-
 ) -> str:
     """
     Analysiert ein Bild via Claude Sonnet Vision.
@@ -57,30 +60,30 @@ async def analyze_image(
     if len(image_bytes) > MAX_IMAGE_BYTES:
         return f"Bild zu groß (max. 5 MB, erhalten: {len(image_bytes) // 1024} KB)."
 
-    media_type = "image/jpeg"  # Telegram liefert immer JPEG
     try:
         img_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
         llm = get_llm()
-
         question = caption.strip() if caption.strip() else "Beschreibe dieses Bild detailliert."
 
-        import asyncio
-        response = await asyncio.wait_for(llm.ainvoke([
-            HumanMessage(content=[
-                {
-                    "type": "text",
-                    "text": VISION_SYSTEM_PROMPT + f"\n\nFrage: {question}",
-                },
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": img_b64,
+        response = await asyncio.wait_for(
+            llm.ainvoke([
+                HumanMessage(content=[
+                    {
+                        "type": "text",
+                        "text": VISION_SYSTEM_PROMPT + f"\n\nFrage: {question}",
                     },
-                },
-            ])
-        ])
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": _MEDIA_TYPE,
+                            "data": img_b64,
+                        },
+                    },
+                ])
+            ]),
+            timeout=60,
+        )
 
         content = response.content
         if isinstance(content, list):
@@ -99,6 +102,9 @@ async def analyze_image(
         )
         return result
 
+    except asyncio.TimeoutError:
+        logger.error("Vision Agent Timeout nach 60s.")
+        return "Timeout bei der Bildanalyse – bitte nochmal versuchen."
     except Exception as e:
         logger.error(f"Vision Agent Fehler: {e}")
         log_action("vision_agent", "analyze_image", f"error: {e}", chat_id, status="error")
