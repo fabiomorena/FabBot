@@ -15,6 +15,9 @@ class Proto:
     # Screenshot-Antwort
     SCREENSHOT            = "__SCREENSHOT__:"
 
+    # Vision-Analyse Bestätigung
+    CONFIRM_VISION        = "__CONFIRM_VISION__:"
+
     @staticmethod
     def is_confirm_terminal(msg: str) -> bool:
         return msg.startswith(Proto.CONFIRM_TERMINAL)
@@ -34,6 +37,10 @@ class Proto:
     @staticmethod
     def is_screenshot(msg: str) -> bool:
         return msg.startswith(Proto.SCREENSHOT)
+
+    @staticmethod
+    def is_confirm_vision(msg: str) -> bool:
+        return msg.startswith(Proto.CONFIRM_VISION)
 
     @staticmethod
     def is_any_confirm(msg: str) -> bool:

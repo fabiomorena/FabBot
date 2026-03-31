@@ -21,6 +21,7 @@ from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
+from agent.agents.vision_agent import analyze_image
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +315,59 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
+async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Verarbeitet eingehende Fotos via Claude Sonnet Vision mit HITL."""
+    import base64
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+
+    caption = update.message.caption or ""
+
+    # Caption auf Injection prüfen falls vorhanden
+    if caption:
+        is_safe, result = await sanitize_input_async(caption, user_id)
+        if not is_safe:
+            log_blocked(result, caption, user_id)
+            await update.message.reply_text(f"Eingabe abgelehnt: {result}")
+            return
+        caption = result
+
+    # HITL – Bestätigung vor Analyse
+    preview = f"Foto analysieren" + (f": \"{caption[:60]}\"" if caption else "")
+    confirmed = await request_confirmation(ctx.bot, chat_id, "vision_agent", preview)
+    if not confirmed:
+        log_action("vision_agent", "analyze_image", "user rejected", chat_id, status="rejected")
+        return
+
+    thinking = await update.message.reply_text("Analysiere Bild...")
+
+    try:
+        photo = update.message.photo[-1]  # groesstes Format
+        tg_file = await ctx.bot.get_file(photo.file_id)
+        img_bytes = await tg_file.download_as_bytearray()
+
+        result = await analyze_image(
+            bytes(img_bytes),
+            caption,
+            chat_id,
+        )
+
+        await thinking.delete()
+        await update.message.reply_text(result)
+
+        # Memory Update damit Folgefragen moeglich sind
+        await _update_memory(chat_id, f"Bild analysiert: {result[:200]}")
+
+    except Exception as e:
+        logger.error(f"on_photo Fehler: {e}", exc_info=True)
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text("Fehler bei der Bildanalyse.")
+
+
+@restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_message_text(update, ctx.bot, update.message.text)
 
@@ -475,7 +529,7 @@ async def _post_init(app: Application) -> None:
         from bot.briefing import run_briefing_scheduler
         task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_briefing)
-        _task_briefing.add_done_callback(
+        task_briefing.add_done_callback(
             lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
@@ -483,7 +537,7 @@ async def _post_init(app: Application) -> None:
         from bot.reminders import run_reminder_scheduler
         task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_reminders)
-        _task_reminders.add_done_callback(
+        task_reminders.add_done_callback(
             lambda t: logger.error(f"Reminder Scheduler unerwartet beendet: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
@@ -491,7 +545,7 @@ async def _post_init(app: Application) -> None:
         from bot.health_check import run_health_check_scheduler
         task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_health)
-        _task_health.add_done_callback(
+        task_health.add_done_callback(
             lambda t: logger.error(f"Health Check Scheduler unerwartet beendet: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
@@ -537,6 +591,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("search", cmd_search, block=False))
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
+    app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
     return app
