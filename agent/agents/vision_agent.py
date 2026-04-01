@@ -104,6 +104,7 @@ async def analyze_image(
 
     except asyncio.TimeoutError:
         logger.error("Vision Agent Timeout nach 60s.")
+        log_action("vision_agent", "analyze_image", "timeout after 60s", chat_id, status="error")
         return "Timeout bei der Bildanalyse – bitte nochmal versuchen."
     except Exception as e:
         logger.error(f"Vision Agent Fehler: {e}")
