@@ -23,6 +23,14 @@ import re
 from collections import OrderedDict
 from time import time
 
+try:
+    from homoglyphs import Homoglyphs, STRATEGY_LOAD
+    _hg = Homoglyphs(strategy=STRATEGY_LOAD)
+    _USE_HOMOGLYPHS_LIB = True
+except ImportError:
+    _hg = None
+    _USE_HOMOGLYPHS_LIB = False
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -71,8 +79,19 @@ _HOMOGLYPH_MAP = {
 
 
 def _normalize(text: str) -> str:
-    """Normalisiert Homoglyphen zu ASCII-Aequivalenten."""
-    return "".join(_HOMOGLYPH_MAP.get(c, c) for c in text)
+    """Normalisiert Homoglyphen zu ASCII-Aequivalenten.
+    Nutzt homoglyphs-Library char-by-char wenn verfuegbar, sonst _HOMOGLYPH_MAP.
+    """
+    result = []
+    for char in text:
+        if ord(char) < 128:
+            result.append(char)
+        elif _USE_HOMOGLYPHS_LIB and _hg is not None:
+            variants = _hg.to_ascii(char)
+            result.append(variants[0] if variants else _HOMOGLYPH_MAP.get(char, char))
+        else:
+            result.append(_HOMOGLYPH_MAP.get(char, char))
+    return "".join(result)
 
 
 # ---------------------------------------------------------------------------

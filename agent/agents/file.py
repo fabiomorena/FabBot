@@ -1,3 +1,4 @@
+import os
 import re
 import json
 from pathlib import Path
@@ -7,16 +8,24 @@ from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
 
-ALLOWED_BASE_PATHS = [
-    Path.home() / "Downloads",
-    Path.home() / "Documents",
-    Path.home() / "Desktop",
-    Path.home() / "Projects",
-    Path.home() / "PythonProject",
-    Path("/Volumes/McAir SSD/fmorena/PythonProject"),
-    Path("/Volumes/McAir SSD/fmorena/Downloads"),
-    Path("/Volumes/McAir SSD/fmorena/Documents"),
-]
+def _build_allowed_paths() -> list[Path]:
+    """Erlaubte Basispfade – portabel via Path.home() + optionale externe Pfade via .env."""
+    paths = [
+        Path.home() / "Downloads",
+        Path.home() / "Documents",
+        Path.home() / "Desktop",
+        Path.home() / "Projects",
+        Path.home() / "PythonProject",
+    ]
+    # Optionale externe Pfade via .env: FABBOT_EXTRA_PATHS=/Volumes/SSD/foo:/Volumes/SSD/bar
+    extra = os.getenv("FABBOT_EXTRA_PATHS", "")
+    for ep in extra.split(":") if extra else []:
+        ep = ep.strip()
+        if ep:
+            paths.append(Path(ep))
+    return paths
+
+ALLOWED_BASE_PATHS = _build_allowed_paths()
 
 EXPLICITLY_BLOCKED_PATHS = [
     Path.home() / ".ssh",
@@ -37,10 +46,10 @@ Analysiere die Anfrage und antworte NUR mit reinem JSON ohne Markdown-Formatieru
 {"action": "read|list|write", "path": "/absoluter/pfad", "content": "nur bei write"}
 
 Wichtige Pfade auf diesem Mac:
-- Downloads: /Users/fmorena/Downloads
-- Documents: /Users/fmorena/Documents
-- Desktop: /Users/fmorena/Desktop
-- PythonProject: /Volumes/McAir SSD/fmorena/PythonProject
+- Downloads: ~/Downloads
+- Documents: ~/Documents
+- Desktop: ~/Desktop
+- PythonProject: ~/PythonProject
 
 Kein ```json, keine Erklaerung, nur das rohe JSON-Objekt.
 Wenn nicht unterstuetzt: UNSUPPORTED

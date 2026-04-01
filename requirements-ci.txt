@@ -245,3 +245,5 @@ pytest
 langgraph-checkpoint-sqlite==3.0.3
 aiosqlite==0.22.1
 pytest-asyncio
+homoglyphs
+pip-audit

@@ -26,5 +26,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-ci.txt
 
+      - name: Security audit
+        run: pip-audit
+
       - name: Run tests
         run: pytest tests/ -v
