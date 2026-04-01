@@ -33,7 +33,7 @@ async def _get_weather_berlin() -> str:
             resp.raise_for_status()
             data = resp.json()
 
-        current = data["current_condition"][0]
+        current = data.get("current_condition", [{}])[0]
         temp = current["temp_C"]
         feels = current["FeelsLikeC"]
         desc = current["weatherDesc"][0]["value"]
@@ -121,7 +121,7 @@ def _get_calendar_today() -> str:
         return "Kalender nicht verf\u00fcgbar."
 
 async def _fetch_web(query: str) -> str:
-    """Einfache Web-Suche via Tavily oder Brave."""
+    """Einfache Web-Suche via Tavily (kein Brave-Fallback im Briefing)."""
     try:
         import httpx
         tavily_key = os.getenv("TAVILY_API_KEY")
