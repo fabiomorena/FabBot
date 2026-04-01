@@ -21,8 +21,25 @@ def _build_allowed_paths() -> list[Path]:
     extra = os.getenv("FABBOT_EXTRA_PATHS", "")
     for ep in extra.split(":") if extra else []:
         ep = ep.strip()
-        if ep:
-            paths.append(Path(ep))
+        if not ep:
+            continue
+        extra_path = Path(ep)
+        # Validation: Pfad muss existieren und darf nicht in blocked paths liegen
+        if not extra_path.exists():
+            import logging
+            logging.getLogger(__name__).warning(f"FABBOT_EXTRA_PATHS: Pfad existiert nicht – ignoriert: {ep}")
+            continue
+        if any(str(extra_path.resolve()).startswith(str(b.resolve())) for b in [
+            Path.home() / ".ssh",
+            Path.home() / ".fabbot",
+            Path.home() / "Library",
+            Path("/etc"),
+            Path("/private"),
+        ]):
+            import logging
+            logging.getLogger(__name__).warning(f"FABBOT_EXTRA_PATHS: Blockierter Pfad – ignoriert: {ep}")
+            continue
+        paths.append(extra_path)
     return paths
 
 ALLOWED_BASE_PATHS = _build_allowed_paths()
