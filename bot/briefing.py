@@ -99,8 +99,13 @@ async def _fetch_web(query: str) -> str:
                         title = r.get("title", "").split(" - ")[0].split(" | ")[0].strip()
                         snippet = r.get("content", r.get("snippet", ""))
                         snippet = re.sub(r"[#*_`]", "", snippet).strip()
-                        snippet = re.sub(r"\s+", " ", snippet)[:80].strip()
-                        lines.append(f"• {title}" + (f": {snippet}" if snippet else ""))
+                        snippet = re.sub(r"\s+", " ", snippet).strip()
+                        # Am letzten Satzende abschneiden statt hart bei 80 Zeichen
+                        if len(snippet) > 120:
+                            cut = snippet[:120]
+                            last_dot = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+                            snippet = cut[:last_dot + 1] if last_dot > 30 else cut.strip()
+                        lines.append(f"• {title}" + (f"\n  {snippet}" if snippet else ""))
                     return "\n".join(lines)
         return "Keine Ergebnisse."
     except Exception as e:
