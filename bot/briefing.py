@@ -24,6 +24,47 @@ except Exception:
     BRIEFING_TIME = "07:30"
 
 
+async def _get_weather_berlin() -> str:
+    """Holt aktuelles Berliner Wetter via wttr.in – kein API-Key nötig."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://wttr.in/Berlin?format=j1")
+            resp.raise_for_status()
+            data = resp.json()
+
+        current = data["current_condition"][0]
+        temp = current["temp_C"]
+        feels = current["FeelsLikeC"]
+        desc = current["weatherDesc"][0]["value"]
+        humidity = current["humidity"]
+        wind = current["windspeedKmph"]
+
+        # Wettericon
+        icons = {
+            "Sunny": "☀️", "Clear": "🌙", "Partly cloudy": "⛅",
+            "Cloudy": "☁️", "Overcast": "☁️", "Mist": "🌫️",
+            "Rain": "🌧️", "Light rain": "🌦️", "Heavy rain": "🌧️",
+            "Snow": "❄️", "Thunder": "⛈️", "Fog": "🌫️",
+        }
+        icon = next((v for k, v in icons.items() if k.lower() in desc.lower()), "🌡️")
+
+        # Forecast fuer heute
+        forecast = data.get("weather", [{}])[0]
+        max_temp = forecast.get("maxtempC", "?")
+        min_temp = forecast.get("mintempC", "?")
+
+        return (
+            f"{icon} {desc}\n"
+            f"🌡️ Aktuell: {temp}°C (gefühlt {feels}°C)\n"
+            f"📊 Heute: {min_temp}°C – {max_temp}°C\n"
+            f"💧 Luftfeuchtigkeit: {humidity}% | 💨 Wind: {wind} km/h"
+        )
+    except Exception as e:
+        logger.warning(f"Wetter-Fehler: {e}")
+        return "Wetter nicht verfügbar."
+
+
 def _get_calendar_today() -> str:
     """Holt heutige Kalender-Termine via AppleScript (Temp-Datei)."""
     import tempfile, os, time
@@ -123,7 +164,7 @@ async def generate_briefing() -> str:
     today_str = f"{weekday_de}, {date.today().strftime('%d.%m.%Y')}"
 
     # Parallel abrufen
-    wetter_task = asyncio.create_task(_fetch_web("Wetter Berlin heute"))
+    wetter_task = asyncio.create_task(_get_weather_berlin())
     news_task = asyncio.create_task(_fetch_web("Top Nachrichten Deutschland heute"))
 
     kalender = await asyncio.to_thread(_get_calendar_today)
