@@ -456,23 +456,25 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
-
+        vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
         human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
         state = {
-            "messages": [HumanMessage(content=human_text)],
+            "messages": [
+                HumanMessage(content=human_text),
+                AIMessage(content=f"__VISION_RESULT__:{vision_result}"),
+            ],
             "telegram_chat_id": chat_id,
             "next_agent": None,
-            "image_data": img_b64,
-            "image_caption": caption,
-            "image_media_type": media_type,
+            "image_data": None,
+            "image_caption": None,
+            "image_media_type": None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
-
         result_state = await _invoke_with_retry(state, config)
-
         ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
-        response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort."
-
+        response_msg = _extract_content(ai_messages[-1]) if ai_messages else vision_result
+        if response_msg.startswith("__VISION_RESULT__:"):
+            response_msg = response_msg[len("__VISION_RESULT__:"):]
         await thinking.delete()
         await update.message.reply_text(response_msg)
         await speak_and_send(response_msg, ctx.bot, chat_id)
