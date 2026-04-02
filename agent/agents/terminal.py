@@ -42,6 +42,7 @@ ALLOWED_SYSTEM_PROFILER_TYPES = {
 }
 
 TIMEOUT_SECONDS = 15
+TERMINAL_MAX_OUTPUT = 3000
 
 PROMPT = """Du bist ein spezialisierter Terminal-Agent auf einem Mac.
 
@@ -168,8 +169,8 @@ def execute_command(command: str) -> str:
             cwd=str(pathlib.Path.home()),  # sicheres Arbeitsverzeichnis – kein Bot-Source-Exposure
         )
         output = result.stdout.strip() or result.stderr.strip() or "(kein Output)"
-        if len(output) > 3000:
-            output = output[:3000] + "\n... (Output gekuerzt)"
+        if len(output) > TERMINAL_MAX_OUTPUT:
+            output = output[:TERMINAL_MAX_OUTPUT] + "\n... (Output gekuerzt)"
         return output
     except subprocess.TimeoutExpired:
         return f"Timeout nach {TIMEOUT_SECONDS}s."

@@ -12,6 +12,7 @@ Betroffene Singletons:
 - _pending           (bot/confirm.py)
 """
 
+import copy
 import pytest
 
 
@@ -43,9 +44,11 @@ def reset_tts_state():
 def reset_profile_cache():
     """Stellt den Profil-Cache vor und nach jedem Test wieder her.
     Verhindert dass gemockte Profile in nachfolgenden Tests sichtbar bleiben.
+    deepcopy verhindert dass in-place Mutationen (z.B. .update()) den
+    gespeicherten Original-Cache verändern.
     """
     import agent.profile as profile_module
-    original_cache = profile_module._profile_cache
+    original_cache = copy.deepcopy(profile_module._profile_cache)
     yield
     profile_module._profile_cache = original_cache
 

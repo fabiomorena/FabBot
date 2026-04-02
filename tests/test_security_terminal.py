@@ -130,7 +130,7 @@ class TestCheckRateLimit:
 # terminal.py Tests
 # ---------------------------------------------------------------------------
 
-from agent.agents.terminal import is_command_allowed
+from agent.agents.terminal import is_command_allowed, TERMINAL_MAX_OUTPUT
 
 
 class TestIsCommandAllowed:
@@ -2532,7 +2532,7 @@ class TestExecuteCommand:
         mock_result.stderr = ""
         with patch("subprocess.run", return_value=mock_result):
             result = execute_command("df -h")
-        assert len(result) <= 3100  # 3000 + "... (Output gekuerzt)"
+        assert len(result) <= TERMINAL_MAX_OUTPUT + 100  # +100 für den Suffix
         assert "gekuerzt" in result
 
 
