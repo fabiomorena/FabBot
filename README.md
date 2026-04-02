@@ -53,6 +53,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
 | ✅ | Health Check – daily 06:00 system status report (Terminal, API, Web, Calendar, Profile, DB) |
 | ✅ | Vision Agent – photo analysis via Claude Sonnet Vision with HITL (objects, OCR, scene description) |
+| ✅ | At-Rest-Encryption – `personal_profile.yaml` verschlüsselt via Fernet, Key im macOS Keychain |
 
 ---
 
@@ -115,6 +116,7 @@ FabBot/
 - [aiosqlite](https://github.com/omnilib/aiosqlite) – async SQLite for persistent memory
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - [rumps](https://github.com/jaredks/rumps) – macOS menubar app
+- [cryptography](https://cryptography.io) + [keyring](https://github.com/jaraco/keyring) – At-Rest-Encryption via Fernet, Key im macOS Keychain
 - Python 3.11+, macOS
 
 ---
@@ -370,6 +372,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 51** ✅ Vision Agent – Foto-Analyse via Claude Sonnet Vision mit HITL, Objekterkennung, OCR, Szenenbeschreibung + Bug fixes (Briefing Kalender, auth RuntimeError, task refs, profile lock)
 - **Phase 52** ✅ Watchdog – externer Bot-Monitor via cron, wttr.in Wetter, homoglyphs Library, pip-audit in CI, portable Pfade via Path.home(), CVE Fixes
 - **Phase 53** ✅ Test-Resilienz – conftest.py autouse Fixtures, Event-Poll-Loop in async Tests, pytest tmp_path für file-basierte Tests
+- **Phase 54** ✅ At-Rest-Encryption – personal_profile.yaml via Fernet (AES-128-CBC), Key im macOS Keychain, transparente Migration, 11 neue Tests
 
 ---
 
