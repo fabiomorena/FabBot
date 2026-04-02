@@ -25,7 +25,8 @@ _KEYRING_SERVICE = "fabbot"
 _KEYRING_USERNAME = "profile_key"
 _ENC_HEADER = b"FABBOT_ENC_V1:"
 
-# Singleton – einmal geladen, für die Laufzeit gecacht
+# Singleton – einmal geladen, für die Laufzeit gecacht.
+# Key-Rotation (z.B. nach Security-Incident) erfordert Bot-Neustart.
 _fernet: Fernet | None = None
 
 
@@ -73,4 +74,4 @@ def decrypt(data: bytes) -> str:
     try:
         return f.decrypt(token).decode("utf-8")
     except InvalidToken as e:
-        raise InvalidToken(f"Entschlüsselung fehlgeschlagen – falscher Key oder korrupte Daten: {e}") from e
+        raise ValueError("Entschlüsselung fehlgeschlagen – falscher Key oder korrupte Daten.") from e

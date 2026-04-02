@@ -65,7 +65,9 @@ def load_profile() -> dict[str, Any]:
         if is_encrypted(raw):
             yaml_text = decrypt(raw)
         else:
-            # Migration: plain YAML → verschlüsseln und speichern
+            # Migration: plain YAML → verschlüsseln und speichern.
+            # Nicht thread-safe – load_profile() hat bewusst keinen Lock.
+            # Sicher für Single-Process-Nutzung (wird genau einmal aufgerufen).
             yaml_text = raw.decode("utf-8")
             logger.info("Migration: personal_profile.yaml wird verschlüsselt...")
             _PROFILE_PATH.write_bytes(encrypt(yaml_text))
@@ -144,7 +146,7 @@ async def write_profile(profile: dict[str, Any]) -> bool:
             if round_tripped != profile:
                 logger.error(
                     f"write_profile: Round-Trip Mismatch – YAML-Coercion erkannt, Schreiben abgebrochen. "
-                    f"Diff-Keys: {set(str(round_tripped)) ^ set(str(profile))}"
+                    f"Diff-Keys: {set(round_tripped.keys()) ^ set(profile.keys())}"
                 )
                 return False
             from agent.crypto import encrypt
