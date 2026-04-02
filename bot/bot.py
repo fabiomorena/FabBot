@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _TTS_MAX_HITL_OUTPUT = 300
 
 _IMAGE_MAX_PX = 1920
-_IMAGE_MAX_BYTES = 1_000_000  # 1MB
+_IMAGE_MAX_BYTES = 4_000_000  # 1MB
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
