@@ -21,6 +21,7 @@ from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
+from agent.agents.vision_agent import analyze_image_direct
 
 logger = logging.getLogger(__name__)
 
@@ -380,27 +381,37 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
 
-        # Bild als base64 in den State – Supervisor routet zu vision_agent
+        # Direkt analysieren – image_data nie in LangGraph State legen
+        # (verhindert dass 2.7MB base64 durch SQLite-Checkpointer läuft)
+        vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
+
+        # Ergebnis durch chat_agent schicken für Bot-Stil
         human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
         state = {
-            "messages": [HumanMessage(content=human_text)],
+            "messages": [
+                HumanMessage(content=human_text),
+                AIMessage(content=f"__VISION_RESULT__:{vision_result}"),
+            ],
             "telegram_chat_id": chat_id,
             "next_agent": None,
-            "image_data": img_b64,
-            "image_caption": caption,
-            "image_media_type": media_type,
+            "image_data": None,
+            "image_caption": None,
+            "image_media_type": None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
         result_state = await _invoke_with_retry(state, config)
 
         ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
-        response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Vision Agent."
+        response_msg = _extract_content(ai_messages[-1]) if ai_messages else vision_result
+        # Rohen VISION_RESULT Prefix herausfiltern falls chat_agent nicht geroutet wurde
+        if response_msg.startswith("__VISION_RESULT__:"):
+            response_msg = response_msg[len("__VISION_RESULT__:"):]
 
         await thinking.delete()
         await update.message.reply_text(response_msg)
         await speak_and_send(response_msg, ctx.bot, chat_id)
-        await _update_memory(chat_id, f"Bild analysiert: {response_msg[:200]}")
+        await _update_memory(chat_id, f"Bild analysiert: {vision_result[:200]}")
 
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)

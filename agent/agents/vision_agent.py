@@ -1,18 +1,12 @@
 """
 Vision Agent für FabBot.
 
-Analysiert Bilder via Claude Sonnet Vision als vollständiger LangGraph-Node.
-Wird vom Supervisor geroutet wie alle anderen Agents.
+Analysiert Bilder via Claude Sonnet Vision.
+Wird direkt aufgerufen (nicht über LangGraph Graph) um zu vermeiden
+dass große base64-Daten durch den SQLite-Checkpointer laufen.
 
-Der on_photo Handler in bot/bot.py legt das Bild als base64 in den State
-(state["image_data"]) und setzt eine HumanMessage mit [FOTO]-Prefix.
-Der Supervisor erkennt den Prefix und routet zu vision_agent.
-
-Security:
-- Keine Identifikation von Privatpersonen
-- Audit Log (nur Metadaten, kein Bild)
-- Rate Limiting via security.py (bereits aktiv)
-- Caption-Sanitization im on_photo Handler
+Das Ergebnis wird als __MEMORY__ in den State geschrieben damit
+chat_agent darauf antworten kann.
 """
 
 import asyncio
@@ -21,7 +15,6 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from agent.audit import log_action
 from agent.llm import get_llm
-from agent.protocol import Proto
 from agent.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -48,32 +41,19 @@ Wichtige Einschränkungen:
 Antworte auf Deutsch, präzise und strukturiert.
 """
 
-_FOTO_PREFIX = "[FOTO]"
 
-
-async def vision_agent(state: AgentState) -> AgentState:
+async def analyze_image_direct(
+    img_b64: str,
+    caption: str,
+    media_type: str,
+    chat_id: int,
+) -> str:
     """
-    LangGraph-Node für Bildanalyse via Claude Sonnet Vision.
-    Liest image_data (base64) und image_caption aus dem State.
-    Gibt eine normale AIMessage zurück – kein HITL-Prefix nötig.
+    Analysiert ein Bild direkt via Claude Vision.
+    Gibt den Analyse-Text zurück.
+    Wird direkt aus on_photo/on_document aufgerufen – nicht über Graph.
     """
-    chat_id = state.get("telegram_chat_id")
-    img_b64 = state.get("image_data")
-    media_type = state.get("image_media_type") or _DEFAULT_MEDIA_TYPE
-
-    if not img_b64:
-        return {"messages": [AIMessage(content="Kein Bild im State gefunden.")]}
-
-    # Caption aus letzter HumanMessage extrahieren
-    caption = state.get("image_caption") or ""
-    if not caption:
-        human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
-        if human_msgs:
-            raw = human_msgs[-1].content
-            if isinstance(raw, str) and raw.startswith(_FOTO_PREFIX):
-                caption = raw[len(_FOTO_PREFIX):].strip()
-
-    question = caption if caption else "Beschreibe dieses Bild detailliert."
+    question = caption.strip() if caption.strip() else "Beschreibe dieses Bild detailliert."
 
     try:
         llm = get_llm()
@@ -108,18 +88,25 @@ async def vision_agent(state: AgentState) -> AgentState:
         log_action(
             "vision_agent",
             "analyze_image",
-            f"caption='{caption[:80]}'",
+            f"caption='{caption[:80]}' media_type={media_type}",
             chat_id,
             status="executed",
         )
-        # VISION_RESULT Prefix → Supervisor routet zu chat_agent
-        return {"messages": [AIMessage(content=f"{Proto.VISION_RESULT}{result}")]}
+        return result
 
     except asyncio.TimeoutError:
         logger.error("Vision Agent Timeout nach 60s.")
-        log_action("vision_agent", "analyze_image", "timeout after 60s", chat_id, status="error")
-        return {"messages": [AIMessage(content="Timeout bei der Bildanalyse – bitte nochmal versuchen.")]}
+        log_action("vision_agent", "analyze_image", "timeout", chat_id, status="error")
+        return "Timeout bei der Bildanalyse – bitte nochmal versuchen."
     except Exception as e:
         logger.error(f"Vision Agent Fehler: {e}")
         log_action("vision_agent", "analyze_image", f"error: {e}", chat_id, status="error")
-        return {"messages": [AIMessage(content=f"Fehler bei der Bildanalyse: {e}")]}
+        return f"Fehler bei der Bildanalyse: {e}"
+
+
+async def vision_agent(state: AgentState) -> AgentState:
+    """
+    LangGraph-Node – wird nicht mehr aktiv genutzt aber bleibt im Graph
+    damit der Supervisor weiterhin korrekt routet.
+    """
+    return {"messages": [AIMessage(content="Bildanalyse nicht verfügbar – bitte Foto direkt senden.")]}
