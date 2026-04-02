@@ -27,7 +27,7 @@ from agent.state import AgentState
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
-_MEDIA_TYPE = "image/jpeg"
+_DEFAULT_MEDIA_TYPE = "image/jpeg"
 
 VISION_SYSTEM_PROMPT = """Du bist ein präziser Bild-Analyse-Assistent.
 
@@ -59,6 +59,7 @@ async def vision_agent(state: AgentState) -> AgentState:
     """
     chat_id = state.get("telegram_chat_id")
     img_b64 = state.get("image_data")
+    media_type = state.get("image_media_type") or _DEFAULT_MEDIA_TYPE
 
     if not img_b64:
         return {"messages": [AIMessage(content="Kein Bild im State gefunden.")]}

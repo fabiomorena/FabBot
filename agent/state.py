@@ -22,3 +22,4 @@ class AgentState(TypedDict):
     next_agent: AgentName | None
     image_data: str | None  # base64-kodiertes Bild für vision_agent
     image_caption: str | None  # User-Caption zum Bild
+    image_media_type: str | None  # MIME-Type z.B. image/jpeg, image/png

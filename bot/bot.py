@@ -354,6 +354,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "next_agent": None,
             "image_data": img_b64,
             "image_caption": caption,
+            "image_media_type": "image/jpeg",  # Telegram liefert immer JPEG
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
@@ -417,6 +418,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "next_agent": None,
             "image_data": img_b64,
             "image_caption": caption,
+            "image_media_type": doc.mime_type or "image/jpeg",  # PNG, JPEG etc.
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
