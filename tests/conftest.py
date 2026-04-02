@@ -62,3 +62,16 @@ def reset_confirm_pending():
     _pending.clear()
     yield
     _pending.clear()
+
+
+@pytest.fixture(autouse=True)
+def mock_keychain():
+    """Verhindert echte Keychain-Zugriffe in Tests.
+    Nutzt einen zufälligen Fernet-Key pro Test-Session – kein Keychain nötig.
+    """
+    from cryptography.fernet import Fernet
+    import agent.crypto as crypto_module
+    original_fernet = crypto_module._fernet
+    crypto_module._fernet = Fernet(Fernet.generate_key())
+    yield
+    crypto_module._fernet = original_fernet

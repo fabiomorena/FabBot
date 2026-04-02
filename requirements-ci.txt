@@ -247,3 +247,5 @@ aiosqlite==0.22.1
 pytest-asyncio
 homoglyphs
 pip-audit
+
+keyring

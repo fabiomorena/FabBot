@@ -13,3 +13,6 @@ pyautogui>=0.9.54
 openai-whisper>=20231117
 
 homoglyphs
+
+keyring
+cryptography

@@ -60,8 +60,17 @@ def load_profile() -> dict[str, Any]:
         return _profile_cache
     try:
         import yaml
-        with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
-            loaded = yaml.safe_load(f)
+        from agent.crypto import decrypt, is_encrypted, encrypt
+        raw = _PROFILE_PATH.read_bytes()
+        if is_encrypted(raw):
+            yaml_text = decrypt(raw)
+        else:
+            # Migration: plain YAML → verschlüsseln und speichern
+            yaml_text = raw.decode("utf-8")
+            logger.info("Migration: personal_profile.yaml wird verschlüsselt...")
+            _PROFILE_PATH.write_bytes(encrypt(yaml_text))
+            logger.info("Migration abgeschlossen – Profil ist jetzt verschlüsselt.")
+        loaded = yaml.safe_load(yaml_text)
         _profile_cache = loaded if isinstance(loaded, dict) else {}
         logger.info(f"Persönliches Profil geladen: {_PROFILE_PATH}")
         return _profile_cache
@@ -94,15 +103,17 @@ async def add_note_to_profile(text: str) -> bool:
         return False
     try:
         import yaml
+        from agent.crypto import decrypt, is_encrypted, encrypt
         async with _profile_write_lock:
-            with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
-                profile = yaml.safe_load(f) or {}
+            raw = _PROFILE_PATH.read_bytes()
+            yaml_text = decrypt(raw) if is_encrypted(raw) else raw.decode("utf-8")
+            profile = yaml.safe_load(yaml_text) or {}
             if "notes" not in profile or not isinstance(profile["notes"], list):
                 profile["notes"] = []
             timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
             profile["notes"].append(f"[{timestamp}] {text.strip()}")
-            with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
-                yaml.dump(profile, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            _PROFILE_PATH.write_bytes(encrypt(serialized))
         reload_profile()
         logger.info(f"Note zu Profil hinzugefügt: {text[:80]}")
         return True
@@ -136,10 +147,10 @@ async def write_profile(profile: dict[str, Any]) -> bool:
                     f"Diff-Keys: {set(str(round_tripped)) ^ set(str(profile))}"
                 )
                 return False
-            with open(_PROFILE_PATH, "w", encoding="utf-8") as f:
-                f.write(serialized)
+            from agent.crypto import encrypt
+            _PROFILE_PATH.write_bytes(encrypt(serialized))
         reload_profile()
-        logger.info("write_profile: Profil erfolgreich geschrieben.")
+        logger.info("write_profile: Profil erfolgreich verschlüsselt gespeichert.")
         return True
     except Exception as e:
         logger.error(f"write_profile Fehler: {e}")

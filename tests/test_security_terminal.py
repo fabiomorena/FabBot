@@ -28,6 +28,69 @@ class TestNormalize:
         assert isinstance(result, str)
 
 
+# ---------------------------------------------------------------------------
+# crypto.py Tests
+# ---------------------------------------------------------------------------
+
+from agent.crypto import encrypt, decrypt, is_encrypted
+
+
+class TestCrypto:
+
+    def test_encrypt_returns_bytes(self) -> None:
+        """encrypt() gibt bytes zurück."""
+        result = encrypt("hallo welt")
+        assert isinstance(result, bytes)
+
+    def test_encrypted_has_header(self) -> None:
+        """Verschlüsselter Blob beginnt mit FABBOT_ENC_V1: Header."""
+        result = encrypt("test")
+        assert result.startswith(b"FABBOT_ENC_V1:")
+
+    def test_roundtrip(self) -> None:
+        """encrypt → decrypt ergibt den Originaltext."""
+        original = "Fabio wohnt in Berlin und arbeitet an FabBot."
+        assert decrypt(encrypt(original)) == original
+
+    def test_roundtrip_unicode(self) -> None:
+        """Umlaute und Sonderzeichen überstehen den Roundtrip."""
+        original = "Lieblingsrestaurant: Saporito – sehr lecker! 🍕"
+        assert decrypt(encrypt(original)) == original
+
+    def test_roundtrip_yaml_content(self) -> None:
+        """YAML-Inhalt übersteht den Roundtrip unverändert."""
+        yaml_text = "identity:\n  name: Fabio\n  location: Berlin\n"
+        assert decrypt(encrypt(yaml_text)) == yaml_text
+
+    def test_is_encrypted_true(self) -> None:
+        """is_encrypted() erkennt verschlüsselten Blob."""
+        assert is_encrypted(encrypt("test")) is True
+
+    def test_is_encrypted_false_plain_text(self) -> None:
+        """is_encrypted() erkennt plain Text als unverschlüsselt."""
+        assert is_encrypted(b"identity:\n  name: Fabio\n") is False
+
+    def test_is_encrypted_false_empty(self) -> None:
+        """is_encrypted() gibt False für leere bytes."""
+        assert is_encrypted(b"") is False
+
+    def test_decrypt_invalid_header_raises(self) -> None:
+        """decrypt() wirft ValueError bei fehlendem Header."""
+        import pytest
+        with pytest.raises(ValueError, match="Header"):
+            decrypt(b"plain yaml content")
+
+    def test_two_encryptions_differ(self) -> None:
+        """Zwei Verschlüsselungen desselben Texts ergeben unterschiedliche Tokens (IV)."""
+        a = encrypt("test")
+        b = encrypt("test")
+        assert a != b  # Fernet nutzt zufälligen IV
+
+    def test_encrypt_empty_string(self) -> None:
+        """Leerer String kann verschlüsselt und entschlüsselt werden."""
+        assert decrypt(encrypt("")) == ""
+
+
 class TestSanitizeInput:
 
     def test_empty_input(self):
@@ -1447,7 +1510,8 @@ class TestWriteProfile:
              patch("agent.profile._profile_cache", None):
             result = await write_profile(profile)
         assert result is True
-        written = yaml.safe_load(profile_file.read_text())
+        from agent.crypto import decrypt
+        written = yaml.safe_load(decrypt(profile_file.read_bytes()))
         assert written["identity"]["name"] == "Fabio"
 
     @pytest.mark.asyncio
@@ -1490,7 +1554,8 @@ class TestAddNoteToProfile:
              patch("agent.profile._profile_cache", None):
             result = await add_note_to_profile("Test-Notiz")
         assert result is True
-        written = yaml.safe_load(profile_file.read_text())
+        from agent.crypto import decrypt
+        written = yaml.safe_load(decrypt(profile_file.read_bytes()))
         assert "notes" in written
         assert any("Test-Notiz" in n for n in written["notes"])
 
@@ -1524,7 +1589,8 @@ class TestAddNoteToProfile:
         with patch("agent.profile._PROFILE_PATH", profile_file), \
              patch("agent.profile._profile_cache", None):
             await add_note_to_profile("Zweite Notiz")
-        written = yaml.safe_load(profile_file.read_text())
+        from agent.crypto import decrypt
+        written = yaml.safe_load(decrypt(profile_file.read_bytes()))
         assert len(written["notes"]) == 2
 
 
