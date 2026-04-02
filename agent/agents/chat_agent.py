@@ -14,6 +14,7 @@ Beantworte die Frage des Users. Du hast Zugriff auf:
 Kein Tool-Aufruf, kein Suchen – nur direkte, praezise Antworten.
 
 Typische Faelle fuer dich:
+- Bildanalyse-Ergebnisse in natuerlicher Sprache zusammenfassen und kommentieren
 - "Was habe ich dich gerade gefragt?"
 - "Fass das zusammen"
 - "Erklaer das nochmal anders"
@@ -47,7 +48,7 @@ def _build_chat_prompt() -> str:
 # Einmalig beim Modulimport gebaut – kein Overhead pro Aufruf
 PROMPT = _build_chat_prompt()
 
-_HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")
+_HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__", "__VISION_RESULT__")
 
 
 def _clean_messages_for_chat(messages: list) -> list:

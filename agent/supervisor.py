@@ -75,8 +75,13 @@ async def supervisor_node(state: AgentState) -> AgentState:
     llm = get_fast_llm()
     messages = state["messages"]
 
-    if messages and isinstance(messages[-1], AIMessage) and not messages[-1].content.startswith("__MEMORY__:"):
-        return {"next_agent": "FINISH"}
+    if messages and isinstance(messages[-1], AIMessage):
+        last = messages[-1].content
+        if last.startswith("__VISION_RESULT__:"):
+            # Vision-Ergebnis liegt vor → chat_agent formuliert Bot-Antwort
+            return {"next_agent": "chat_agent"}
+        if not last.startswith("__MEMORY__:"):
+            return {"next_agent": "FINISH"}
 
     clean_messages = _filter_hitl_messages(messages)
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]

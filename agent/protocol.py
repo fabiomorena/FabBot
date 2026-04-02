@@ -18,6 +18,9 @@ class Proto:
     # Vision-Analyse Bestätigung
     CONFIRM_VISION        = "__CONFIRM_VISION__:"
 
+    # Vision-Ergebnis – intern, wird an chat_agent weitergeleitet
+    VISION_RESULT         = "__VISION_RESULT__:"
+
     @staticmethod
     def is_confirm_terminal(msg: str) -> bool:
         return msg.startswith(Proto.CONFIRM_TERMINAL)

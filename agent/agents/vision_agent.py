@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from agent.audit import log_action
 from agent.llm import get_llm
+from agent.protocol import Proto
 from agent.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,8 @@ async def vision_agent(state: AgentState) -> AgentState:
             chat_id,
             status="executed",
         )
-        return {"messages": [AIMessage(content=result)]}
+        # VISION_RESULT Prefix → Supervisor routet zu chat_agent
+        return {"messages": [AIMessage(content=f"{Proto.VISION_RESULT}{result}")]}
 
     except asyncio.TimeoutError:
         logger.error("Vision Agent Timeout nach 60s.")
