@@ -14,6 +14,7 @@ from agent.agents.calendar import calendar_agent
 from agent.agents.chat_agent import chat_agent
 from agent.agents.reminder_agent import reminder_agent
 from agent.agents.memory_agent import memory_agent
+from agent.agents.vision_agent import vision_agent
 
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -35,6 +36,7 @@ Verfuegbare Agenten:
   NUR bei expliziten Speicher-Befehlen MIT konkretem Inhalt:
   JA: 'merke dir dass ich Yoga mache', 'fuege Saporito als Restaurant hinzu', 'speichere Marco als Kollegen', 'vergiss den Eintrag X', 'fuege X zum Kontext hinzu'
   NEIN: 'ich habe X verbessert', 'ich war bei X', 'X funktioniert jetzt', 'ich habe X gemacht', allgemeine Berichte oder Mitteilungen ohne Speicher-Absicht
+- vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
 - chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Berichte und Mitteilungen ('ich habe X gemacht', 'X funktioniert jetzt', 'ich war bei X'), persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen), alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
@@ -89,7 +91,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
     valid = {
         "computer_agent", "terminal_agent", "file_agent",
         "web_agent", "calendar_agent", "reminder_agent",
-        "memory_agent", "chat_agent", "FINISH"
+        "memory_agent", "chat_agent", "vision_agent", "FINISH"
     }
     if next_agent not in valid:
         next_agent = "chat_agent"
@@ -113,6 +115,7 @@ def _build_graph() -> StateGraph:
     graph.add_node("chat_agent", chat_agent)
     graph.add_node("reminder_agent", reminder_agent)
     graph.add_node("memory_agent", memory_agent)
+    graph.add_node("vision_agent", vision_agent)
 
     graph.set_entry_point("supervisor")
 
@@ -128,13 +131,14 @@ def _build_graph() -> StateGraph:
             "reminder_agent": "reminder_agent",
             "memory_agent": "memory_agent",
             "chat_agent": "chat_agent",
+            "vision_agent": "vision_agent",
             "FINISH": END,
         },
     )
 
     for agent in ["computer_agent", "terminal_agent", "file_agent",
                   "web_agent", "calendar_agent", "reminder_agent",
-                  "memory_agent", "chat_agent"]:
+                  "memory_agent", "chat_agent", "vision_agent"]:
         graph.add_edge(agent, "supervisor")
 
     return graph

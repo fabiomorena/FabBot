@@ -11,6 +11,7 @@ AgentName = Literal[
     "calendar_agent",
     "chat_agent",
     "memory_agent",
+    "vision_agent",
     "FINISH",
 ]
 
@@ -19,3 +20,5 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     telegram_chat_id: int | None
     next_agent: AgentName | None
+    image_data: str | None  # base64-kodiertes Bild für vision_agent
+    image_caption: str | None  # User-Caption zum Bild

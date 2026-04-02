@@ -1,31 +1,31 @@
 """
 Vision Agent für FabBot.
 
-Analysiert Bilder via Claude Sonnet Vision:
-- Objekterkennung
-- Texterkennung (OCR)
-- Szenenbeschreibung
-- Freie Fragen via Caption
+Analysiert Bilder via Claude Sonnet Vision als vollständiger LangGraph-Node.
+Wird vom Supervisor geroutet wie alle anderen Agents.
+
+Der on_photo Handler in bot/bot.py legt das Bild als base64 in den State
+(state["image_data"]) und setzt eine HumanMessage mit [FOTO]-Prefix.
+Der Supervisor erkennt den Prefix und routet zu vision_agent.
 
 Security:
 - Keine Identifikation von Privatpersonen
 - Audit Log (nur Metadaten, kein Bild)
 - Rate Limiting via security.py (bereits aktiv)
+- Caption-Sanitization im on_photo Handler
 """
 
 import asyncio
-import base64
 import logging
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from agent.audit import log_action
 from agent.llm import get_llm
+from agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
-
-# Telegram liefert immer JPEG
 _MEDIA_TYPE = "image/jpeg"
 
 VISION_SYSTEM_PROMPT = """Du bist ein präziser Bild-Analyse-Assistent.
@@ -47,24 +47,34 @@ Wichtige Einschränkungen:
 Antworte auf Deutsch, präzise und strukturiert.
 """
 
+_FOTO_PREFIX = "[FOTO]"
 
-async def analyze_image(
-    image_bytes: bytes,
-    caption: str,
-    chat_id: int,
-) -> str:
+
+async def vision_agent(state: AgentState) -> AgentState:
     """
-    Analysiert ein Bild via Claude Sonnet Vision.
-    Gibt einen Beschreibungstext zurück.
+    LangGraph-Node für Bildanalyse via Claude Sonnet Vision.
+    Liest image_data (base64) und image_caption aus dem State.
+    Gibt eine normale AIMessage zurück – kein HITL-Prefix nötig.
     """
-    if len(image_bytes) > MAX_IMAGE_BYTES:
-        return f"Bild zu groß (max. 5 MB, erhalten: {len(image_bytes) // 1024} KB)."
+    chat_id = state.get("telegram_chat_id")
+    img_b64 = state.get("image_data")
+
+    if not img_b64:
+        return {"messages": [AIMessage(content="Kein Bild im State gefunden.")]}
+
+    # Caption aus letzter HumanMessage extrahieren
+    caption = state.get("image_caption") or ""
+    if not caption:
+        human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+        if human_msgs:
+            raw = human_msgs[-1].content
+            if isinstance(raw, str) and raw.startswith(_FOTO_PREFIX):
+                caption = raw[len(_FOTO_PREFIX):].strip()
+
+    question = caption if caption else "Beschreibe dieses Bild detailliert."
 
     try:
-        img_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
         llm = get_llm()
-        question = caption.strip() if caption.strip() else "Beschreibe dieses Bild detailliert."
-
         response = await asyncio.wait_for(
             llm.ainvoke([
                 HumanMessage(content=[
@@ -96,17 +106,17 @@ async def analyze_image(
         log_action(
             "vision_agent",
             "analyze_image",
-            f"size={len(image_bytes)}b caption='{caption[:80]}'",
+            f"caption='{caption[:80]}'",
             chat_id,
             status="executed",
         )
-        return result
+        return {"messages": [AIMessage(content=result)]}
 
     except asyncio.TimeoutError:
         logger.error("Vision Agent Timeout nach 60s.")
         log_action("vision_agent", "analyze_image", "timeout after 60s", chat_id, status="error")
-        return "Timeout bei der Bildanalyse – bitte nochmal versuchen."
+        return {"messages": [AIMessage(content="Timeout bei der Bildanalyse – bitte nochmal versuchen.")]}
     except Exception as e:
         logger.error(f"Vision Agent Fehler: {e}")
         log_action("vision_agent", "analyze_image", f"error: {e}", chat_id, status="error")
-        return f"Fehler bei der Bildanalyse: {e}"
+        return {"messages": [AIMessage(content=f"Fehler bei der Bildanalyse: {e}")]}

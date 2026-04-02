@@ -21,7 +21,6 @@ from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
-from agent.agents.vision_agent import analyze_image
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +315,7 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verarbeitet eingehende Fotos via Claude Sonnet Vision mit HITL."""
+    """Verarbeitet eingehende Fotos – Bildanalyse via LangGraph vision_agent."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -332,7 +331,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         caption = result
 
     # HITL – Bestätigung vor Analyse
-    preview = f"Foto analysieren" + (f": \"{caption[:60]}\"" if caption else "")
+    preview = "Foto analysieren" + (f": \"{caption[:60]}\"" if caption else "")
     confirmed = await request_confirmation(ctx.bot, chat_id, "vision_agent", preview)
     if not confirmed:
         log_action("vision_agent", "analyze_image", "user rejected", chat_id, status="rejected")
@@ -341,21 +340,31 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Analysiere Bild...")
 
     try:
+        import base64
         photo = update.message.photo[-1]  # groesstes Format
         tg_file = await ctx.bot.get_file(photo.file_id)
         img_bytes = await tg_file.download_as_bytearray()
+        img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
 
-        result = await analyze_image(
-            bytes(img_bytes),
-            caption,
-            chat_id,
-        )
+        # Bild als base64 in den State – Supervisor routet zu vision_agent
+        human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
+        state = {
+            "messages": [HumanMessage(content=human_text)],
+            "telegram_chat_id": chat_id,
+            "next_agent": None,
+            "image_data": img_b64,
+            "image_caption": caption,
+        }
+        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
+
+        result_state = await _invoke_with_retry(state, config)
+
+        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
+        response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Vision Agent."
 
         await thinking.delete()
-        await update.message.reply_text(result)
-
-        # Memory Update damit Folgefragen moeglich sind
-        await _update_memory(chat_id, f"Bild analysiert: {result[:200]}")
+        await update.message.reply_text(response_msg)
+        await speak_and_send(response_msg, ctx.bot, chat_id)
 
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)
