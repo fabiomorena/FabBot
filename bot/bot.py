@@ -377,6 +377,20 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
+async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Verarbeitet Bilder die als Datei gesendet wurden (unkomprimiert)."""
+    doc = update.message.document
+    if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
+        await update.message.reply_text(
+            "Nur Bilder werden unterstützt (JPEG, PNG, WebP)."
+        )
+        return
+    # Gleicher Flow wie on_photo – caption als Frage nutzen
+    update.message.caption = update.message.caption or update.message.document.file_name
+    await on_photo(update, ctx)
+
+
+@restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_message_text(update, ctx.bot, update.message.text)
 
@@ -601,6 +615,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
+    app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
     return app
