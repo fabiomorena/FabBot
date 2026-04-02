@@ -303,6 +303,11 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 pytest tests/ -v   # 329 tests
 ```
 
+**Test-Infrastruktur:**
+- `tests/conftest.py` – autouse Fixtures isolieren globalen State zwischen Tests (`_rate_limit_store`, `_tts_enabled`, `_current_afplay`, `_profile_cache`, `_pending`)
+- Async-Tests mit Event-Poll-Loop statt `asyncio.sleep()` – keine Race Conditions unter CI-Last
+- File-basierte Tests nutzen pytest `tmp_path` – automatisches Cleanup auch bei Testfehler
+
 Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check
 
 ---
@@ -363,6 +368,8 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 49** ✅ Stabilität + Code Quality – 329 Tests, security fixes, asyncio.Lock YAML, Rate-Limit Eviction, Round-Trip Check
 - **Phase 50** ✅ Security Hardening – FORBIDDEN_ARGS per-Token, echo entfernt, sanitize_command(), cwd=home, Reviewer YAML 8000, filter-then-slice
 - **Phase 51** ✅ Vision Agent – Foto-Analyse via Claude Sonnet Vision mit HITL, Objekterkennung, OCR, Szenenbeschreibung + Bug fixes (Briefing Kalender, auth RuntimeError, task refs, profile lock)
+- **Phase 52** ✅ Watchdog – externer Bot-Monitor via cron, wttr.in Wetter, homoglyphs Library, pip-audit in CI, portable Pfade via Path.home(), CVE Fixes
+- **Phase 53** ✅ Test-Resilienz – conftest.py autouse Fixtures, Event-Poll-Loop in async Tests, pytest tmp_path für file-basierte Tests
 
 ---
 
