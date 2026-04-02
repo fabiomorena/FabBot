@@ -379,15 +379,64 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet Bilder die als Datei gesendet wurden (unkomprimiert)."""
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
     doc = update.message.document
+
     if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
-        await update.message.reply_text(
-            "Nur Bilder werden unterstützt (JPEG, PNG, WebP)."
-        )
+        await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
         return
-    # Gleicher Flow wie on_photo – caption als Frage nutzen
-    update.message.caption = update.message.caption or update.message.document.file_name
-    await on_photo(update, ctx)
+
+    caption = update.message.caption or ""
+    if caption:
+        is_safe, result = await sanitize_input_async(caption, user_id)
+        if not is_safe:
+            log_blocked(result, caption, user_id)
+            await update.message.reply_text(f"Eingabe abgelehnt: {result}")
+            return
+        caption = result
+
+    preview = "Bild (Datei) analysieren" + (f": \"{caption[:60]}\"" if caption else "")
+    confirmed = await request_confirmation(ctx.bot, chat_id, "vision_agent", preview)
+    if not confirmed:
+        log_action("vision_agent", "analyze_image", "user rejected", chat_id, status="rejected")
+        return
+
+    thinking = await update.message.reply_text("Analysiere Bild (unkomprimiert)...")
+
+    try:
+        import base64
+        tg_file = await ctx.bot.get_file(doc.file_id)
+        img_bytes = await tg_file.download_as_bytearray()
+        img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
+
+        human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
+        state = {
+            "messages": [HumanMessage(content=human_text)],
+            "telegram_chat_id": chat_id,
+            "next_agent": None,
+            "image_data": img_b64,
+            "image_caption": caption,
+        }
+        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
+
+        result_state = await _invoke_with_retry(state, config)
+
+        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
+        response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort."
+
+        await thinking.delete()
+        await update.message.reply_text(response_msg)
+        await speak_and_send(response_msg, ctx.bot, chat_id)
+        await _update_memory(chat_id, f"Bild (Datei) analysiert: {response_msg[:200]}")
+
+    except Exception as e:
+        logger.error(f"on_document Fehler: {e}", exc_info=True)
+        try:
+            await thinking.delete()
+        except Exception:
+            pass
+        await update.message.reply_text("Fehler bei der Bildanalyse.")
 
 
 @restricted
