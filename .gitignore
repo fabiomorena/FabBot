@@ -5,4 +5,7 @@ __pycache__/
 *.log
 .venv/
 .idea/
-credentials.jsonREADME.md.bak
+credentials.json
+README.md.bak
+patch_*.py
+personal_profile.yaml
