@@ -27,34 +27,34 @@ logger = logging.getLogger(__name__)
 _TTS_MAX_HITL_OUTPUT = 300
 
 _IMAGE_MAX_PX = 1920
-_IMAGE_MAX_BYTES = 4_000_000  # 1MB
+_IMAGE_MAX_BYTES = 5_000_000  # 1MB
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
-    """Skaliert Bild auf max. 1920px und 1MB. Gibt (bytes, mime_type) zurück."""
+    """Skaliert Bild auf max. 1920px falls nötig. Format bleibt erhalten."""
     try:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(img_bytes))
-        # Skalieren falls zu groß
-        if max(img.width, img.height) > _IMAGE_MAX_PX:
-            img.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.LANCZOS)
-        # Als JPEG speichern falls zu groß oder PNG
+        # Nur skalieren wenn wirklich zu groß
+        if max(img.width, img.height) <= _IMAGE_MAX_PX:
+            logger.debug(f"Bild {img.width}x{img.height} – kein Resize nötig")
+            return img_bytes, mime_type
+        img.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.LANCZOS)
         output = io.BytesIO()
-        fmt = "JPEG"
-        if img.mode in ("RGBA", "P"):
+        # Format beibehalten – PNG bleibt PNG, JPEG bleibt JPEG
+        fmt = "PNG" if mime_type == "image/png" else "JPEG"
+        save_kwargs = {"optimize": True}
+        if fmt == "JPEG":
+            save_kwargs["quality"] = 90
+        if fmt == "PNG" and img.mode == "RGBA":
+            pass  # RGBA bei PNG behalten
+        elif img.mode in ("RGBA", "P") and fmt == "JPEG":
             img = img.convert("RGB")
-        quality = 85
-        img.save(output, format=fmt, quality=quality, optimize=True)
+        img.save(output, format=fmt, **save_kwargs)
         result = output.getvalue()
-        # Falls immer noch zu groß: Qualität reduzieren
-        while len(result) > _IMAGE_MAX_BYTES and quality > 40:
-            quality -= 10
-            output = io.BytesIO()
-            img.save(output, format=fmt, quality=quality, optimize=True)
-            result = output.getvalue()
-        logger.info(f"Bild skaliert: {len(img_bytes)}b → {len(result)}b (quality={quality})")
-        return result, "image/jpeg"
+        logger.info(f"Bild skaliert: {img.width}x{img.height}px, {len(img_bytes)}b → {len(result)}b")
+        return result, mime_type
     except Exception as e:
         logger.warning(f"Bild-Resize fehlgeschlagen (Original wird verwendet): {e}")
         return img_bytes, mime_type
