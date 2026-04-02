@@ -29,10 +29,6 @@ class TestNormalize:
 
 
 class TestSanitizeInput:
-    def setup_method(self) -> None:
-        """Rate-Limit-Store vor jedem Test leeren – verhindert Testinterferenz."""
-        from agent.security import _rate_limit_store
-        _rate_limit_store.clear()
 
     def test_empty_input(self):
         ok, msg = sanitize_input("")
@@ -113,10 +109,6 @@ class TestSanitizeInput:
 
 
 class TestCheckRateLimit:
-    def setup_method(self) -> None:
-        """Rate-Limit-Store vor jedem Test leeren – verhindert Testinterferenz."""
-        from agent.security import _rate_limit_store
-        _rate_limit_store.clear()
 
     def test_first_message_allowed(self):
         assert check_rate_limit(77777) is True
@@ -388,9 +380,6 @@ import bot.tts as tts_module
 
 class TestStopSpeaking:
 
-    def setup_method(self) -> None:
-        """Stellt sicher dass _current_afplay vor jedem Test None ist."""
-        tts_module._current_afplay = None
 
     def test_stop_when_no_process_running(self) -> None:
         """stop_speaking() gibt False zurueck wenn kein Prozess laeuft."""
@@ -1445,26 +1434,21 @@ class TestWriteProfile:
     """Tests für write_profile() in profile.py."""
 
     @pytest.mark.asyncio
-    async def test_write_valid_profile(self) -> None:
+    async def test_write_valid_profile(self, tmp_path: Path) -> None:
         """Gültiges Profil wird erfolgreich geschrieben."""
         import yaml
         from agent.profile import write_profile
 
         profile = {"identity": {"name": "Fabio"}, "work": {"role": "Engineer"}}
+        profile_file = tmp_path / "profile.yaml"
+        profile_file.write_text(yaml.dump({"dummy": True}), encoding="utf-8")
 
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
-            yaml.dump({"dummy": True}, f)
-            tmp_path = Path(f.name)
-
-        try:
-            with patch("agent.profile._PROFILE_PATH", tmp_path), \
-                 patch("agent.profile._profile_cache", None):
-                result = await write_profile(profile)
-            assert result is True
-            written = yaml.safe_load(tmp_path.read_text())
-            assert written["identity"]["name"] == "Fabio"
-        finally:
-            tmp_path.unlink(missing_ok=True)
+        with patch("agent.profile._PROFILE_PATH", profile_file), \
+             patch("agent.profile._profile_cache", None):
+            result = await write_profile(profile)
+        assert result is True
+        written = yaml.safe_load(profile_file.read_text())
+        assert written["identity"]["name"] == "Fabio"
 
     @pytest.mark.asyncio
     async def test_write_empty_dict_returns_false(self) -> None:
@@ -1493,27 +1477,22 @@ class TestAddNoteToProfile:
     """Tests für add_note_to_profile() in profile.py."""
 
     @pytest.mark.asyncio
-    async def test_add_note_success(self) -> None:
+    async def test_add_note_success(self, tmp_path: Path) -> None:
         """Note wird erfolgreich hinzugefügt."""
         import yaml
         from agent.profile import add_note_to_profile
 
         profile = {"identity": {"name": "Fabio"}}
+        profile_file = tmp_path / "profile.yaml"
+        profile_file.write_text(yaml.dump(profile, allow_unicode=True), encoding="utf-8")
 
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
-            yaml.dump(profile, f, allow_unicode=True)
-            tmp_path = Path(f.name)
-
-        try:
-            with patch("agent.profile._PROFILE_PATH", tmp_path), \
-                 patch("agent.profile._profile_cache", None):
-                result = await add_note_to_profile("Test-Notiz")
-            assert result is True
-            written = yaml.safe_load(tmp_path.read_text())
-            assert "notes" in written
-            assert any("Test-Notiz" in n for n in written["notes"])
-        finally:
-            tmp_path.unlink(missing_ok=True)
+        with patch("agent.profile._PROFILE_PATH", profile_file), \
+             patch("agent.profile._profile_cache", None):
+            result = await add_note_to_profile("Test-Notiz")
+        assert result is True
+        written = yaml.safe_load(profile_file.read_text())
+        assert "notes" in written
+        assert any("Test-Notiz" in n for n in written["notes"])
 
     @pytest.mark.asyncio
     async def test_add_note_empty_text_returns_false(self) -> None:
@@ -1531,28 +1510,22 @@ class TestAddNoteToProfile:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_add_multiple_notes(self) -> None:
+    async def test_add_multiple_notes(self, tmp_path: Path) -> None:
         """Mehrere Notes werden alle gespeichert."""
         import yaml
         from agent.profile import add_note_to_profile
 
-        profile = {}
+        profile_file = tmp_path / "profile.yaml"
+        profile_file.write_text(yaml.dump({}), encoding="utf-8")
 
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
-            yaml.dump(profile, f)
-            tmp_path = Path(f.name)
-
-        try:
-            with patch("agent.profile._PROFILE_PATH", tmp_path), \
-                 patch("agent.profile._profile_cache", None):
-                await add_note_to_profile("Erste Notiz")
-            with patch("agent.profile._PROFILE_PATH", tmp_path), \
-                 patch("agent.profile._profile_cache", None):
-                await add_note_to_profile("Zweite Notiz")
-            written = yaml.safe_load(tmp_path.read_text())
-            assert len(written["notes"]) == 2
-        finally:
-            tmp_path.unlink(missing_ok=True)
+        with patch("agent.profile._PROFILE_PATH", profile_file), \
+             patch("agent.profile._profile_cache", None):
+            await add_note_to_profile("Erste Notiz")
+        with patch("agent.profile._PROFILE_PATH", profile_file), \
+             patch("agent.profile._profile_cache", None):
+            await add_note_to_profile("Zweite Notiz")
+        written = yaml.safe_load(profile_file.read_text())
+        assert len(written["notes"]) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -1963,113 +1936,86 @@ from datetime import datetime, timedelta
 class TestRemindersDB:
     """Tests für add_reminder, list_reminders, delete_reminder, mark_sent."""
 
-    def _get_temp_db(self) -> Path:
-        """Erstellt eine temporäre DB-Datei für Tests."""
-        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        tmp.close()
-        return Path(tmp.name)
-
-    def test_add_and_list_reminder(self) -> None:
+    def test_add_and_list_reminder(self, tmp_path: Path) -> None:
         """Reminder hinzufügen und auflisten."""
         from bot.reminders import add_reminder, list_reminders
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                future = datetime.now() + timedelta(hours=1)
-                reminder_id = add_reminder(12345, "Test Erinnerung", future)
-                assert isinstance(reminder_id, int)
-                reminders = list_reminders(12345)
-                assert len(reminders) == 1
-                assert reminders[0]["text"] == "Test Erinnerung"
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            future = datetime.now() + timedelta(hours=1)
+            reminder_id = add_reminder(12345, "Test Erinnerung", future)
+            assert isinstance(reminder_id, int)
+            reminders = list_reminders(12345)
+            assert len(reminders) == 1
+            assert reminders[0]["text"] == "Test Erinnerung"
 
-    def test_list_reminders_only_for_chat(self) -> None:
+    def test_list_reminders_only_for_chat(self, tmp_path: Path) -> None:
         """list_reminders gibt nur Erinnerungen des jeweiligen Chats zurück."""
         from bot.reminders import add_reminder, list_reminders
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                future = datetime.now() + timedelta(hours=1)
-                add_reminder(11111, "Chat 1", future)
-                add_reminder(22222, "Chat 2", future)
-                r1 = list_reminders(11111)
-                r2 = list_reminders(22222)
-                assert len(r1) == 1
-                assert r1[0]["text"] == "Chat 1"
-                assert len(r2) == 1
-                assert r2[0]["text"] == "Chat 2"
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            future = datetime.now() + timedelta(hours=1)
+            add_reminder(11111, "Chat 1", future)
+            add_reminder(22222, "Chat 2", future)
+            r1 = list_reminders(11111)
+            r2 = list_reminders(22222)
+            assert len(r1) == 1
+            assert r1[0]["text"] == "Chat 1"
+            assert len(r2) == 1
+            assert r2[0]["text"] == "Chat 2"
 
-    def test_delete_reminder(self) -> None:
+    def test_delete_reminder(self, tmp_path: Path) -> None:
         """Reminder löschen."""
         from bot.reminders import add_reminder, list_reminders, delete_reminder
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                future = datetime.now() + timedelta(hours=1)
-                rid = add_reminder(12345, "Zu löschen", future)
-                success = delete_reminder(rid, 12345)
-                assert success is True
-                assert len(list_reminders(12345)) == 0
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            future = datetime.now() + timedelta(hours=1)
+            rid = add_reminder(12345, "Zu löschen", future)
+            success = delete_reminder(rid, 12345)
+            assert success is True
+            assert len(list_reminders(12345)) == 0
 
-    def test_delete_wrong_chat_fails(self) -> None:
+    def test_delete_wrong_chat_fails(self, tmp_path: Path) -> None:
         """Reminder eines anderen Chats kann nicht gelöscht werden."""
         from bot.reminders import add_reminder, delete_reminder
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                future = datetime.now() + timedelta(hours=1)
-                rid = add_reminder(11111, "Gehört Chat 1", future)
-                success = delete_reminder(rid, 22222)  # Falscher Chat
-                assert success is False
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            future = datetime.now() + timedelta(hours=1)
+            rid = add_reminder(11111, "Gehört Chat 1", future)
+            success = delete_reminder(rid, 22222)  # Falscher Chat
+            assert success is False
 
-    def test_mark_sent(self) -> None:
+    def test_mark_sent(self, tmp_path: Path) -> None:
         """mark_sent entfernt Reminder aus der pending-Liste."""
         from bot.reminders import add_reminder, get_pending_reminders, mark_sent
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                past = datetime.now() - timedelta(minutes=1)
-                rid = add_reminder(12345, "Fällig", past)
-                pending = get_pending_reminders()
-                assert any(r["id"] == rid for r in pending)
-                mark_sent(rid)
-                pending_after = get_pending_reminders()
-                assert not any(r["id"] == rid for r in pending_after)
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            past = datetime.now() - timedelta(minutes=1)
+            rid = add_reminder(12345, "Fällig", past)
+            pending = get_pending_reminders()
+            assert any(r["id"] == rid for r in pending)
+            mark_sent(rid)
+            pending_after = get_pending_reminders()
+            assert not any(r["id"] == rid for r in pending_after)
 
-    def test_get_pending_reminders_future_not_included(self) -> None:
+    def test_get_pending_reminders_future_not_included(self, tmp_path: Path) -> None:
         """Zukünftige Reminder erscheinen nicht in pending."""
         from bot.reminders import add_reminder, get_pending_reminders
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                future = datetime.now() + timedelta(hours=2)
-                add_reminder(12345, "Noch nicht fällig", future)
-                pending = get_pending_reminders()
-                assert len(pending) == 0
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            future = datetime.now() + timedelta(hours=2)
+            add_reminder(12345, "Noch nicht fällig", future)
+            pending = get_pending_reminders()
+            assert len(pending) == 0
 
-    def test_list_reminders_excludes_past(self) -> None:
+    def test_list_reminders_excludes_past(self, tmp_path: Path) -> None:
         """list_reminders zeigt keine bereits fälligen Erinnerungen."""
         from bot.reminders import add_reminder, list_reminders
-        tmp_db = self._get_temp_db()
-        try:
-            with patch("bot.reminders.DB_PATH", tmp_db):
-                past = datetime.now() - timedelta(hours=1)
-                add_reminder(12345, "Vergangenheit", past)
-                reminders = list_reminders(12345)
-                assert len(reminders) == 0
-        finally:
-            tmp_db.unlink(missing_ok=True)
+        tmp_db = tmp_path / "reminders.db"
+        with patch("bot.reminders.DB_PATH", tmp_db):
+            past = datetime.now() - timedelta(hours=1)
+            add_reminder(12345, "Vergangenheit", past)
+            reminders = list_reminders(12345)
+            assert len(reminders) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2868,7 +2814,10 @@ class TestRequestConfirmation:
         import asyncio
 
         async def auto_confirm():
-            await asyncio.sleep(0.05)
+            loop = asyncio.get_event_loop()
+            deadline = loop.time() + 2.0
+            while not _pending and loop.time() < deadline:
+                await asyncio.sleep(0.005)
             for conf_id, future in list(_pending.items()):
                 if not future.done():
                     future.set_result(True)
@@ -2890,7 +2839,10 @@ class TestRequestConfirmation:
         import asyncio
 
         async def auto_reject():
-            await asyncio.sleep(0.05)
+            loop = asyncio.get_event_loop()
+            deadline = loop.time() + 2.0
+            while not _pending and loop.time() < deadline:
+                await asyncio.sleep(0.005)
             for conf_id, future in list(_pending.items()):
                 if not future.done():
                     future.set_result(False)
@@ -2928,7 +2880,10 @@ class TestRequestConfirmation:
         import asyncio
 
         async def auto_confirm():
-            await asyncio.sleep(0.05)
+            loop = asyncio.get_event_loop()
+            deadline = loop.time() + 2.0
+            while not _pending and loop.time() < deadline:
+                await asyncio.sleep(0.005)
             for conf_id, future in list(_pending.items()):
                 if not future.done():
                     future.set_result(True)
