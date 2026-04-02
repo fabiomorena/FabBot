@@ -365,6 +365,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.delete()
         await update.message.reply_text(response_msg)
         await speak_and_send(response_msg, ctx.bot, chat_id)
+        await _update_memory(chat_id, f"Bild analysiert: {response_msg[:200]}")
 
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)
