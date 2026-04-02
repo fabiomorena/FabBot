@@ -25,6 +25,39 @@ from agent.agents.clip_agent import clip_agent, clip_agent_write
 logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
+
+_IMAGE_MAX_PX = 1920
+_IMAGE_MAX_BYTES = 1_000_000  # 1MB
+
+
+def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
+    """Skaliert Bild auf max. 1920px und 1MB. Gibt (bytes, mime_type) zurück."""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(img_bytes))
+        # Skalieren falls zu groß
+        if max(img.width, img.height) > _IMAGE_MAX_PX:
+            img.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.LANCZOS)
+        # Als JPEG speichern falls zu groß oder PNG
+        output = io.BytesIO()
+        fmt = "JPEG"
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        quality = 85
+        img.save(output, format=fmt, quality=quality, optimize=True)
+        result = output.getvalue()
+        # Falls immer noch zu groß: Qualität reduzieren
+        while len(result) > _IMAGE_MAX_BYTES and quality > 40:
+            quality -= 10
+            output = io.BytesIO()
+            img.save(output, format=fmt, quality=quality, optimize=True)
+            result = output.getvalue()
+        logger.info(f"Bild skaliert: {len(img_bytes)}b → {len(result)}b (quality={quality})")
+        return result, "image/jpeg"
+    except Exception as e:
+        logger.warning(f"Bild-Resize fehlgeschlagen (Original wird verwendet): {e}")
+        return img_bytes, mime_type
 _scheduler_tasks: list = []  # Referenzen auf Scheduler-Tasks
 
 # Retry-Konfiguration für 529 Overloaded
@@ -344,7 +377,8 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         photo = update.message.photo[-1]  # groesstes Format
         tg_file = await ctx.bot.get_file(photo.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
+        resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
+        img_b64 = base64.standard_b64encode(resized).decode("utf-8")
 
         # Bild als base64 in den State – Supervisor routet zu vision_agent
         human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
@@ -354,7 +388,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "next_agent": None,
             "image_data": img_b64,
             "image_caption": caption,
-            "image_media_type": "image/jpeg",  # Telegram liefert immer JPEG
+            "image_media_type": media_type,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
@@ -409,7 +443,8 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         import base64
         tg_file = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
+        resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
+        img_b64 = base64.standard_b64encode(resized).decode("utf-8")
 
         human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
         state = {
@@ -418,7 +453,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "next_agent": None,
             "image_data": img_b64,
             "image_caption": caption,
-            "image_media_type": doc.mime_type or "image/jpeg",  # PNG, JPEG etc.
+            "image_media_type": media_type,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
