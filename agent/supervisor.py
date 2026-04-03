@@ -63,7 +63,7 @@ def _filter_hitl_messages(messages: list) -> list:
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
-        if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
+        if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__")) or (isinstance(content, str) and content.startswith("__MEMORY__") and "Bildbeschreibung" not in content):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
             continue

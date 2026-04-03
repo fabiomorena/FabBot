@@ -388,7 +388,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.delete()
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
-        await _update_memory(chat_id, f"Bild analysiert: {vision_result[:200]}")
+        await _update_memory(chat_id, f"Bildbeschreibung: {vision_result}")
 
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)
@@ -440,7 +440,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.delete()
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
-        await _update_memory(chat_id, f"Bild (Datei) analysiert: {vision_result[:200]}")
+        await _update_memory(chat_id, f"Bildbeschreibung: {vision_result}")
 
     except Exception as e:
         logger.error(f"on_document Fehler: {e}", exc_info=True)
