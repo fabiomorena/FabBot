@@ -3103,3 +3103,44 @@ class TestHandleConfirmationCallback:
         await handle_confirmation_callback(update, None)
 
         update.callback_query.answer.assert_called_once()
+
+# ---------------------------------------------------------------------------
+# chat_agent.py Tests – _clean_messages_for_chat() Vision Safety Net
+# ---------------------------------------------------------------------------
+
+class TestCleanMessagesForChat:
+    """Tests fuer _clean_messages_for_chat() in chat_agent."""
+
+    def setup_method(self) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage
+        self.AIMessage = AIMessage
+        self.HumanMessage = HumanMessage
+        from agent.agents.chat_agent import _clean_messages_for_chat
+        self.clean = _clean_messages_for_chat
+
+    def test_vision_result_replaced_with_readable_placeholder(self) -> None:
+        """__VISION_RESULT__ wird durch lesbaren Platzhalter ersetzt, nicht [Aktion ausgefuehrt]."""
+        msgs = [self.AIMessage(content="__VISION_RESULT__:Ein Hund auf einer Wiese.")]
+        result = self.clean(msgs)
+        assert len(result) == 1
+        assert "Aktion ausgefuehrt" not in result[0].content
+        assert "Bildanalyse" in result[0].content
+
+    def test_vision_result_content_preserved(self) -> None:
+        """Der Inhalt der Bildanalyse ist im Platzhalter sichtbar."""
+        msgs = [self.AIMessage(content="__VISION_RESULT__:Stadtbild bei Nacht.")]
+        result = self.clean(msgs)
+        assert "Stadtbild" in result[0].content
+
+    def test_plain_vision_text_not_replaced(self) -> None:
+        """Normaler Vision-Text ohne Prefix wird nicht ersetzt."""
+        msgs = [self.AIMessage(content="Das Bild zeigt einen Hund auf einer Wiese.")]
+        result = self.clean(msgs)
+        assert result[0].content == "Das Bild zeigt einen Hund auf einer Wiese."
+
+    def test_vision_result_long_text_truncated(self) -> None:
+        """Sehr langer Vision-Text wird auf 300 Zeichen gekuerzt."""
+        long = "x" * 500
+        msgs = [self.AIMessage(content=f"__VISION_RESULT__:{long}")]
+        result = self.clean(msgs)
+        assert len(result[0].content) < 400

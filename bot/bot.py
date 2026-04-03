@@ -99,11 +99,13 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
         from langchain_core.messages import HumanMessage as HM
         config = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
-        # Checkpoint-ID holen damit aupdate_state korrekt funktioniert
-        state = await agent_graph.aget_state(config)
+        # as_node="supervisor" → Checkpoint korrekt am Graph-Eingang setzen.
+        # Ohne as_node setzt AsyncSqliteSaver den Checkpoint an unbekannter Position,
+        # was beim naechsten ainvoke zu fehlerhaftem Graph-Resume fuehrt.
         await agent_graph.aupdate_state(
             config,
             {"messages": [HM(content=human_text), AIMessage(content=result)]},
+            as_node="supervisor",
         )
         logger.info(f"Vision memory gespeichert: {result[:80]}")
     except Exception as e:

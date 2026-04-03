@@ -71,6 +71,10 @@ def _clean_messages_for_chat(messages: list) -> list:
                     cleaned.append(AIMessage(content="[Desktop-Aktion ausgefuehrt]"))
                 elif content.startswith("__SCREENSHOT__:"):
                     cleaned.append(AIMessage(content="[Screenshot erstellt]"))
+                elif content.startswith("__VISION_RESULT__:"):
+                    # Safety net – Vision-Ergebnis als lesbarer Platzhalter statt [Aktion ausgefuehrt].
+                    vision_text = content[len("__VISION_RESULT__:"):]
+                    cleaned.append(AIMessage(content=f"[Bildanalyse: {vision_text[:300]}]"))
                 else:
                     cleaned.append(AIMessage(content="[Aktion ausgefuehrt]"))
         else:
