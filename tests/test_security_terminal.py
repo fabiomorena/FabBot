@@ -2229,10 +2229,11 @@ class TestSynthesizeWithMock:
 
     @pytest.mark.asyncio
     async def test_synthesize_returns_none_when_unavailable(self) -> None:
-        """synthesize() gibt None zurück wenn edge-tts nicht installiert ist."""
+        """synthesize() gibt None zurück wenn weder ElevenLabs noch edge-tts verfügbar."""
         from bot.tts import synthesize
 
-        with patch("bot.tts._is_tts_available", return_value=False):
+        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=None), \
+             patch("bot.tts._is_tts_available", return_value=False):
             result = await synthesize("Test")
 
         assert result is None
