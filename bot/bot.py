@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _TTS_MAX_HITL_OUTPUT = 300
 
 _IMAGE_MAX_PX = 1920
-_IMAGE_MAX_BYTES = 5_000_000  # 1MB
+_IMAGE_MAX_BYTES = 5_000_000  # 5MB
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -37,19 +37,17 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(img_bytes))
-        # Nur skalieren wenn wirklich zu groß
         if max(img.width, img.height) <= _IMAGE_MAX_PX:
             logger.debug(f"Bild {img.width}x{img.height} – kein Resize nötig")
             return img_bytes, mime_type
         img.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.LANCZOS)
         output = io.BytesIO()
-        # Format beibehalten – PNG bleibt PNG, JPEG bleibt JPEG
         fmt = "PNG" if mime_type == "image/png" else "JPEG"
         save_kwargs = {"optimize": True}
         if fmt == "JPEG":
             save_kwargs["quality"] = 90
         if fmt == "PNG" and img.mode == "RGBA":
-            pass  # RGBA bei PNG behalten
+            pass
         elif img.mode in ("RGBA", "P") and fmt == "JPEG":
             img = img.convert("RGB")
         img.save(output, format=fmt, **save_kwargs)
@@ -59,7 +57,9 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
     except Exception as e:
         logger.warning(f"Bild-Resize fehlgeschlagen (Original wird verwendet): {e}")
         return img_bytes, mime_type
-_scheduler_tasks: list = []  # Referenzen auf Scheduler-Tasks
+
+
+_scheduler_tasks: list = []
 
 # Retry-Konfiguration für 529 Overloaded
 _RETRY_MAX_ATTEMPTS = 3
@@ -78,9 +78,7 @@ def _extract_content(msg) -> str:
 
 
 async def _update_memory(chat_id: int, result_text: str) -> None:
-    """Schreibt das HITL-Ergebnis als AIMessage in den LangGraph State.
-    Dadurch kann chat_agent spaetere Fragen zum Ergebnis beantworten.
-    """
+    """Schreibt das HITL-Ergebnis als AIMessage in den LangGraph State."""
     try:
         from agent.supervisor import agent_graph
         config = {"configurable": {"thread_id": str(chat_id)}}
@@ -99,9 +97,6 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
         from langchain_core.messages import HumanMessage as HM
         config = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
-        # as_node="supervisor" → Checkpoint korrekt am Graph-Eingang setzen.
-        # Ohne as_node setzt AsyncSqliteSaver den Checkpoint an unbekannter Position,
-        # was beim naechsten ainvoke zu fehlerhaftem Graph-Resume fuehrt.
         await agent_graph.aupdate_state(
             config,
             {"messages": [HM(content=human_text), AIMessage(content=result)]},
@@ -115,11 +110,7 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
     """
     Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf.
-
-    Versuche: 3
-    Wartezeiten: 2s → 4s → 8s
-    Nur 529 (Overloaded) wird wiederholt – alle anderen Fehler werden
-    sofort weitergereicht.
+    Versuche: 3 – Wartezeiten: 2s → 4s → 8s
     """
     from agent.supervisor import agent_graph
 
@@ -138,8 +129,8 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
                 if attempt < _RETRY_MAX_ATTEMPTS - 1:
                     await asyncio.sleep(delay)
             else:
-                raise  # Alle anderen APIStatusErrors sofort weitergeben
-    raise last_exception  # Nach allen Versuchen: Exception weitergeben
+                raise
+    raise last_exception
 
 
 # ---------------------------------------------------------------------------
@@ -369,13 +360,12 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verarbeitet eingehende Fotos – Bildanalyse via LangGraph vision_agent."""
+    """Verarbeitet eingehende Fotos – Bildanalyse via Claude Vision."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
     caption = update.message.caption or ""
 
-    # Caption auf Injection prüfen falls vorhanden
     if caption:
         is_safe, result = await sanitize_input_async(caption, user_id)
         if not is_safe:
@@ -384,18 +374,16 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             return
         caption = result
 
-    thinking = await update.message.reply_text("Analysiere Bild...")  # kein HITL – nicht destruktiv
+    thinking = await update.message.reply_text("Analysiere Bild...")
 
     try:
         import base64
-        photo = update.message.photo[-1]  # groesstes Format
+        photo = update.message.photo[-1]
         tg_file = await ctx.bot.get_file(photo.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
 
-        # Direkt analysieren – image_data nie in LangGraph State legen
-        # (verhindert dass 2.7MB base64 durch SQLite-Checkpointer läuft)
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
 
         await thinking.delete()
@@ -432,13 +420,12 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             return
         caption = result
 
-    thinking = await update.message.reply_text("Analysiere Bild...")  # kein HITL – nicht destruktiv
+    thinking = await update.message.reply_text("Analysiere Bild...")
 
     try:
         import base64
         tg_file = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        # Kein Resize – rohe Bytes direkt an Claude (max 5MB)
         logger.info(f"on_document: {len(img_bytes)} bytes, mime={doc.mime_type}, file_id={doc.file_id[:20]}")
         img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
         media_type = doc.mime_type or "image/jpeg"
@@ -519,18 +506,23 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
-        # 529-Retry eingebaut – bis zu 3 Versuche mit exponentiellem Backoff
         result_state = await _invoke_with_retry(state, config)
 
         # Nur neu hinzugekommene Messages auswerten – verhindert Echo-Bug bei Folgefragen.
-        # ainvoke() gibt den kompletten State zurück (inkl. History), daher per Index slicen.
         input_count = len(state["messages"])
         new_messages = result_state["messages"][input_count:]
         ai_messages = [m for m in new_messages if isinstance(m, AIMessage)]
-        # Fallback: falls keine neuen AI-Messages, letzte aus gesamtem State nehmen
         if not ai_messages:
             ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
         response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
+
+        # Dedup-Sicherheitsnetz auf bot.py-Ebene: verhindert exakte Wiederholung
+        # der vorletzten AI-Antwort im State (zweite Verteidigungslinie nach chat_agent).
+        if len(ai_messages) >= 2:
+            prev_content = _extract_content(ai_messages[-2])
+            if response_msg == prev_content and response_msg:
+                logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung der vorletzten AI-Antwort abgefangen.")
+                response_msg = "Noch etwas?"
 
         for prefix, handler in _RESPONSE_DISPATCH:
             if response_msg.startswith(prefix):

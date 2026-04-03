@@ -23,6 +23,20 @@ Typische Faelle fuer dich:
 - "Danke" / allgemeine Hoeflichkeiten
 - Kurze Folgefragen zum vorherigen Thema
 - Persoenliche Fragen ueber den User (Wohnort, Projekte, Geraete, Praeferenzen)
+
+WICHTIGE VERHALTENSREGELN:
+- Bei kurzen Bestaetigungen oder Reaktionen wie "Genau", "Ok", "Alles klar", "Danke",
+  "Gut", "Super", "Verstanden", "Ja", "Stimmt", "Cool", "Perfekt":
+  Antworte NUR mit einem kurzen Satz (max. 1-2 Saetze).
+  NIEMALS den Inhalt der vorigen Antwort wiederholen oder zusammenfassen.
+  Beispiele:
+    "Genau" → "Freut mich, dass es klar ist!"
+    "Danke" → "Gern!"
+    "Ok" → "Super. Noch etwas?"
+- Wiederhole NIEMALS den Inhalt deiner unmittelbar vorigen Antwort, egal wie die
+  Nachricht des Users formuliert ist.
+- Wenn unklar ob der User eine Wiederholung moechte: lieber kurz nachfragen als
+  denselben Text nochmal ausgeben.
 """
 
 
@@ -106,6 +120,19 @@ def _get_context_window_size() -> int:
         return 40
 
 
+# Kurze Bestaetigungen die nie eine Wiederholung ausloesen sollen
+_SHORT_CONFIRMATIONS = frozenset({
+    "genau", "ok", "okay", "alles klar", "danke", "danke schoen", "danke schon",
+    "gut", "super", "verstanden", "ja", "stimmt", "cool", "perfekt", "top",
+    "prima", "toll", "nice", "passt", "klar", "ack", "👍", "ok danke",
+})
+
+
+def _is_short_confirmation(text: str) -> bool:
+    """Gibt True zurueck wenn die Nachricht eine kurze Bestaetigung ist."""
+    return text.strip().lower().rstrip("!.") in _SHORT_CONFIRMATIONS
+
+
 async def chat_agent(state: AgentState) -> AgentState:
     """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools.
     HITL-Nachrichten werden durch lesbare Platzhalter ersetzt.
@@ -125,6 +152,21 @@ async def chat_agent(state: AgentState) -> AgentState:
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
 
+    result = content.strip()
+
+    # Dedup-Sicherheitsnetz: verhindert exakte Wiederholung der letzten AI-Antwort.
+    # Greift wenn der Prompt-Fix nicht ausreicht (z.B. bei sehr aehnlichem Kontext).
+    prev_ai_messages = [m for m in trimmed_messages if isinstance(m, AIMessage)]
+    if prev_ai_messages:
+        last_ai_content = prev_ai_messages[-1].content
+        if isinstance(last_ai_content, list):
+            last_ai_content = " ".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in last_ai_content
+            )
+        if result == last_ai_content.strip():
+            logger.warning("chat_agent: Dedup-Sicherheitsnetz hat angeschlagen – Wiederholung verhindert.")
+            result = "Noch etwas, womit ich helfen kann?"
+
     # Auto-Learn: letzte HumanMessage als Background-Task analysieren
     # Non-blocking – Antwort an User wird nicht verzögert
     # Fail-safe – Fehler im Learner beeinflussen den Bot nicht
@@ -136,4 +178,4 @@ async def chat_agent(state: AgentState) -> AgentState:
     except Exception as e:
         logger.debug(f"Auto-Learn Task konnte nicht gestartet werden (ignoriert): {e}")
 
-    return {"messages": [AIMessage(content=content.strip())]}
+    return {"messages": [AIMessage(content=result)]}
