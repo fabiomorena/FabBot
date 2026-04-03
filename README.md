@@ -40,10 +40,10 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 329 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 351 pytest tests on every push |
 | ✅ | Code Quality – `__SUSPICIOUS__`-Präfix entfernt, Double-Init Guard, YAML Lock, Rate-Limit Eviction |
 | ✅ | Security Hardening – FORBIDDEN_ARGS per-Token, `echo` entfernt, `sanitize_command()`, `cwd=home` |
-| ✅ | Test suite – 329 pytest tests |
+| ✅ | Test suite – 351 pytest tests |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -53,6 +53,10 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
 | ✅ | Health Check – daily 06:00 system status report (Terminal, API, Web, Calendar, Profile, DB) |
 | ✅ | Vision Agent – photo analysis via Claude Sonnet Vision with HITL (objects, OCR, scene description) |
+| ✅ | At-Rest-Encryption – `personal_profile.yaml` verschlüsselt via Fernet, Key im macOS Keychain |
+| ✅ | Context Trim – `chat_agent` begrenzt LLM-Call auf `CHAT_CONTEXT_WINDOW` Messages (default 40, via `.env`) |
+| ✅ | Weekend Party Report – jeden Mittwoch 20:00 Uhr, 7 Berliner Clubs (Golden Gate, Kater, Berghain, Sisyphos, Hoppetosse, Renate, Heide), Tavily + Homepage-Fetch |
+| ✅ | Dedup-Fix – `chat_agent` wiederholt Antworten nicht mehr bei kurzen Bestätigungen (Genau, Ok, Danke …) |
 
 ---
 
@@ -72,7 +76,7 @@ FabBot/
 │   └── workflows/
 │       └── test.yml         # GitHub Actions CI – pip cache + pytest
 ├── tests/
-│   └── test_security_terminal.py  # pytest suite (329 tests)
+│   └── test_security_terminal.py  # pytest suite (351 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -83,7 +87,7 @@ FabBot/
 │   ├── profile.py           # Personal context loader (YAML → agent prompts)
 │   ├── profile_learner.py   # Auto-learning pipeline (Detector/Writer/Reviewer)
 │   └── agents/
-│       ├── chat_agent.py    # Context-aware conversation agent (no tools)
+│       ├── chat_agent.py    # Context-aware conversation agent (no tools), Dedup-Fix
 │       ├── memory_agent.py  # Explicit profile updates (places, people, custom, delete)
 │       ├── vision_agent.py  # Photo analysis via Claude Sonnet Vision
 │       ├── computer.py      # Desktop control (validated input)
@@ -94,7 +98,7 @@ FabBot/
 │       ├── reminder_agent.py # SQLite-based reminders, natural language
 │       └── clip_agent.py    # URL clipper with content isolation
 └── bot/
-    ├── bot.py               # Telegram handlers, HITL TTS, post_init/post_shutdown hooks
+    ├── bot.py               # Telegram handlers, HITL TTS, Dedup-Sicherheitsnetz, post_init/post_shutdown hooks
     ├── auth.py              # User whitelist (cached at startup, RuntimeError if empty)
     ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
     ├── transcribe.py        # Local Whisper transcription (voice → text)
@@ -103,6 +107,7 @@ FabBot/
     ├── briefing.py          # Morning briefing scheduler (07:30 daily)
     ├── reminders.py         # Reminder storage + proactive delivery
     └── health_check.py      # Daily health check scheduler (06:00, 6 components)
+    └── party_report.py      # Weekend Party Report scheduler (Mittwoch 20:00, 7 Clubs)
 ```
 
 **Stack:**
@@ -115,6 +120,7 @@ FabBot/
 - [aiosqlite](https://github.com/omnilib/aiosqlite) – async SQLite for persistent memory
 - [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
 - [rumps](https://github.com/jaredks/rumps) – macOS menubar app
+- [cryptography](https://cryptography.io) + [keyring](https://github.com/jaraco/keyring) – At-Rest-Encryption via Fernet, Key im macOS Keychain
 - Python 3.11+, macOS
 
 ---
@@ -169,7 +175,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (329 tests)
+pytest tests/ -v      # Run tests (351 tests)
 ```
 
 ### Run as Launch Agent (auto-start on login)
@@ -210,7 +216,7 @@ tail -f ~/.fabbot/fabbot.log
 | "Was habe ich dich gerade gefragt?" | `chat_agent` |
 | "Fass das nochmal zusammen" | `chat_agent` |
 | "Wo wohne ich?" / "Was sind meine Projekte?" | `chat_agent` → aus Profil |
-| "Ich habe heute gut geschlafen" | `chat_agent` |
+| "Genau" / "Ok" / "Danke" | `chat_agent` → kurze Reaktion, keine Wiederholung |
 | "Erinnere mich morgen um 9 Uhr ans Meeting" | `reminder_agent` |
 | "Was sind meine offenen Erinnerungen?" | `reminder_agent` |
 | "Lösche Erinnerung #3" | `reminder_agent` |
@@ -300,10 +306,15 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 ## Testing
 
 ```bash
-pytest tests/ -v   # 329 tests
+pytest tests/ -v   # 351 tests
 ```
 
-Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check
+**Test-Infrastruktur:**
+- `tests/conftest.py` – autouse Fixtures isolieren globalen State zwischen Tests (`_rate_limit_store`, `_tts_enabled`, `_current_afplay`, `_profile_cache`, `_pending`)
+- Async-Tests mit Event-Poll-Loop statt `asyncio.sleep()` – keine Race Conditions unter CI-Last
+- File-basierte Tests nutzen pytest `tmp_path` – automatisches Cleanup auch bei Testfehler
+
+Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check · chat_agent _clean_messages_for_chat Vision Safety Net · chat_agent Context Trim · chat_agent Dedup-Fix
 
 ---
 
@@ -363,6 +374,15 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 49** ✅ Stabilität + Code Quality – 329 Tests, security fixes, asyncio.Lock YAML, Rate-Limit Eviction, Round-Trip Check
 - **Phase 50** ✅ Security Hardening – FORBIDDEN_ARGS per-Token, echo entfernt, sanitize_command(), cwd=home, Reviewer YAML 8000, filter-then-slice
 - **Phase 51** ✅ Vision Agent – Foto-Analyse via Claude Sonnet Vision mit HITL, Objekterkennung, OCR, Szenenbeschreibung + Bug fixes (Briefing Kalender, auth RuntimeError, task refs, profile lock)
+- **Phase 52** ✅ Watchdog – externer Bot-Monitor via cron, wttr.in Wetter, homoglyphs Library, pip-audit in CI, portable Pfade via Path.home(), CVE Fixes
+- **Phase 53** ✅ Test-Resilienz – conftest.py autouse Fixtures, Event-Poll-Loop in async Tests, pytest tmp_path für file-basierte Tests
+- **Phase 54** ✅ At-Rest-Encryption – personal_profile.yaml via Fernet (AES-128-CBC), Key im macOS Keychain, transparente Migration, 11 neue Tests
+- **Phase 55** ✅ Vision System Fix – as_node Checkpoint-Fix, Supervisor Routing für Bild-Folgefragen (→ chat_agent), __VISION_RESULT__ Safety Net, 4 neue Tests (344 gesamt)
+- **Phase 55b** ✅ Code Quality – Klammern in _filter_hitl_messages (Operator-Precedenz), toter __VISION_RESULT__ Branch in supervisor_node entfernt
+- **Phase 56** ✅ AIMessage Echo-Fix – Folgefragen wiederholten letzte Antwort (result_state Index-Slice statt letzter AIMessage aus gesamtem State)
+- **Phase 57** ✅ Context Trim – chat_agent begrenzt LLM-Call auf CHAT_CONTEXT_WINDOW Messages (default 40, via .env), SQLite bleibt vollständig
+- **Phase 58** ✅ Weekend Party Report – jeden Mittwoch 20:00 Uhr, 7 Berliner Clubs, Tavily-Suche + Homepage-Fetch als Fallback
+- **Phase 59** ✅ Dedup-Fix – chat_agent wiederholt Antworten nicht mehr bei kurzen Bestätigungen (Genau, Ok, Danke …), zweistufiges Sicherheitsnetz (Prompt + bot.py)
 
 ---
 
