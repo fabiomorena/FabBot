@@ -484,7 +484,7 @@ async def memory_agent(state: AgentState) -> AgentState:
         data = parsed.get("data", {})
 
         if action == "error" or not data:
-            return {"messages": [AIMessage(content="Ich konnte nicht verstehen was gespeichert werden soll. Bitte formuliere es klarer, z.B. 'Merke dir dass Insieme von Valentino Vivace mein Lieblingslied ist'.")]}
+            return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
 
         # Stufe 2: Python-seitiger Update
         current_profile = load_profile()

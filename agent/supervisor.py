@@ -33,9 +33,10 @@ Verfuegbare Agenten:
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
 - memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen.
-  NUR bei expliziten Speicher-Befehlen MIT konkretem Inhalt:
-  JA: 'merke dir dass ich Yoga mache', 'fuege Saporito als Restaurant hinzu', 'speichere Marco als Kollegen', 'vergiss den Eintrag X', 'fuege X zum Kontext hinzu'
-  NEIN: 'ich habe X verbessert', 'ich war bei X', 'X funktioniert jetzt', 'ich habe X gemacht', allgemeine Berichte oder Mitteilungen ohne Speicher-Absicht
+  NUR bei sehr expliziten Speicher-Befehlen MIT klarem Speicher-Intent:
+  JA: 'merke dir dass...', 'speichere...', 'füge ... hinzu', 'vergiss den Eintrag...', 'fuege X zum Kontext hinzu'
+  NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzählungen, Beschreibungen ohne explizites Speicher-Wort
+  NEIN: 'ich mag X', 'ich war bei X', 'ich höre gerne X', 'eher X als Y', kurze Antworten ohne Speicher-Absicht
 - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
 - chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Berichte und Mitteilungen ('ich habe X gemacht', 'X funktioniert jetzt', 'ich war bei X'), persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen), alles was kein konkreter Systembefehl oder externe Suche ist
 
