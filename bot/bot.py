@@ -454,8 +454,9 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         import base64
         tg_file = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
-        img_b64 = base64.standard_b64encode(resized).decode("utf-8")
+        # Kein Resize – rohe Bytes direkt an Claude (max 5MB)
+        img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
+        media_type = doc.mime_type or "image/jpeg"
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
         human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
         state = {
