@@ -2233,7 +2233,7 @@ class TestSynthesizeWithMock:
         from bot.tts import synthesize
 
         with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=None), \
-             patch("bot.tts._is_tts_available", return_value=False):
+             patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock, return_value=None):
             result = await synthesize("Test")
 
         assert result is None
