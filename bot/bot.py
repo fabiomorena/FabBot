@@ -648,6 +648,14 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Health Check Scheduler gestartet.")
+        from bot.party_report import run_party_report_scheduler
+        task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
+        _scheduler_tasks.append(task_party)
+        task_party.add_done_callback(
+            lambda t: logger.error(f"Party Report Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception() else None
+        )
+        logger.info("Party Report Scheduler gestartet.")
 
 
 async def _post_shutdown(app: Application) -> None:
