@@ -43,7 +43,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | GitHub Actions CI – runs 329 pytest tests on every push |
 | ✅ | Code Quality – `__SUSPICIOUS__`-Präfix entfernt, Double-Init Guard, YAML Lock, Rate-Limit Eviction |
 | ✅ | Security Hardening – FORBIDDEN_ARGS per-Token, `echo` entfernt, `sanitize_command()`, `cwd=home` |
-| ✅ | Test suite – 329 pytest tests |
+| ✅ | Test suite – 344 pytest tests |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -302,7 +302,7 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 ## Testing
 
 ```bash
-pytest tests/ -v   # 329 tests
+pytest tests/ -v   # 344 tests
 ```
 
 **Test-Infrastruktur:**
@@ -310,7 +310,7 @@ pytest tests/ -v   # 329 tests
 - Async-Tests mit Event-Poll-Loop statt `asyncio.sleep()` – keine Race Conditions unter CI-Last
 - File-basierte Tests nutzen pytest `tmp_path` – automatisches Cleanup auch bei Testfehler
 
-Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check
+Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check · chat_agent _clean_messages_for_chat Vision Safety Net
 
 ---
 
@@ -373,6 +373,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 52** ✅ Watchdog – externer Bot-Monitor via cron, wttr.in Wetter, homoglyphs Library, pip-audit in CI, portable Pfade via Path.home(), CVE Fixes
 - **Phase 53** ✅ Test-Resilienz – conftest.py autouse Fixtures, Event-Poll-Loop in async Tests, pytest tmp_path für file-basierte Tests
 - **Phase 54** ✅ At-Rest-Encryption – personal_profile.yaml via Fernet (AES-128-CBC), Key im macOS Keychain, transparente Migration, 11 neue Tests
+- **Phase 55** ✅ Vision System Fix – as_node Checkpoint-Fix, Supervisor Routing für Bild-Folgefragen (→ chat_agent), __VISION_RESULT__ Safety Net, 4 neue Tests (344 gesamt)
 
 ---
 
