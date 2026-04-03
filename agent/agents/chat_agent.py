@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm
@@ -93,14 +94,32 @@ def _get_last_human_message(messages: list) -> str:
     return ""
 
 
+def _get_context_window_size() -> int:
+    """Liest CHAT_CONTEXT_WINDOW aus .env. Default: 40.
+    Begrenzt auf sinnvollen Bereich 10–200.
+    """
+    try:
+        raw = os.getenv("CHAT_CONTEXT_WINDOW", "40")
+        val = int(raw)
+        return max(10, min(200, val))
+    except (ValueError, TypeError):
+        return 40
+
+
 async def chat_agent(state: AgentState) -> AgentState:
     """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools.
     HITL-Nachrichten werden durch lesbare Platzhalter ersetzt.
+    Context wird auf CHAT_CONTEXT_WINDOW Messages getrimmt (default 40) –
+    verhindert unbegrenztes Wachstum des LLM-Calls bei langer Nutzungsdauer.
+    SQLite bleibt vollständig – nur der LLM-Call wird begrenzt.
     Nach der Antwort: Auto-Learn-Hook als non-blocking Background-Task.
     """
     llm = get_llm()
     clean_messages = _clean_messages_for_chat(state["messages"])
-    messages = [SystemMessage(content=PROMPT)] + clean_messages
+    # Trim: nur die letzten N Messages übergeben – SQLite bleibt vollständig
+    context_window = _get_context_window_size()
+    trimmed_messages = clean_messages[-context_window:]
+    messages = [SystemMessage(content=PROMPT)] + trimmed_messages
     response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):

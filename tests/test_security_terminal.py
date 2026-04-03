@@ -3144,3 +3144,79 @@ class TestCleanMessagesForChat:
         msgs = [self.AIMessage(content=f"__VISION_RESULT__:{long}")]
         result = self.clean(msgs)
         assert len(result[0].content) < 400
+
+
+# ---------------------------------------------------------------------------
+# chat_agent.py Tests – Context Trim
+# ---------------------------------------------------------------------------
+
+class TestChatAgentContextTrim:
+    """Tests fuer den Context Trim in chat_agent."""
+
+    def test_get_context_window_size_default(self) -> None:
+        """Default-Wert ist 40 wenn CHAT_CONTEXT_WINDOW nicht gesetzt."""
+        from unittest.mock import patch
+        from agent.agents.chat_agent import _get_context_window_size
+        with patch.dict("os.environ", {}, clear=False):
+            import os
+            os.environ.pop("CHAT_CONTEXT_WINDOW", None)
+            result = _get_context_window_size()
+        assert result == 40
+
+    def test_get_context_window_size_from_env(self) -> None:
+        """Wert wird aus CHAT_CONTEXT_WINDOW gelesen."""
+        from unittest.mock import patch
+        from agent.agents.chat_agent import _get_context_window_size
+        with patch.dict("os.environ", {"CHAT_CONTEXT_WINDOW": "30"}):
+            result = _get_context_window_size()
+        assert result == 30
+
+    def test_get_context_window_size_invalid_falls_back(self) -> None:
+        """Ungültiger Wert fällt auf Default 40 zurück."""
+        from unittest.mock import patch
+        from agent.agents.chat_agent import _get_context_window_size
+        with patch.dict("os.environ", {"CHAT_CONTEXT_WINDOW": "abc"}):
+            result = _get_context_window_size()
+        assert result == 40
+
+    def test_get_context_window_size_min_clamped(self) -> None:
+        """Zu kleiner Wert wird auf Minimum 10 begrenzt."""
+        from unittest.mock import patch
+        from agent.agents.chat_agent import _get_context_window_size
+        with patch.dict("os.environ", {"CHAT_CONTEXT_WINDOW": "2"}):
+            result = _get_context_window_size()
+        assert result == 10
+
+    def test_get_context_window_size_max_clamped(self) -> None:
+        """Zu großer Wert wird auf Maximum 200 begrenzt."""
+        from unittest.mock import patch
+        from agent.agents.chat_agent import _get_context_window_size
+        with patch.dict("os.environ", {"CHAT_CONTEXT_WINDOW": "9999"}):
+            result = _get_context_window_size()
+        assert result == 200
+
+    def test_trim_keeps_most_recent_messages(self) -> None:
+        """Trim behält die neuesten Messages, nicht die ältesten."""
+        from agent.agents.chat_agent import _clean_messages_for_chat
+        from langchain_core.messages import HumanMessage
+
+        messages = [HumanMessage(content=f"Nachricht {i}") for i in range(50)]
+        clean = _clean_messages_for_chat(messages)
+        trimmed = clean[-40:]
+
+        assert trimmed[-1].content == "Nachricht 49"
+        assert trimmed[0].content == "Nachricht 10"
+
+    def test_trim_no_effect_when_few_messages(self) -> None:
+        """Bei weniger Messages als Window bleibt alles erhalten."""
+        from agent.agents.chat_agent import _clean_messages_for_chat
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        messages = [
+            HumanMessage(content="Hallo"),
+            AIMessage(content="Hi!"),
+            HumanMessage(content="Wie geht's?"),
+        ]
+        clean = _clean_messages_for_chat(messages)
+        trimmed = clean[-40:]
+        assert len(trimmed) == 3
