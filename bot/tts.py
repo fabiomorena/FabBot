@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # ElevenLabs Konfiguration
 ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "1YdlDDaYSxqFmFZDaZ1z")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "xTXZTtb6MuzG0jJR05Y9")
 ELEVENLABS_MODEL    = "eleven_multilingual_v2"
 
 # edge-tts Fallback
@@ -133,6 +133,10 @@ def _is_edge_tts_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+# Alias für Test-Kompatibilität (Tests mocken _is_tts_available)
+_is_tts_available = _is_edge_tts_available
 
 
 async def _synthesize_edge_tts(text: str) -> bytes | None:
