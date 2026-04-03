@@ -70,7 +70,7 @@ def _filter_hitl_messages(messages: list) -> list:
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
-        if isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__")) or (isinstance(content, str) and content.startswith("__MEMORY__") and "Bildbeschreibung" not in content):
+        if (isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__"))) or                 (isinstance(content, str) and content.startswith("__MEMORY__") and "Bildbeschreibung" not in content):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
             continue
@@ -85,9 +85,8 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     if messages and isinstance(messages[-1], AIMessage):
         last = messages[-1].content
-        if last.startswith("__VISION_RESULT__:"):
-            # Vision-Ergebnis liegt vor → chat_agent formuliert Bot-Antwort
-            return {"next_agent": "chat_agent"}
+        # __VISION_RESULT__ Branch entfernt – vision_agent gibt keinen solchen Prefix
+        # mehr zurück, analyze_image_direct() wird direkt in bot.py aufgerufen.
         if not last.startswith("__MEMORY__:"):
             return {"next_agent": "FINISH"}
 
