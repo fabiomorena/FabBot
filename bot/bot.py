@@ -436,28 +436,11 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
         media_type = doc.mime_type or "image/jpeg"
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
-        human_text = f"[FOTO] {caption}" if caption else "[FOTO] Beschreibe dieses Bild."
-        state = {
-            "messages": [
-                HumanMessage(content=human_text),
-                AIMessage(content=f"__VISION_RESULT__:{vision_result}"),
-            ],
-            "telegram_chat_id": chat_id,
-            "next_agent": None,
-            "image_data": None,
-            "image_caption": None,
-            "image_media_type": None,
-        }
-        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
-        result_state = await _invoke_with_retry(state, config)
-        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
-        response_msg = _extract_content(ai_messages[-1]) if ai_messages else vision_result
-        if response_msg.startswith("__VISION_RESULT__:"):
-            response_msg = response_msg[len("__VISION_RESULT__:"):]
+        logger.info(f"VISION RESULT: {vision_result[:100]}")
         await thinking.delete()
-        await update.message.reply_text(response_msg)
-        await speak_and_send(response_msg, ctx.bot, chat_id)
-        await _update_memory(chat_id, f"Bild (Datei) analysiert: {response_msg[:200]}")
+        await update.message.reply_text(vision_result)
+        await speak_and_send(vision_result, ctx.bot, chat_id)
+        await _update_memory(chat_id, f"Bild (Datei) analysiert: {vision_result[:200]}")
 
     except Exception as e:
         logger.error(f"on_document Fehler: {e}", exc_info=True)
