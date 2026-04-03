@@ -55,6 +55,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Vision Agent – photo analysis via Claude Sonnet Vision with HITL (objects, OCR, scene description) |
 | ✅ | At-Rest-Encryption – `personal_profile.yaml` verschlüsselt via Fernet, Key im macOS Keychain |
 | ✅ | Context Trim – `chat_agent` begrenzt LLM-Call auf `CHAT_CONTEXT_WINDOW` Messages (default 40, via `.env`) |
+| ✅ | Weekend Party Report – jeden Mittwoch 20:00 Uhr, 7 Berliner Clubs (Golden Gate, Kater, Berghain, Sisyphos, Hoppetosse, Renate, Heide), Tavily + Homepage-Fetch |
 
 ---
 
@@ -105,6 +106,7 @@ FabBot/
     ├── briefing.py          # Morning briefing scheduler (07:30 daily)
     ├── reminders.py         # Reminder storage + proactive delivery
     └── health_check.py      # Daily health check scheduler (06:00, 6 components)
+    └── party_report.py      # Weekend Party Report scheduler (Mittwoch 20:00, 7 Clubs)
 ```
 
 **Stack:**
@@ -378,6 +380,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 55b** ✅ Code Quality – Klammern in _filter_hitl_messages (Operator-Precedenz), toter __VISION_RESULT__ Branch in supervisor_node entfernt
 - **Phase 56** ✅ AIMessage Echo-Fix – Folgefragen wiederholten letzte Antwort (result_state Index-Slice statt letzter AIMessage aus gesamtem State)
 - **Phase 57** ✅ Context Trim – chat_agent begrenzt LLM-Call auf CHAT_CONTEXT_WINDOW Messages (default 40, via .env), SQLite bleibt vollständig
+- **Phase 58** ✅ Weekend Party Report – jeden Mittwoch 20:00 Uhr, 7 Berliner Clubs, Tavily-Suche + direkter Homepage-Fetch als Fallback
 
 ---
 
