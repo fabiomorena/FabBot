@@ -92,6 +92,23 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
         logger.warning(f"Memory update nach HITL fehlgeschlagen (nicht kritisch): {e}")
 
 
+async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None:
+    """Schreibt Bildanalyse als sichtbare Konversation in den State.
+    Wird nicht gefiltert – chat_agent kann darauf referenzieren.
+    """
+    try:
+        from agent.supervisor import agent_graph
+        from langchain_core.messages import HumanMessage as HM
+        config = {"configurable": {"thread_id": str(chat_id)}}
+        human = f"[Foto gesendet]{f': {caption}' if caption else ''}"
+        await agent_graph.aupdate_state(
+            config,
+            {"messages": [HM(content=human), AIMessage(content=result)]},
+        )
+    except Exception as e:
+        logger.warning(f"Vision memory update fehlgeschlagen: {e}")
+
+
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
     """
     Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf.
@@ -388,7 +405,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.delete()
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
-        await _update_memory(chat_id, f"Bildbeschreibung: {vision_result}")
+        await _update_vision_memory(chat_id, caption, vision_result)
 
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)
@@ -440,7 +457,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.delete()
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
-        await _update_memory(chat_id, f"Bildbeschreibung: {vision_result}")
+        await _update_vision_memory(chat_id, caption, vision_result)
 
     except Exception as e:
         logger.error(f"on_document Fehler: {e}", exc_info=True)
