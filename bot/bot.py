@@ -93,20 +93,21 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
 
 
 async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None:
-    """Schreibt Bildanalyse als sichtbare Konversation in den State.
-    Wird nicht gefiltert – chat_agent kann darauf referenzieren.
-    """
+    """Schreibt Bildanalyse als sichtbare HumanMessage+AIMessage in den State."""
     try:
         from agent.supervisor import agent_graph
         from langchain_core.messages import HumanMessage as HM
         config = {"configurable": {"thread_id": str(chat_id)}}
-        human = f"[Foto gesendet]{f': {caption}' if caption else ''}"
+        human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
+        # Checkpoint-ID holen damit aupdate_state korrekt funktioniert
+        state = await agent_graph.aget_state(config)
         await agent_graph.aupdate_state(
             config,
-            {"messages": [HM(content=human), AIMessage(content=result)]},
+            {"messages": [HM(content=human_text), AIMessage(content=result)]},
         )
+        logger.info(f"Vision memory gespeichert: {result[:80]}")
     except Exception as e:
-        logger.warning(f"Vision memory update fehlgeschlagen: {e}")
+        logger.warning(f"Vision memory update fehlgeschlagen: {e}", exc_info=True)
 
 
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
@@ -381,14 +382,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             return
         caption = result
 
-    # HITL – Bestätigung vor Analyse
-    preview = "Foto analysieren" + (f": \"{caption[:60]}\"" if caption else "")
-    confirmed = await request_confirmation(ctx.bot, chat_id, "vision_agent", preview)
-    if not confirmed:
-        log_action("vision_agent", "analyze_image", "user rejected", chat_id, status="rejected")
-        return
-
-    thinking = await update.message.reply_text("Analysiere Bild...")
+    thinking = await update.message.reply_text("Analysiere Bild...")  # kein HITL – nicht destruktiv
 
     try:
         import base64
@@ -436,13 +430,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             return
         caption = result
 
-    preview = "Bild (Datei) analysieren" + (f": \"{caption[:60]}\"" if caption else "")
-    confirmed = await request_confirmation(ctx.bot, chat_id, "vision_agent", preview)
-    if not confirmed:
-        log_action("vision_agent", "analyze_image", "user rejected", chat_id, status="rejected")
-        return
-
-    thinking = await update.message.reply_text("Analysiere Bild (unkomprimiert)...")
+    thinking = await update.message.reply_text("Analysiere Bild...")  # kein HITL – nicht destruktiv
 
     try:
         import base64
