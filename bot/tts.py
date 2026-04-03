@@ -1,16 +1,18 @@
 """
-Text-to-Speech fuer FabBot.
-Kombiniert:
-1. edge-tts → MP3-Datei generieren (Microsoft Neural Voices, kein API-Key)
-2. afplay   → sofortige Ausgabe ueber Mac-Lautsprecher
-3. Telegram → Sprachnachricht zurueckschicken
+Text-to-Speech fuer FabBot – Phase 60.
+Provider: ElevenLabs (primär) → edge-tts (Fallback)
 
-Deutsche Stimme: de-DE-KatjaNeural (weiblich, natuerlich)
-Alternativ:      de-DE-ConradNeural (maennlich)
+ElevenLabs:
+- Stimme: Anna Jung (Voice ID via ELEVENLABS_VOICE_ID in .env)
+- Modell: eleven_multilingual_v2
+- API Key: ELEVENLABS_API_KEY in .env
+
+edge-tts (Fallback):
+- Wird verwendet wenn ELEVENLABS_API_KEY nicht gesetzt oder API-Fehler
+- Deutsche Stimme: de-DE-KatjaNeural
 
 TTS kann zur Laufzeit via /tts on|off togglen werden.
 Laufende Sprachausgabe kann via /stop gestoppt werden.
-Standard: TTS_ENABLED=true in .env, oder per default aktiviert.
 """
 import asyncio
 import logging
@@ -22,36 +24,37 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# ElevenLabs Konfiguration
+ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "1YdlDDaYSxqFmFZDaZ1z")
+ELEVENLABS_MODEL    = "eleven_multilingual_v2"
+
+# edge-tts Fallback
 TTS_VOICE = "de-DE-KatjaNeural"
-TTS_RATE = "+0%"
+TTS_RATE  = "+0%"
+
 TTS_MAX_CHARS = 1000
 
-# TTS-Status – kann zur Laufzeit via /tts on|off geaendert werden
+# TTS-Status
 _tts_enabled: bool = os.getenv("TTS_ENABLED", "true").lower() != "false"
 
-# Laufender afplay-Prozess – wird fuer /stop benoetigt
+# Laufender afplay-Prozess
 _current_afplay: subprocess.Popen | None = None
 
-# Exakte Bezeichnungen fuer Quellen-Ueberschriften (lowercase, nach Markdown-Strip)
 _SOURCE_HEADERS = {"quellen:", "quellen", "sources:", "sources", "source:"}
 
 
 def is_tts_enabled() -> bool:
-    """Gibt zurueck ob TTS aktuell aktiviert ist."""
     return _tts_enabled
 
 
 def set_tts_enabled(enabled: bool) -> None:
-    """Aktiviert oder deaktiviert TTS zur Laufzeit."""
     global _tts_enabled
     _tts_enabled = enabled
     logger.info(f"TTS {'aktiviert' if enabled else 'deaktiviert'}.")
 
 
 def stop_speaking() -> bool:
-    """Stoppt die laufende Sprachausgabe falls vorhanden.
-    Gibt True zurueck wenn ein Prozess gestoppt wurde.
-    """
     global _current_afplay
     if _current_afplay and _current_afplay.poll() is None:
         _current_afplay.terminate()
@@ -62,19 +65,11 @@ def stop_speaking() -> bool:
 
 
 def _clean_for_tts(text: str) -> str:
-    """Bereinigt Text fuer TTS-Ausgabe.
-    Entfernt URLs, Markdown-Formatierung und Quellenabschnitte.
-    """
-    # Markdown-Links [Text](URL) → nur Text behalten
+    """Bereinigt Text fuer TTS-Ausgabe."""
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
-
-    # URLs entfernen
     text = re.sub(r"https?://\S+", "", text)
-
-    # Markdown-Formatierung entfernen: **, *, __, _, `
     text = re.sub(r"[*_`]{1,2}", "", text)
 
-    # Quellenabschnitt erkennen – exakter Vergleich verhindert false positives
     lines = text.split("\n")
     cleaned_lines = []
     for line in lines:
@@ -84,17 +79,55 @@ def _clean_for_tts(text: str) -> str:
         cleaned_lines.append(line)
     text = "\n".join(cleaned_lines)
 
-    # Emojis entfernen
     text = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', text, flags=re.UNICODE)
-
-    # Mehrfache Leerzeilen reduzieren
     text = re.sub(r"\n{3,}", "\n\n", text)
-
     return text.strip()
 
 
-def _is_tts_available() -> bool:
-    """Prueft ob edge-tts installiert ist."""
+# ---------------------------------------------------------------------------
+# ElevenLabs
+# ---------------------------------------------------------------------------
+
+async def _synthesize_elevenlabs(text: str) -> bytes | None:
+    """Generiert Audio via ElevenLabs API."""
+    if not ELEVENLABS_API_KEY:
+        return None
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                headers={
+                    "xi-api-key": ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": ELEVENLABS_MODEL,
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                        "style": 0.0,
+                        "use_speaker_boost": True,
+                    },
+                },
+            )
+            if resp.status_code == 200:
+                logger.info(f"ElevenLabs TTS: {len(resp.content)} bytes")
+                return resp.content
+            else:
+                logger.warning(f"ElevenLabs API Fehler: {resp.status_code} – Fallback zu edge-tts")
+                return None
+    except Exception as e:
+        logger.warning(f"ElevenLabs Fehler (Fallback zu edge-tts): {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# edge-tts Fallback
+# ---------------------------------------------------------------------------
+
+def _is_edge_tts_available() -> bool:
     try:
         import edge_tts  # noqa: F401
         return True
@@ -102,19 +135,11 @@ def _is_tts_available() -> bool:
         return False
 
 
-async def synthesize(text: str) -> bytes | None:
-    """Konvertiert Text zu MP3-Audio via edge-tts."""
-    if not _is_tts_available():
-        logger.warning("edge-tts nicht installiert – TTS deaktiviert.")
+async def _synthesize_edge_tts(text: str) -> bytes | None:
+    """Generiert Audio via edge-tts (Fallback)."""
+    if not _is_edge_tts_available():
+        logger.warning("edge-tts nicht installiert – TTS nicht verfügbar.")
         return None
-
-    text = _clean_for_tts(text)
-    if not text:
-        return None
-
-    if len(text) > TTS_MAX_CHARS:
-        text = text[:TTS_MAX_CHARS] + "..."
-
     try:
         import edge_tts
         communicate = edge_tts.Communicate(text, TTS_VOICE, rate=TTS_RATE)
@@ -124,13 +149,36 @@ async def synthesize(text: str) -> bytes | None:
                 audio_bytes += chunk["data"]
         return audio_bytes if audio_bytes else None
     except Exception as e:
-        logger.error(f"TTS Synthese-Fehler: {e}")
+        logger.error(f"edge-tts Fehler: {e}")
         return None
 
 
+# ---------------------------------------------------------------------------
+# Haupt-Synthesize
+# ---------------------------------------------------------------------------
+
+async def synthesize(text: str) -> bytes | None:
+    """Konvertiert Text zu Audio. ElevenLabs primär, edge-tts als Fallback."""
+    text = _clean_for_tts(text)
+    if not text:
+        return None
+    if len(text) > TTS_MAX_CHARS:
+        text = text[:TTS_MAX_CHARS] + "..."
+
+    # ElevenLabs primär
+    if ELEVENLABS_API_KEY:
+        audio = await _synthesize_elevenlabs(text)
+        if audio:
+            return audio
+
+    # edge-tts Fallback
+    logger.info("TTS Fallback: edge-tts wird verwendet.")
+    return await _synthesize_edge_tts(text)
+
+
 async def speak_and_send(text: str, bot, chat_id: int) -> bool:
-    """Spricht Text ueber Mac-Lautsprecher und schickt Sprachnachricht an Telegram."""
-    stop_speaking()  # Laufendes Audio stoppen bevor neue Ausgabe startet
+    """Spricht Text über Mac-Lautsprecher und schickt Sprachnachricht an Telegram."""
+    stop_speaking()
     if not _tts_enabled:
         return False
 
@@ -138,8 +186,11 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
     if not audio_bytes:
         return False
 
+    # ElevenLabs liefert MP3, edge-tts auch
+    suffix = ".mp3"
+
     try:
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             f.write(audio_bytes)
             tmp_path = Path(f.name)
 
@@ -160,10 +211,7 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
 
 
 async def _play_on_mac(path: Path) -> None:
-    """Spielt Audio ueber Mac-Lautsprecher via afplay.
-    Speichert den Prozess fuer /stop-Befehl.
-    Timeout: 300s (ausreichend fuer lange Wetterberichte etc.)
-    """
+    """Spielt Audio über Mac-Lautsprecher via afplay."""
     global _current_afplay
     try:
         def _run() -> None:
