@@ -522,7 +522,14 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         # 529-Retry eingebaut – bis zu 3 Versuche mit exponentiellem Backoff
         result_state = await _invoke_with_retry(state, config)
 
-        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
+        # Nur neu hinzugekommene Messages auswerten – verhindert Echo-Bug bei Folgefragen.
+        # ainvoke() gibt den kompletten State zurück (inkl. History), daher per Index slicen.
+        input_count = len(state["messages"])
+        new_messages = result_state["messages"][input_count:]
+        ai_messages = [m for m in new_messages if isinstance(m, AIMessage)]
+        # Fallback: falls keine neuen AI-Messages, letzte aus gesamtem State nehmen
+        if not ai_messages:
+            ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
         response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
 
         for prefix, handler in _RESPONSE_DISPATCH:
