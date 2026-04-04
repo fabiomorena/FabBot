@@ -31,9 +31,6 @@ _TTS_MAX_HITL_OUTPUT = 300
 _processed_message_ids: set[int] = set()
 _DEDUP_MAX_SIZE = 200
 
-# Dedup-Set: verhindert Doppelverarbeitung desselben Telegram-Updates
-_processed_message_ids: set[int] = set()
-_DEDUP_MAX_SIZE = 200
 
 _IMAGE_MAX_PX = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5MB
