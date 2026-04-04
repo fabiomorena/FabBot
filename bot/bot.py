@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
 
+# Dedup-Set: verhindert Doppelverarbeitung desselben Telegram-Updates (block=False + Polling)
+_processed_message_ids: set[int] = set()
+_DEDUP_MAX_SIZE = 200
+
+# Dedup-Set: verhindert Doppelverarbeitung desselben Telegram-Updates
+_processed_message_ids: set[int] = set()
+_DEDUP_MAX_SIZE = 200
+
 _IMAGE_MAX_PX = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5MB
 
@@ -488,6 +496,15 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+
+    # Dedup-Guard: selbes Telegram-Update nicht zweimal verarbeiten (tritt auf bei block=False + Polling)
+    msg_id = update.message.message_id
+    if msg_id in _processed_message_ids:
+        logger.warning(f"Dedup: Message-ID {msg_id} bereits verarbeitet – ignoriert.")
+        return
+    _processed_message_ids.add(msg_id)
+    if len(_processed_message_ids) > _DEDUP_MAX_SIZE:
+        _processed_message_ids.discard(next(iter(_processed_message_ids)))
 
     is_safe, result = await sanitize_input_async(text, user_id)
     if not is_safe:
