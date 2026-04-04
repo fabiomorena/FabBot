@@ -4914,3 +4914,157 @@ class TestLazyApiKey:
             result = await _synthesize_openai("Test")
 
         assert result == b"audio"
+
+# ---------------------------------------------------------------------------
+# Phase 70 Tests – TTS Config Cleanup
+# ---------------------------------------------------------------------------
+
+import pytest
+import logging
+from unittest.mock import patch, MagicMock, AsyncMock
+
+
+class TestValidateTtsConfig:
+    """Tests fuer _validate_tts_config()."""
+
+    def test_valid_config_no_warnings(self, caplog) -> None:
+        """Gueltige Voice + Model → keine Warnings."""
+        from bot.tts import _validate_tts_config
+        with patch("bot.tts._get_tts_voice", return_value="nova"), \
+             patch("bot.tts._get_tts_model", return_value="tts-1"), \
+             caplog.at_level(logging.WARNING, logger="bot.tts"):
+            _validate_tts_config()
+        assert not any("Unbekannte" in r.message for r in caplog.records)
+
+    def test_invalid_voice_logs_warning(self, caplog) -> None:
+        """Ungueltiger Voice → Warning mit erlaubten Werten."""
+        from bot.tts import _validate_tts_config
+        with patch("bot.tts._get_tts_voice", return_value="invalid-voice"), \
+             patch("bot.tts._get_tts_model", return_value="tts-1"), \
+             caplog.at_level(logging.WARNING, logger="bot.tts"):
+            _validate_tts_config()
+        assert any("invalid-voice" in r.message for r in caplog.records)
+        assert any("alloy" in r.message or "nova" in r.message for r in caplog.records)
+
+    def test_invalid_model_logs_warning(self, caplog) -> None:
+        """Ungueltiges Model → Warning mit erlaubten Werten."""
+        from bot.tts import _validate_tts_config
+        with patch("bot.tts._get_tts_voice", return_value="nova"), \
+             patch("bot.tts._get_tts_model", return_value="tts-99"), \
+             caplog.at_level(logging.WARNING, logger="bot.tts"):
+            _validate_tts_config()
+        assert any("tts-99" in r.message for r in caplog.records)
+
+    def test_validate_is_function_not_module_level(self) -> None:
+        """_validate_tts_config ist eine Funktion, kein Modul-Level-Code."""
+        import inspect
+        from bot.tts import _validate_tts_config
+        assert callable(_validate_tts_config)
+        assert inspect.isfunction(_validate_tts_config)
+
+    def test_no_module_level_validation_warnings(self) -> None:
+        """Beim Import von bot.tts werden keine Warnings ausgegeben."""
+        import importlib, sys
+        # Modul neu laden und prüfen ob Warnings entstehen
+        with patch("logging.Logger.warning") as mock_warn:
+            if "bot.tts" in sys.modules:
+                importlib.reload(sys.modules["bot.tts"])
+        # Keine Voice/Model Warnings beim Import (nur bei explizitem Aufruf)
+        voice_warnings = [
+            c for c in mock_warn.call_args_list
+            if "OPENAI_TTS_VOICE" in str(c) or "OPENAI_TTS_MODEL" in str(c)
+        ]
+        assert len(voice_warnings) == 0
+
+
+class TestLazyGetters:
+    """Tests fuer _get_tts_voice() und _get_tts_model()."""
+
+    def test_get_tts_voice_reads_env(self) -> None:
+        """_get_tts_voice() liest OPENAI_TTS_VOICE aus env."""
+        from bot.tts import _get_tts_voice
+        with patch.dict("os.environ", {"OPENAI_TTS_VOICE": "shimmer"}):
+            assert _get_tts_voice() == "shimmer"
+
+    def test_get_tts_voice_default_nova(self) -> None:
+        """_get_tts_voice() Default ist 'nova'."""
+        from bot.tts import _get_tts_voice
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "OPENAI_TTS_VOICE"}
+        with patch.dict("os.environ", env, clear=True):
+            assert _get_tts_voice() == "nova"
+
+    def test_get_tts_model_reads_env(self) -> None:
+        """_get_tts_model() liest OPENAI_TTS_MODEL aus env."""
+        from bot.tts import _get_tts_model
+        with patch.dict("os.environ", {"OPENAI_TTS_MODEL": "tts-1-hd"}):
+            assert _get_tts_model() == "tts-1-hd"
+
+    def test_get_tts_model_default_tts1(self) -> None:
+        """_get_tts_model() Default ist 'tts-1'."""
+        from bot.tts import _get_tts_model
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "OPENAI_TTS_MODEL"}
+        with patch.dict("os.environ", env, clear=True):
+            assert _get_tts_model() == "tts-1"
+
+    def test_all_three_getters_consistent(self) -> None:
+        """Alle drei lazy getters sind Funktionen."""
+        from bot.tts import _get_openai_api_key, _get_tts_voice, _get_tts_model
+        import inspect
+        assert inspect.isfunction(_get_openai_api_key)
+        assert inspect.isfunction(_get_tts_voice)
+        assert inspect.isfunction(_get_tts_model)
+
+
+class TestRetryExhaustedLog:
+    """Tests fuer spezifischen Log bei Retry-Erschoepfung."""
+
+    @pytest.mark.asyncio
+    async def test_retry_exhausted_log_specific(self, caplog) -> None:
+        """Nach Retry-Erschoepfung bei 429 → spezifischer 'Retry erschoepft' Log."""
+        from bot.tts import _synthesize_openai
+        resp_429a = MagicMock()
+        resp_429a.status_code = 429
+        resp_429b = MagicMock()
+        resp_429b.status_code = 429
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=[resp_429a, resp_429b])
+
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
+             patch("bot.tts._get_tts_voice", return_value="nova"), \
+             patch("bot.tts._get_tts_model", return_value="tts-1"), \
+             patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("asyncio.sleep", new_callable=AsyncMock), \
+             caplog.at_level(logging.WARNING, logger="bot.tts"):
+            result = await _synthesize_openai("Test")
+
+        assert result is None
+        retry_logs = [r for r in caplog.records if "erschoepft" in r.message.lower() or "Retry" in r.message]
+        assert len(retry_logs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_real_error_log_different_from_retry(self, caplog) -> None:
+        """Echter 400-Fehler hat anderen Log als Retry-Erschoepfung."""
+        from bot.tts import _synthesize_openai
+        resp_400 = MagicMock()
+        resp_400.status_code = 400
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=resp_400)
+
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
+             patch("bot.tts._get_tts_voice", return_value="nova"), \
+             patch("bot.tts._get_tts_model", return_value="tts-1"), \
+             patch("httpx.AsyncClient", return_value=mock_client), \
+             caplog.at_level(logging.WARNING, logger="bot.tts"):
+            await _synthesize_openai("Test")
+
+        error_logs = [r for r in caplog.records if "400" in r.message]
+        assert len(error_logs) >= 1
+        assert not any("erschoepft" in r.message.lower() for r in caplog.records)
