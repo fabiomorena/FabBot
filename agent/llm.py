@@ -14,7 +14,7 @@ Ungueltige Strings fuehren beim ersten API-Call zu einem Fehler, nicht beim Star
 import os
 from langchain_anthropic import ChatAnthropic
 
-_DEFAULT_SONNET = "claude-sonnet-4-5-20250929"
+_DEFAULT_SONNET = "claude-sonnet-4-20250514"
 _DEFAULT_HAIKU  = "claude-haiku-4-5-20251001"
 
 _llm: ChatAnthropic | None = None
