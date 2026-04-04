@@ -1,18 +1,31 @@
 """
-Memory Agent für FabBot – Phase 45/46.
+Memory Agent fuer FabBot – Phase 45/46/63.
 
-Unterstützte Kategorien (Option 3 – Hybrid):
+Phase 63: neue Kategorie bot_instruction → schreibt in claude.md statt profile.yaml
+
+Unterstuetzte Kategorien (Hybrid):
 Feste Sektionen: people, projects, places, media, preferences, work, identity
-Freie Sektion:   custom (key/value Paare für alles andere)
+Freie Sektion:   custom (key/value Paare)
+Bot-Kontext:     bot_instruction → claude.md (nicht profile.yaml)
 
-Pipeline:
-1. Sonnet versteht die Anfrage + Gesprächskontext → strukturiertes JSON
-2. Python wendet Update an (kein LLM schreibt YAML direkt)
-3. Haiku reviewt das neue YAML
+Trigger fuer bot_instruction:
+- "merke dir grundsaetzlich dass du..."
+- "von jetzt an sollst du..."
+- "du sollst immer..."
+- "dein Verhalten soll..."
+
+Pipeline (fuer alle ausser bot_instruction):
+1. Sonnet versteht Anfrage + Kontext → strukturiertes JSON
+2. Python wendet Update an
+3. Haiku reviewt YAML
 4. Schreiben via write_profile()
-5. Antwort an User mit Bestätigung was gespeichert wurde
+5. Bestaetigung an User
 
-Fail-safe: Bei Fehler → Fallback zu add_note_to_profile() + Fehlermeldung an User.
+Fuer bot_instruction:
+1. Sonnet erkennt Kategorie
+2. append_to_claude_md() → claude.md
+3. reload_claude_md() → sofort aktiv
+4. Bestaetigung an User
 """
 
 import copy
@@ -27,10 +40,6 @@ from agent.llm import get_llm, get_fast_llm
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Parser-Prompt (Sonnet – Stufe 1)
-# ---------------------------------------------------------------------------
-
 _PARSER_PROMPT = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
 Bestimme was gespeichert, aktualisiert oder gelöscht werden soll.
 
@@ -39,7 +48,7 @@ Antworte NUR mit reinem JSON – kein Markdown, keine Erklärung.
 Format:
 {
   "action": "save|update|delete",
-  "category": "people|project|place|media|preference|job|location|custom",
+  "category": "people|project|place|media|preference|job|location|custom|bot_instruction",
   "data": { ... }
 }
 
@@ -69,6 +78,9 @@ location:
 custom:
   {"key": "aussagekraeftiger_schluessel", "value": "Wert als Text"}
 
+bot_instruction:
+  {"text": "Die vollständige Bot-Instruktion als präziser, aktionsorientierter Satz"}
+
 Für delete:
   {"name": "Name des Eintrags"} oder {"key": "Schlüssel"} oder {"title": "Titel"}
 
@@ -77,8 +89,10 @@ Wichtige Regeln:
 - Lieder, Alben, Filme, Serien, Podcasts, Bücher, Künstler → IMMER category=media
 - Firmen wo der User arbeitet → category=job (NICHT project)
 - Eigene Software-Projekte die der User baut → category=project
+- Bot-Verhalten, Antwort-Stil, dauerhafte Instruktionen FÜR DEN BOT → category=bot_instruction
+  Trigger: "grundsätzlich", "von jetzt an", "du sollst immer", "dein Verhalten", "wie du antwortest"
+- Persönliche Infos ÜBER DEN USER (Vorlieben, Hobbys, Fakten) → preference oder custom
 - Wenn unklar welche Kategorie: category=custom mit sinnvollem key
-- Extrahiere alle relevanten Details aus dem Gesprächskontext
 
 Beispiele:
 "füge Saporito zum Kontext hinzu – Lieblings-Italiener in Friedrichshain"
@@ -87,22 +101,21 @@ Beispiele:
 "merke dir dass Insieme von Valentino Vivace mein Lieblingslied ist"
 → {"action": "save", "category": "media", "data": {"title": "Insieme", "type": "song", "artist": "Valentino Vivace", "context": "Lieblingslied"}}
 
+"merke dir grundsätzlich dass du immer vollständige Dateien lieferst"
+→ {"action": "save", "category": "bot_instruction", "data": {"text": "Immer vollständige Dateien liefern, keine Snippets"}}
+
+"von jetzt an sollst du kürzer antworten"
+→ {"action": "save", "category": "bot_instruction", "data": {"text": "Antworten kurz halten, auf den Punkt kommen"}}
+
+"du sollst grundsätzlich immer zuerst nach dem Ziel fragen bevor du code schreibst"
+→ {"action": "save", "category": "bot_instruction", "data": {"text": "Vor dem Code schreiben immer zuerst nach dem Ziel fragen"}}
+
 "merke dir dass ich gerne Yoga mache"
 → {"action": "save", "category": "custom", "data": {"key": "hobby_yoga", "value": "macht gerne Yoga"}}
 
 "aktualisiere Marco – er ist jetzt mein Vorgesetzter"
 → {"action": "update", "category": "people", "data": {"name": "Marco", "context": "Vorgesetzter bei Bonial"}}
-
-"vergiss den Eintrag über Bonial als Projekt"
-→ {"action": "delete", "category": "project", "data": {"name": "Bonial"}}
-
-"mein Lieblingsfilm ist Blade Runner"
-→ {"action": "save", "category": "media", "data": {"title": "Blade Runner", "type": "film", "context": "Lieblingsfilm"}}
 """
-
-# ---------------------------------------------------------------------------
-# Reviewer-Prompt (Haiku – Stufe 3)
-# ---------------------------------------------------------------------------
 
 _REVIEWER_PROMPT = """Du bist ein YAML-Validator. Vergleiche Original- und neues YAML.
 
@@ -123,19 +136,10 @@ INVALID – YAML kaputt, wichtige Daten fehlen, oder verdächtige Inhalte
 Nur VALID oder INVALID."""
 
 
-# ---------------------------------------------------------------------------
-# Stufe 1: Parser (Sonnet)
-# ---------------------------------------------------------------------------
-
 async def _parse_memory_intent(messages: list) -> dict[str, Any]:
-    """
-    Sonnet versteht die Anfrage + Kontext → strukturiertes JSON.
-    Fail-safe: Bei Fehler → {"action": "error"}
-    """
+    """Sonnet versteht die Anfrage + Kontext → strukturiertes JSON."""
     try:
         llm = get_llm()
-        # Erst filtern, dann slicen – verhindert dass HITL-Messages den
-        # Kontext-Window verkleinern und echte Nachrichten verdrängen.
         all_filtered = []
         for m in messages:
             c = m.content if hasattr(m, "content") else ""
@@ -165,16 +169,8 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
         return {"action": "error"}
 
 
-# ---------------------------------------------------------------------------
-# Stufe 2: Python-seitiger Update
-# ---------------------------------------------------------------------------
-
 def _apply_memory_update(profile: dict, action: str, category: str, data: dict) -> dict | None:
-    """
-    Wendet das geparste Update auf das Profil-Dict an.
-    Gibt updated dict zurück, oder None bei Fehler.
-    Modifiziert das Original nicht (deepcopy).
-    """
+    """Wendet das geparste Update auf das Profil-Dict an."""
     updated = copy.deepcopy(profile)
 
     if action in ("save", "update"):
@@ -248,7 +244,6 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             context = data.get("context", "").strip()
             if "media" not in updated or not isinstance(updated["media"], list):
                 updated["media"] = []
-            # Update wenn gleicher Titel + Typ
             for m in updated["media"]:
                 if isinstance(m, dict) and m.get("title", "").lower() == title.lower():
                     if media_type:
@@ -367,15 +362,8 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
     return None
 
 
-# ---------------------------------------------------------------------------
-# Stufe 3: Reviewer (Haiku)
-# ---------------------------------------------------------------------------
-
 async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
-    """
-    Haiku reviewt das neue YAML.
-    Fail-safe: Bei Fehler → False (kein Schreiben).
-    """
+    """Haiku reviewt das neue YAML."""
     try:
         llm = get_fast_llm()
         from langchain_core.messages import HumanMessage as HM
@@ -397,18 +385,18 @@ async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Bestätigungstext generieren
-# ---------------------------------------------------------------------------
-
 def _build_confirmation(action: str, category: str, data: dict) -> str:
     """Baut eine lesbare Bestätigungsnachricht für den User."""
     icons = {
         "people": "👤", "project": "🚀", "place": "📍",
         "media": "🎵", "preference": "⚙️", "job": "💼",
-        "location": "🏠", "custom": "📝",
+        "location": "🏠", "custom": "📝", "bot_instruction": "🤖",
     }
     icon = icons.get(category, "✅")
+
+    if category == "bot_instruction":
+        text = data.get("text", "")
+        return f"🤖 Bot-Instruktion gespeichert:\n_{text}_\n\nAb sofort aktiv – kein Neustart nötig."
 
     if action == "delete":
         name = data.get("name") or data.get("title") or data.get("key", "Eintrag")
@@ -463,15 +451,10 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
     return "✅ Gespeichert."
 
 
-# ---------------------------------------------------------------------------
-# Haupt-Agent
-# ---------------------------------------------------------------------------
-
 async def memory_agent(state: AgentState) -> AgentState:
     """
-    Vollständige Memory-Pipeline:
-    Parser → Python-Update → Reviewer → Schreiben → Bestätigung an User.
-    Fail-safe: Bei jedem Fehler → Fallback zu Note + Fehlermeldung.
+    Vollständige Memory-Pipeline.
+    Phase 63: bot_instruction → claude.md statt profile.yaml.
     """
     try:
         import yaml
@@ -486,7 +469,22 @@ async def memory_agent(state: AgentState) -> AgentState:
         if action == "error" or not data:
             return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
 
-        # Stufe 2: Python-seitiger Update
+        # ── Phase 63: bot_instruction → claude.md ────────────────────────
+        if action in ("save", "update") and category == "bot_instruction":
+            text = data.get("text", "").strip()
+            if not text:
+                return {"messages": [AIMessage(content="Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")]}
+            from agent.claude_md import append_to_claude_md
+            success = await append_to_claude_md(text)
+            if success:
+                logger.info(f"MemoryAgent: bot_instruction in claude.md gespeichert: {text[:80]}")
+                confirmation = _build_confirmation(action, category, data)
+                return {"messages": [AIMessage(content=confirmation)]}
+            else:
+                return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion in claude.md.")]}
+        # ─────────────────────────────────────────────────────────────────
+
+        # Stufe 2: Python-seitiger Update (profile.yaml)
         current_profile = load_profile()
         updated_profile = _apply_memory_update(current_profile, action, category, data)
 
@@ -514,7 +512,7 @@ async def memory_agent(state: AgentState) -> AgentState:
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert – YAML-Review fehlgeschlagen)_")]}
 
-        # Python-seitige finale YAML-Validierung
+        # Finale YAML-Validierung
         try:
             yaml.safe_load(new_yaml)
         except yaml.YAMLError as e:

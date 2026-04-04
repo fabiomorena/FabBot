@@ -3660,3 +3660,324 @@ class TestClaudeMdInChatPrompt:
 
         # Kerninhalt des Basis-Prompts ist vorhanden
         assert "persoenlicher Assistent" in prompt
+
+# ---------------------------------------------------------------------------
+# Phase 63 Tests – append_to_claude_md + bot_instruction in memory_agent
+# ---------------------------------------------------------------------------
+
+import pytest
+from pathlib import Path
+from unittest.mock import AsyncMock, patch, MagicMock
+
+
+class TestAppendToClaudeMd:
+    """Tests fuer append_to_claude_md() in agent/claude_md.py."""
+
+    def setup_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    @pytest.mark.asyncio
+    async def test_append_creates_auto_section(self, tmp_path: Path) -> None:
+        """Neuer Eintrag erstellt ## Automatisch gelernt wenn nicht vorhanden."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot\n\n## Kommunikation\n- Direkt", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            result = await append_to_claude_md("Immer kurz antworten")
+        assert result is True
+        content = md.read_text(encoding="utf-8")
+        assert "## Automatisch gelernt" in content
+        assert "Immer kurz antworten" in content
+
+    @pytest.mark.asyncio
+    async def test_append_to_existing_section(self, tmp_path: Path) -> None:
+        """Zweiter Eintrag wird unter bestehender Sektion angehängt."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot\n\n## Automatisch gelernt\n- Erste Regel", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await append_to_claude_md("Zweite Regel")
+        content = md.read_text(encoding="utf-8")
+        assert content.count("## Automatisch gelernt") == 1
+        assert "Erste Regel" in content
+        assert "Zweite Regel" in content
+
+    @pytest.mark.asyncio
+    async def test_append_adds_timestamp(self, tmp_path: Path) -> None:
+        """Jeder Eintrag enthält einen Timestamp."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await append_to_claude_md("Test Regel")
+        content = md.read_text(encoding="utf-8")
+        assert "gelernt" in content
+        assert "2026" in content or "202" in content  # Jahresangabe vorhanden
+
+    @pytest.mark.asyncio
+    async def test_append_reloads_cache(self, tmp_path: Path) -> None:
+        """Nach append wird Cache geleert – neue Regel sofort sichtbar."""
+        from agent.claude_md import append_to_claude_md, load_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot\n\n## Kommunikation\n- Alt", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            old = load_claude_md()
+            assert "Neue Regel" not in old
+            await append_to_claude_md("Neue Regel")
+            new = load_claude_md()
+        assert "Neue Regel" in new
+
+    @pytest.mark.asyncio
+    async def test_append_empty_text_returns_false(self, tmp_path: Path) -> None:
+        """Leerer Text → False, nichts geschrieben."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            result = await append_to_claude_md("")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_append_whitespace_only_returns_false(self, tmp_path: Path) -> None:
+        """Nur-Whitespace Text → False."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            result = await append_to_claude_md("   \n  ")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_append_missing_file_returns_false(self, tmp_path: Path) -> None:
+        """Fehlende claude.md → False, kein Crash."""
+        from agent.claude_md import append_to_claude_md
+        nonexistent = tmp_path / "nonexistent.md"
+        with patch("agent.claude_md._CLAUDE_MD_PATH", nonexistent):
+            result = await append_to_claude_md("Test")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_original_manual_content_preserved(self, tmp_path: Path) -> None:
+        """Manueller Inhalt bleibt nach append erhalten."""
+        from agent.claude_md import append_to_claude_md
+        original = "# FabBot\n\n## Kommunikation\n- Immer Deutsch\n\n## Charakter\n- Vertraut"
+        md = tmp_path / "claude.md"
+        md.write_text(original, encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await append_to_claude_md("Neue Instruktion")
+        content = md.read_text(encoding="utf-8")
+        assert "Immer Deutsch" in content
+        assert "Vertraut" in content
+        assert "Neue Instruktion" in content
+
+    @pytest.mark.asyncio
+    async def test_multiple_appends(self, tmp_path: Path) -> None:
+        """Mehrere appends landen alle in der Datei."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await append_to_claude_md("Regel A")
+            await append_to_claude_md("Regel B")
+            await append_to_claude_md("Regel C")
+        content = md.read_text(encoding="utf-8")
+        assert "Regel A" in content
+        assert "Regel B" in content
+        assert "Regel C" in content
+        assert content.count("## Automatisch gelernt") == 1
+
+
+class TestBotInstructionInMemoryAgent:
+    """Tests fuer die bot_instruction Kategorie im memory_agent."""
+
+    @pytest.mark.asyncio
+    async def test_bot_instruction_calls_append_to_claude_md(self) -> None:
+        """bot_instruction ruft append_to_claude_md auf statt write_profile."""
+        from agent.agents.memory_agent import memory_agent
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        state = {
+            "messages": [HumanMessage(content="merke dir grundsaetzlich dass du immer kurz antwortest")],
+            "telegram_chat_id": 12345,
+        }
+
+        mock_parsed = {
+            "action": "save",
+            "category": "bot_instruction",
+            "data": {"text": "Immer kurz antworten"},
+        }
+
+        with patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True) as mock_append:
+            result = await memory_agent(state)
+
+        mock_append.assert_called_once_with("Immer kurz antworten")
+        msgs = result["messages"]
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], AIMessage)
+
+    @pytest.mark.asyncio
+    async def test_bot_instruction_not_written_to_profile(self) -> None:
+        """bot_instruction schreibt NICHT in personal_profile.yaml."""
+        from agent.agents.memory_agent import memory_agent
+        from langchain_core.messages import HumanMessage
+
+        state = {
+            "messages": [HumanMessage(content="du sollst grundsaetzlich immer deploy.sh liefern")],
+            "telegram_chat_id": 12345,
+        }
+
+        mock_parsed = {
+            "action": "save",
+            "category": "bot_instruction",
+            "data": {"text": "Immer deploy.sh mitliefern"},
+        }
+
+        with patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True), \
+             patch("agent.profile.write_profile", new_callable=AsyncMock) as mock_write:
+            await memory_agent(state)
+
+        mock_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bot_instruction_confirmation_message(self) -> None:
+        """bot_instruction gibt lesbares Bestätigungs-Feedback."""
+        from agent.agents.memory_agent import memory_agent
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        state = {
+            "messages": [HumanMessage(content="von jetzt an kuerzer antworten")],
+            "telegram_chat_id": 12345,
+        }
+
+        mock_parsed = {
+            "action": "save",
+            "category": "bot_instruction",
+            "data": {"text": "Kürzer antworten"},
+        }
+
+        with patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True):
+            result = await memory_agent(state)
+
+        content = result["messages"][0].content
+        assert "🤖" in content
+        assert "Kürzer antworten" in content
+        assert "aktiv" in content.lower()
+
+    @pytest.mark.asyncio
+    async def test_bot_instruction_empty_text_returns_hint(self) -> None:
+        """bot_instruction mit leerem text gibt hilfreiche Meldung zurück."""
+        from agent.agents.memory_agent import memory_agent
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        state = {
+            "messages": [HumanMessage(content="merke dir grundsaetzlich")],
+            "telegram_chat_id": 12345,
+        }
+
+        mock_parsed = {
+            "action": "save",
+            "category": "bot_instruction",
+            "data": {"text": ""},
+        }
+
+        with patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock) as mock_append:
+            result = await memory_agent(state)
+
+        mock_append.assert_not_called()
+        content = result["messages"][0].content
+        assert len(content) > 0
+
+    @pytest.mark.asyncio
+    async def test_bot_instruction_append_failure_returns_error(self) -> None:
+        """Wenn append_to_claude_md fehlschlägt, bekommt User Fehlermeldung."""
+        from agent.agents.memory_agent import memory_agent
+        from langchain_core.messages import HumanMessage
+
+        state = {
+            "messages": [HumanMessage(content="merke dir grundsaetzlich X")],
+            "telegram_chat_id": 12345,
+        }
+
+        mock_parsed = {
+            "action": "save",
+            "category": "bot_instruction",
+            "data": {"text": "Regel X"},
+        }
+
+        with patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=False):
+            result = await memory_agent(state)
+
+        content = result["messages"][0].content
+        assert "fehler" in content.lower() or "Fehler" in content
+
+
+class TestBuildConfirmationBotInstruction:
+    """Tests fuer _build_confirmation() mit bot_instruction."""
+
+    def test_bot_instruction_icon(self) -> None:
+        """Bot-Instruktion hat 🤖 Icon."""
+        from agent.agents.memory_agent import _build_confirmation
+        result = _build_confirmation("save", "bot_instruction", {"text": "Immer kurz"})
+        assert "🤖" in result
+
+    def test_bot_instruction_text_in_confirmation(self) -> None:
+        """Bot-Instruktionstext erscheint in der Bestätigung."""
+        from agent.agents.memory_agent import _build_confirmation
+        result = _build_confirmation("save", "bot_instruction", {"text": "Immer deploy.sh mitliefern"})
+        assert "deploy.sh" in result
+
+    def test_bot_instruction_sofort_aktiv(self) -> None:
+        """Bestätigung enthält Hinweis dass Instruktion sofort aktiv ist."""
+        from agent.agents.memory_agent import _build_confirmation
+        result = _build_confirmation("save", "bot_instruction", {"text": "Test"})
+        assert "aktiv" in result.lower()
+        assert "Neustart" in result
+
+
+class TestChatAgentDynamicPrompt:
+    """Tests fuer den dynamischen Prompt-Build in chat_agent (Phase 63)."""
+
+    def setup_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def test_new_instruction_reflected_immediately(self, tmp_path: Path) -> None:
+        """Neue claude.md Instruktion erscheint ohne Bot-Neustart im Prompt."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("agent.claude_md.load_claude_md", return_value="Alte Regel"), \
+             patch("agent.profile.get_profile_context_full", return_value=""):
+            prompt_before = _build_chat_prompt()
+
+        with patch("agent.claude_md.load_claude_md", return_value="Alte Regel\n- Neue Regel"), \
+             patch("agent.profile.get_profile_context_full", return_value=""):
+            prompt_after = _build_chat_prompt()
+
+        assert "Neue Regel" not in prompt_before
+        assert "Neue Regel" in prompt_after
+
+    def test_prompt_build_is_callable_per_request(self) -> None:
+        """_build_chat_prompt() kann mehrfach aufgerufen werden ohne Fehler."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("agent.claude_md.load_claude_md", return_value="Regel A"), \
+             patch("agent.profile.get_profile_context_full", return_value=""):
+            p1 = _build_chat_prompt()
+            p2 = _build_chat_prompt()
+
+        assert p1 == p2
+        assert "Regel A" in p1
