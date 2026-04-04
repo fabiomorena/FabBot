@@ -60,6 +60,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | "Merke dir das" – Bot formuliert aus vorheriger Aussage eine Bot-Instruktion → claude.md |
 | ✅ | Security Hardening – TOCTOU-Fix in claude_md, Newline-Sanitizing, Haiku für Formulierung, Size-Warning |
 | ✅ | claude.md Hardening – reload_claude_md async+Lock, FIFO-Trim max. 50 Einträge, Kommentar-Fix |
+| ✅ | claude.md Hardening II – Lock-Granularität, robuster Heading-Regex H1-H6, Entry-Detection -, * und + |
 ---
 
 
@@ -191,6 +192,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 64** ✅ "Merke dir das" – kontextbasiertes Lernen von Bot-Instruktionen via Sonnet
 - **Phase 65** ✅ Security & Hardening – TOCTOU, Newline-Sanitizing, get_fast_llm, Rekursions-Schutz, Import-Cleanup
 - **Phase 66** ✅ claude.md Hardening – reload async, FIFO-Trim, thread-safety
+- **Phase 67** ✅ claude.md Hardening II – Lock-Granularität, Regex, Entry-Detection, GIL-Kommentar
 ---
 
 ## License
