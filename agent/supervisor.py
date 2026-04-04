@@ -28,10 +28,15 @@ SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, 
 Verfuegbare Agenten:
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
 - terminal_agent: Shell-Befehle, aktuelles Datum/Uhrzeit abrufen, Speicher, CPU, Prozesse – NUR technische Systemabfragen
-- web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten, Wetter, ALLE Fragen die aktuelle oder externe Informationen erfordern – NICHT fuer Fragen zu einem Foto
-  IMMER web_agent bei: Personen in aktuellen Aemtern (Kanzler, Minister, CEO, Praesident etc.),
-  aktuelle politische Ereignisse, Gesetze, Wahlergebnisse, Preise, Kurse, Sport-Ergebnisse,
-  alles was sich seit 2024 geaendert haben koennte – auch wenn die Frage wie eine Meinungsfrage klingt
+- web_agent: STANDARD-AGENT fuer alle Fragen ueber die Welt, Personen, Ereignisse, Fakten.
+  Nutze web_agent IMMER bei:
+  - Fragen ueber reale Personen (lebt X noch? was macht X? wer ist X?)
+  - Aktuelle Aemter, Positionen, Rollen (Kanzler, CEO, Praesident, Minister...)
+  - Aktuelle Ereignisse, Nachrichten, Politik, Sport, Wirtschaft
+  - Preise, Kurse, Wetter
+  - Fragen die mit "was ist", "wer ist", "wie ist", "was denkst du ueber [Person/Ereignis]" beginnen
+  - Im Zweifel ob chat oder web: IMMER web_agent waehlen
+  - NICHT fuer Fragen zu einem Foto oder Bild
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
@@ -42,17 +47,19 @@ Verfuegbare Agenten:
   JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
   NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
-- vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
-- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Berichte,
-  persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen),
-  ALLE Folgefragen zu einem Foto oder Bild,
-  alles was kein konkreter Systembefehl oder externe Suche ist
+- chat_agent: NUR fuer rein konversationelle Nachrichten OHNE Faktenbezug zur Welt:
+  - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
+  - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete)
+  - Smalltalk ohne Faktenbezug ("danke", "ok", "cool")
+  - Hoeflichkeiten und kurze Reaktionen
+  - ALLE Folgefragen zu einem Foto oder Bild
+  - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
 - Sonst: waehle den passenden Agenten
+- Im Zweifel zwischen web_agent und chat_agent: IMMER web_agent
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
-- Im Zweifel zwischen web_agent und chat_agent: chat_agent waehlen
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
 
 WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes):
