@@ -4329,7 +4329,7 @@ class TestTrimAutoSection:
         content = "# FabBot\n\n## Automatisch gelernt\n" + "\n".join(entries) + "\n"
         result = _trim_auto_section(content, max_entries=50)
         for i in range(10):
-            assert f"Eintrag {i}" not in result, f"Eintrag {i} haette entfernt werden sollen"
+            assert f"- Eintrag {i}\n" not in result and f"- Eintrag {i} " not in result,                 f"Eintrag {i} haette entfernt werden sollen"
         for i in range(10, 60):
             assert f"Eintrag {i}" in result, f"Eintrag {i} haette erhalten bleiben sollen"
 
@@ -4555,7 +4555,7 @@ class TestOpenAITts:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_resp)
-        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
              patch("httpx.AsyncClient", return_value=mock_client):
             result = await _synthesize_openai("Hallo Welt")
         assert result == b"fake_mp3_audio"
@@ -4564,7 +4564,7 @@ class TestOpenAITts:
     async def test_returns_none_without_api_key(self) -> None:
         """Ohne API-Key gibt _synthesize_openai() None zurueck."""
         from bot.tts import _synthesize_openai
-        with patch("bot.tts.OPENAI_API_KEY", ""):
+        with patch("bot.tts._get_openai_api_key", return_value=""):
             result = await _synthesize_openai("Hallo")
         assert result is None
 
@@ -4578,7 +4578,7 @@ class TestOpenAITts:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_resp)
-        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
              patch("httpx.AsyncClient", return_value=mock_client):
             result = await _synthesize_openai("Hallo")
         assert result is None
@@ -4587,7 +4587,7 @@ class TestOpenAITts:
     async def test_returns_none_on_exception(self) -> None:
         """Bei Exception gibt _synthesize_openai() None zurueck (fail-safe)."""
         from bot.tts import _synthesize_openai
-        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
              patch("httpx.AsyncClient", side_effect=Exception("Netzwerkfehler")):
             result = await _synthesize_openai("Hallo")
         assert result is None
@@ -4607,7 +4607,7 @@ class TestOpenAITts:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=fake_post)
-        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
              patch("bot.tts.OPENAI_TTS_VOICE", "shimmer"), \
              patch("bot.tts.OPENAI_TTS_MODEL", "tts-1-hd"), \
              patch("httpx.AsyncClient", return_value=mock_client):
@@ -4631,7 +4631,7 @@ class TestOpenAITts:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=fake_post)
-        with patch("bot.tts.OPENAI_API_KEY", "sk-testkey-123"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-testkey-123"), \
              patch("httpx.AsyncClient", return_value=mock_client):
             await _synthesize_openai("Test")
         assert captured_headers.get("Authorization") == "Bearer sk-testkey-123"
@@ -4663,7 +4663,7 @@ class TestOpenAITtsVoiceConfig:
     async def test_synthesize_uses_openai_when_key_set(self) -> None:
         """synthesize() ruft _synthesize_openai() auf wenn API-Key gesetzt."""
         from bot.tts import synthesize
-        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
              patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=b"audio") as mock_openai, \
              patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock) as mock_edge:
             result = await synthesize("Test")
@@ -4675,7 +4675,7 @@ class TestOpenAITtsVoiceConfig:
     async def test_synthesize_falls_back_to_edge_tts(self) -> None:
         """synthesize() faellt auf edge-tts zurueck wenn OpenAI None liefert."""
         from bot.tts import synthesize
-        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+        with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
              patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=None), \
              patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock, return_value=b"fallback") as mock_edge:
             result = await synthesize("Test")
@@ -4686,7 +4686,7 @@ class TestOpenAITtsVoiceConfig:
     async def test_synthesize_uses_edge_tts_without_key(self) -> None:
         """synthesize() nutzt direkt edge-tts wenn kein API-Key."""
         from bot.tts import synthesize
-        with patch("bot.tts.OPENAI_API_KEY", ""), \
+        with patch("bot.tts._get_openai_api_key", return_value=""), \
              patch("bot.tts._synthesize_openai", new_callable=AsyncMock) as mock_openai, \
              patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock, return_value=b"edge") as mock_edge:
             result = await synthesize("Test")
