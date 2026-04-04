@@ -1,15 +1,15 @@
 """
-claude.md Loader fuer FabBot – Phase 62/63/65.
+claude.md Loader fuer FabBot – Phase 62/63/65/66.
 
-Phase 65 Fixes:
-- TOCTOU: _CLAUDE_MD_PATH.exists() jetzt innerhalb des Locks
-- reload_claude_md(): Cache-Invalidierung innerhalb des Locks
-- Newline-Sanitizing: text wird vor dem Schreiben bereinigt (Defense-in-Depth)
-- Size-Warning: Warnung wenn claude.md > 5000 Zeichen
+Phase 66 Fixes:
+- reload_claude_md() jetzt async + Lock (thread-safe)
+- FIFO-Trim: ## Automatisch gelernt auf max. 50 Eintraege begrenzt
+- Kommentar-Fix: "atomic read" war irreführend
 """
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +21,7 @@ _write_lock = asyncio.Lock()
 
 _AUTO_SECTION = "## Automatisch gelernt"
 _SIZE_WARNING_CHARS = 5000
+_MAX_AUTO_ENTRIES = 50
 
 
 def load_claude_md() -> str:
@@ -44,27 +45,73 @@ def load_claude_md() -> str:
         return _claude_md_cache
 
 
-def reload_claude_md() -> str:
-    """Erzwingt Neu-Laden von claude.md. Cache wird geleert."""
+async def reload_claude_md() -> str:
+    """
+    Erzwingt Neu-Laden von claude.md. Thread-safe via _write_lock.
+
+    Phase 66 Fix: jetzt async mit Lock – verhindert Race Condition
+    bei gleichzeitigen externen Aufrufen.
+    """
     global _claude_md_cache
-    _claude_md_cache = None
+    async with _write_lock:
+        _claude_md_cache = None
     return load_claude_md()
+
+
+def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> str:
+    """
+    Trimmt ## Automatisch gelernt auf max. max_entries Eintraege (FIFO).
+    Aelteste Eintraege werden entfernt, neueste bleiben erhalten.
+    Andere Sektionen bleiben unveraendert.
+    """
+    if _AUTO_SECTION not in content:
+        return content
+
+    # Content an der Auto-Sektion aufteilen
+    before_section, _, section_and_rest = content.partition(_AUTO_SECTION)
+
+    # Naechste Sektion oder Ende der Datei finden
+    next_match = re.search(r'\n## ', section_and_rest)
+    if next_match:
+        section_body = section_and_rest[:next_match.start()]
+        after_section = section_and_rest[next_match.start():]
+    else:
+        section_body = section_and_rest
+        after_section = ""
+
+    # Eintraege zaehlen (Zeilen die mit "- " beginnen)
+    lines = section_body.split('\n')
+    entry_indices = [i for i, l in enumerate(lines) if l.strip().startswith('- ')]
+
+    if len(entry_indices) <= max_entries:
+        return content  # Kein Trim noetig
+
+    # FIFO: aelteste Eintraege (erste) entfernen
+    to_remove_count = len(entry_indices) - max_entries
+    indices_to_remove = set(entry_indices[:to_remove_count])
+    trimmed_lines = [l for i, l in enumerate(lines) if i not in indices_to_remove]
+
+    logger.info(
+        f"claude.md FIFO-Trim: {to_remove_count} alte Eintraege entfernt "
+        f"(max. {max_entries} in {_AUTO_SECTION})"
+    )
+    return before_section + _AUTO_SECTION + '\n'.join(trimmed_lines) + after_section
 
 
 async def append_to_claude_md(text: str) -> bool:
     """
     Haengt eine neue Bot-Instruktion an claude.md an.
 
-    Phase 65 Fixes:
-    - Newline-Sanitizing: Zeilenumbrueche in text werden entfernt (Injection-Schutz)
-    - TOCTOU: exists()-Check und write() innerhalb desselben Locks
-    - Cache-Invalidierung innerhalb des Locks (vor dem Release)
-    - Size-Warning wenn claude.md > 5000 Zeichen
+    - Newline-Sanitizing vor dem Schreiben
+    - TOCTOU: exists()-Check innerhalb des Locks
+    - FIFO-Trim: max. 50 Eintraege in ## Automatisch gelernt
+    - Cache-Invalidierung innerhalb des Locks
+    - Size-Warning bei > 5000 Zeichen
     """
     if not text or not text.strip():
         return False
 
-    # Sanitize: Newlines entfernen – verhindert Struktur-Injection in claude.md
+    # Sanitize: Newlines entfernen (Injection-Schutz)
     clean_text = text.strip().replace("\n", " ").replace("\r", "").strip()
     if not clean_text:
         return False
@@ -86,19 +133,21 @@ async def append_to_claude_md(text: str) -> bool:
             else:
                 content = content.rstrip() + f"\n\n{_AUTO_SECTION}\n" + new_line + "\n"
 
+            # FIFO-Trim: max. 50 Eintraege in ## Automatisch gelernt
+            content = _trim_auto_section(content)
+
             _CLAUDE_MD_PATH.write_text(content, encoding="utf-8")
 
-            # Cache-Invalidierung innerhalb des Locks (vor dem Release)
+            # Cache-Invalidierung innerhalb des Locks
             _claude_md_cache = None
 
-            # Size-Warning
             if len(content) > _SIZE_WARNING_CHARS:
                 logger.warning(
                     f"claude.md ist sehr lang ({len(content)} Zeichen) – "
                     f"manuelle Bereinigung empfohlen (> {_SIZE_WARNING_CHARS} Zeichen)"
                 )
 
-        # Frischen Inhalt laden (ausserhalb des Locks – atomic read nach Write)
+        # Cache-Miss erzwingen – naechster Aufruf liest frischen Inhalt aus der Datei
         load_claude_md()
         logger.info(f"claude.md: Bot-Instruktion gespeichert: {clean_text[:80]}")
         return True

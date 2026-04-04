@@ -4382,3 +4382,156 @@ class TestMerkeDirDasTriggerSingleSource:
         from agent.agents.memory_agent import _is_merke_dir_das, MERKE_DIR_DAS_TRIGGERS
         for trigger in MERKE_DIR_DAS_TRIGGERS:
             assert _is_merke_dir_das(trigger), f"Trigger nicht erkannt: '{trigger}'"
+
+# ---------------------------------------------------------------------------
+# Phase 66 Tests – reload async, FIFO-Trim, Kommentar-Fix
+# ---------------------------------------------------------------------------
+
+import pytest
+import inspect
+from pathlib import Path
+from unittest.mock import patch
+
+
+class TestReloadClaudeMdAsync:
+    """Tests fuer async reload_claude_md()."""
+
+    def setup_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def test_reload_is_async(self) -> None:
+        """reload_claude_md() muss eine async-Funktion sein."""
+        from agent.claude_md import reload_claude_md
+        assert inspect.iscoroutinefunction(reload_claude_md), \
+            "reload_claude_md() ist nicht async – thread-safety nicht gegeben"
+
+    @pytest.mark.asyncio
+    async def test_reload_clears_cache(self, tmp_path: Path) -> None:
+        """reload_claude_md() leert den Cache und laedt neu."""
+        from agent.claude_md import load_claude_md, reload_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# Version 1", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            first = load_claude_md()
+            md.write_text("# Version 2", encoding="utf-8")
+            second = await reload_claude_md()
+        assert first == "# Version 1"
+        assert second == "# Version 2"
+
+    @pytest.mark.asyncio
+    async def test_reload_returns_fresh_content(self, tmp_path: Path) -> None:
+        """Nach reload ist der Inhalt aktuell."""
+        from agent.claude_md import load_claude_md, reload_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("Alt", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            load_claude_md()  # cache befüllen
+            md.write_text("Neu", encoding="utf-8")
+            result = await reload_claude_md()
+        assert result == "Neu"
+
+
+class TestTrimAutoSection:
+    """Tests fuer _trim_auto_section()."""
+
+    def test_no_trim_needed_below_max(self) -> None:
+        """Weniger als 50 Eintraege → kein Trim."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"- Eintrag {i}" for i in range(10))
+        content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
+        result = _trim_auto_section(content, max_entries=50)
+        assert result == content
+
+    def test_exactly_max_no_trim(self) -> None:
+        """Genau 50 Eintraege → kein Trim."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"- Eintrag {i}" for i in range(50))
+        content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
+        result = _trim_auto_section(content, max_entries=50)
+        assert result == content
+
+    def test_one_over_max_removes_oldest(self) -> None:
+        """51 Eintraege → aeltester (erster) wird entfernt."""
+        from agent.claude_md import _trim_auto_section
+        entries = [f"- Eintrag {i}" for i in range(51)]
+        content = "# FabBot\n\n## Automatisch gelernt\n" + "\n".join(entries) + "\n"
+        result = _trim_auto_section(content, max_entries=50)
+        assert "Eintrag 0" not in result
+        assert "Eintrag 50" in result
+        assert "Eintrag 1" in result
+
+    def test_many_over_max_removes_oldest_batch(self) -> None:
+        """60 Eintraege → die 10 aeltesten werden entfernt."""
+        from agent.claude_md import _trim_auto_section
+        entries = [f"- Eintrag {i}" for i in range(60)]
+        content = "# FabBot\n\n## Automatisch gelernt\n" + "\n".join(entries) + "\n"
+        result = _trim_auto_section(content, max_entries=50)
+        for i in range(10):
+            assert f"Eintrag {i}" not in result, f"Eintrag {i} haette entfernt werden sollen"
+        for i in range(10, 60):
+            assert f"Eintrag {i}" in result, f"Eintrag {i} haette erhalten bleiben sollen"
+
+    def test_other_sections_preserved(self) -> None:
+        """Andere Sektionen bleiben nach dem Trim unveraendert."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"- Eintrag {i}" for i in range(55))
+        content = (
+            "# FabBot\n\n"
+            "## Kommunikation\n- Immer Deutsch\n\n"
+            "## Automatisch gelernt\n" + entries + "\n\n"
+            "## Persönliches\n- Berlin\n"
+        )
+        result = _trim_auto_section(content, max_entries=50)
+        assert "## Kommunikation" in result
+        assert "Immer Deutsch" in result
+        assert "## Persönliches" in result
+        assert "Berlin" in result
+
+    def test_no_auto_section_unchanged(self) -> None:
+        """Kein ## Automatisch gelernt → Content unveraendert."""
+        from agent.claude_md import _trim_auto_section
+        content = "# FabBot\n\n## Kommunikation\n- Direkt\n"
+        result = _trim_auto_section(content, max_entries=50)
+        assert result == content
+
+    def test_trim_applied_during_append(self, tmp_path: Path) -> None:
+        """FIFO-Trim wird automatisch beim Schreiben angewendet."""
+        import asyncio
+        from agent.claude_md import append_to_claude_md, _MAX_AUTO_ENTRIES
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+        # Datei mit genau MAX Eintraegen befuellen
+        entries = "\n".join(f"- Alter Eintrag {i} _(gelernt 01.01.2026)_" for i in range(_MAX_AUTO_ENTRIES))
+        md = tmp_path / "claude.md"
+        md.write_text(f"# FabBot\n\n## Automatisch gelernt\n{entries}\n", encoding="utf-8")
+
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            asyncio.get_event_loop().run_until_complete(append_to_claude_md("Neuer Eintrag"))
+
+        content = md.read_text(encoding="utf-8")
+        entry_lines = [l for l in content.split('\n') if l.strip().startswith('- ')]
+        assert len(entry_lines) == _MAX_AUTO_ENTRIES, \
+            f"Erwartet {_MAX_AUTO_ENTRIES} Eintraege, gefunden: {len(entry_lines)}"
+        assert "Neuer Eintrag" in content
+        assert "Alter Eintrag 0 _(gelernt 01.01.2026)_" not in content
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+
+class TestNoAtomicCommentInCode:
+    """Prueft dass der irreführende 'atomic read' Kommentar entfernt wurde."""
+
+    def test_misleading_comment_removed(self) -> None:
+        """'atomic read nach Write' Kommentar darf nicht mehr im Code sein."""
+        import agent.claude_md as module_file
+        source = inspect.getsource(module_file)
+        assert "atomic read nach Write" not in source, \
+            "Irreführender Kommentar 'atomic read nach Write' noch im Code"
