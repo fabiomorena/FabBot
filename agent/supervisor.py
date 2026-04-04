@@ -29,6 +29,9 @@ Verfuegbare Agenten:
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
 - terminal_agent: Shell-Befehle, aktuelles Datum/Uhrzeit abrufen, Speicher, CPU, Prozesse – NUR technische Systemabfragen
 - web_agent: Internet suchen, Webseiten abrufen, aktuelle Nachrichten, Wetter, ALLE Fragen die aktuelle oder externe Informationen erfordern – NICHT fuer Fragen zu einem Foto
+  IMMER web_agent bei: Personen in aktuellen Aemtern (Kanzler, Minister, CEO, Praesident etc.),
+  aktuelle politische Ereignisse, Gesetze, Wahlergebnisse, Preise, Kurse, Sport-Ergebnisse,
+  alles was sich seit 2024 geaendert haben koennte – auch wenn die Frage wie eine Meinungsfrage klingt
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
