@@ -58,6 +58,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | claude.md – persistente Bot-Instruktionen, in chat_agent System-Prompt injiziert, überlebt Context Trim |
 | ✅ | Bot-Instruktionen lernbar – "Merke dir grundsätzlich..." schreibt direkt in claude.md, sofort aktiv |
 | ✅ | "Merke dir das" – Bot formuliert aus vorheriger Aussage eine Bot-Instruktion → claude.md |
+| ✅ | Security Hardening – TOCTOU-Fix in claude_md, Newline-Sanitizing, Haiku für Formulierung, Size-Warning |
 ---
 
 
@@ -187,6 +188,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 62** ✅ claude.md – persistente Bot-Instruktionen für Charakter, Verhalten und Arbeitsweise
 - **Phase 63** ✅ Bot-Instruktionen lernbar – memory_agent erkennt bot_instruction, schreibt in claude.md, sofort aktiv ohne Neustart
 - **Phase 64** ✅ "Merke dir das" – kontextbasiertes Lernen von Bot-Instruktionen via Sonnet
+- **Phase 65** ✅ Security & Hardening – TOCTOU, Newline-Sanitizing, get_fast_llm, Rekursions-Schutz, Import-Cleanup
 ---
 
 ## License
