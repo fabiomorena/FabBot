@@ -57,6 +57,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | ElevenLabs TTS – Stimme Ami (eleven_multilingual_v2), edge-tts als Fallback, Voice ID via .env |
 | ✅ | claude.md – persistente Bot-Instruktionen, in chat_agent System-Prompt injiziert, überlebt Context Trim |
 | ✅ | Bot-Instruktionen lernbar – "Merke dir grundsätzlich..." schreibt direkt in claude.md, sofort aktiv |
+| ✅ | "Merke dir das" – Bot formuliert aus vorheriger Aussage eine Bot-Instruktion → claude.md |
 ---
 
 
@@ -185,6 +186,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 61** ✅ TTS Logger – Truncation-Logging + ElevenLabs voice_settings via .env
 - **Phase 62** ✅ claude.md – persistente Bot-Instruktionen für Charakter, Verhalten und Arbeitsweise
 - **Phase 63** ✅ Bot-Instruktionen lernbar – memory_agent erkennt bot_instruction, schreibt in claude.md, sofort aktiv ohne Neustart
+- **Phase 64** ✅ "Merke dir das" – kontextbasiertes Lernen von Bot-Instruktionen via Sonnet
 ---
 
 ## License
