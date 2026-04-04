@@ -1,10 +1,11 @@
 """
-claude.md Loader fuer FabBot – Phase 62/63/65/66.
+claude.md Loader fuer FabBot – Phase 62/63/65/66/67.
 
-Phase 66 Fixes:
-- reload_claude_md() jetzt async + Lock (thread-safe)
-- FIFO-Trim: ## Automatisch gelernt auf max. 50 Eintraege begrenzt
-- Kommentar-Fix: "atomic read" war irreführend
+Phase 67 Fixes:
+- reload_claude_md(): load_claude_md() jetzt innerhalb des Locks
+- _trim_auto_section(): robusterer Regex fuer alle Heading-Level
+- _trim_auto_section(): Entry-Detection erkennt jetzt auch * und +
+- load_claude_md(): Kommentar erklaert warum kein Lock noetig ist
 """
 
 import asyncio
@@ -25,7 +26,12 @@ _MAX_AUTO_ENTRIES = 50
 
 
 def load_claude_md() -> str:
-    """Laedt claude.md. Gecacht nach erstem Aufruf."""
+    """
+    Laedt claude.md. Gecacht nach erstem Aufruf.
+
+    Phase 67: Kein Lock noetig – asyncio ist single-threaded,
+    einfache Zuweisungen zu Modul-Globals sind unter CPythons GIL atomar.
+    """
     global _claude_md_cache
     if _claude_md_cache is not None:
         return _claude_md_cache
@@ -35,6 +41,7 @@ def load_claude_md() -> str:
         return _claude_md_cache
     try:
         content = _CLAUDE_MD_PATH.read_text(encoding="utf-8").strip()
+        # GIL macht diese Zuweisung atomar; asyncio single-threaded = kein Race
         _claude_md_cache = content
         if content:
             logger.info(f"claude.md geladen: {len(content)} Zeichen aus {_CLAUDE_MD_PATH}")
@@ -49,13 +56,14 @@ async def reload_claude_md() -> str:
     """
     Erzwingt Neu-Laden von claude.md. Thread-safe via _write_lock.
 
-    Phase 66 Fix: jetzt async mit Lock – verhindert Race Condition
-    bei gleichzeitigen externen Aufrufen.
+    Phase 66: async + Lock.
+    Phase 67 Fix: load_claude_md() jetzt innerhalb des Locks –
+    verhindert Race zwischen Lock-Release und Read.
     """
     global _claude_md_cache
     async with _write_lock:
         _claude_md_cache = None
-    return load_claude_md()
+        return load_claude_md()  # Read direkt im Lock – konsistente Lock-Semantik
 
 
 def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> str:
@@ -63,6 +71,10 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
     Trimmt ## Automatisch gelernt auf max. max_entries Eintraege (FIFO).
     Aelteste Eintraege werden entfernt, neueste bleiben erhalten.
     Andere Sektionen bleiben unveraendert.
+
+    Phase 67 Fixes:
+    - Robusterer Heading-Regex: erkennt alle Heading-Level (# bis ######)
+    - Entry-Detection: erkennt jetzt auch * und + als Listenmarker
     """
     if _AUTO_SECTION not in content:
         return content
@@ -70,8 +82,10 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
     # Content an der Auto-Sektion aufteilen
     before_section, _, section_and_rest = content.partition(_AUTO_SECTION)
 
-    # Naechste Sektion oder Ende der Datei finden
-    next_match = re.search(r'\n## ', section_and_rest)
+    # Phase 67 Fix: robuster Heading-Regex fuer alle Heading-Level
+    # Vorher: r'\n## ' → erkannte nur H2 mit exaktem Leerzeichen
+    # Jetzt:  r'\n#{1,6} ' → erkennt H1-H6 + verhindert false-positives bei ###Sub
+    next_match = re.search(r'\n#{1,6} ', section_and_rest)
     if next_match:
         section_body = section_and_rest[:next_match.start()]
         after_section = section_and_rest[next_match.start():]
@@ -79,9 +93,14 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
         section_body = section_and_rest
         after_section = ""
 
-    # Eintraege zaehlen (Zeilen die mit "- " beginnen)
+    # Phase 67 Fix: Entry-Detection erkennt -, * und + als Listenmarker
+    # append_to_claude_md() schreibt immer "- ", aber manuelle Eintraege
+    # koennten auch "* " oder "+ " nutzen – alle werden jetzt korrekt gezaehlt
     lines = section_body.split('\n')
-    entry_indices = [i for i, l in enumerate(lines) if l.strip().startswith('- ')]
+    entry_indices = [
+        i for i, l in enumerate(lines)
+        if re.match(r'\s*[-*+]\s', l)
+    ]
 
     if len(entry_indices) <= max_entries:
         return content  # Kein Trim noetig
@@ -147,7 +166,7 @@ async def append_to_claude_md(text: str) -> bool:
                     f"manuelle Bereinigung empfohlen (> {_SIZE_WARNING_CHARS} Zeichen)"
                 )
 
-        # Cache-Miss erzwingen – naechster Aufruf liest frischen Inhalt aus der Datei
+        # Cache-Miss erzwingen – naechster Aufruf liest frischen Inhalt
         load_claude_md()
         logger.info(f"claude.md: Bot-Instruktion gespeichert: {clean_text[:80]}")
         return True

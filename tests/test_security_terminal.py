@@ -4535,3 +4535,143 @@ class TestNoAtomicCommentInCode:
         source = inspect.getsource(module_file)
         assert "atomic read nach Write" not in source, \
             "Irreführender Kommentar 'atomic read nach Write' noch im Code"
+
+# ---------------------------------------------------------------------------
+# Phase 67 Tests – Lock-Granularitaet, robuster Regex, Entry-Detection
+# ---------------------------------------------------------------------------
+
+import pytest
+import inspect
+import re
+from pathlib import Path
+from unittest.mock import patch
+
+
+class TestReloadInsideLock:
+    """Tests fuer reload_claude_md() – load_claude_md() innerhalb des Locks."""
+
+    def setup_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    @pytest.mark.asyncio
+    async def test_reload_returns_fresh_content_atomically(self, tmp_path: Path) -> None:
+        """reload gibt frischen Inhalt zurueck, konsistent mit Lock."""
+        from agent.claude_md import reload_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# Inhalt V1", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            md.write_text("# Inhalt V2", encoding="utf-8")
+            result = await reload_claude_md()
+        assert result == "# Inhalt V2"
+
+    @pytest.mark.asyncio
+    async def test_reload_cache_updated_inside_lock(self, tmp_path: Path) -> None:
+        """Nach reload ist _claude_md_cache konsistent mit Dateiinhalt."""
+        import agent.claude_md as cmd
+        from agent.claude_md import reload_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("Aktuell", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await reload_claude_md()
+        assert cmd._claude_md_cache == "Aktuell"
+
+
+class TestRobustHeadingRegex:
+    """Tests fuer den robusten Heading-Regex in _trim_auto_section()."""
+
+    def _make_content(self, entries: int, next_section: str = "## Naechste Sektion") -> str:
+        entry_lines = "\n".join(f"- Eintrag {i}" for i in range(entries))
+        return f"# FabBot\n\n## Automatisch gelernt\n{entry_lines}\n\n{next_section}\n- Inhalt\n"
+
+    def test_h2_next_section_preserved(self) -> None:
+        """H2-Folgesektion bleibt erhalten."""
+        from agent.claude_md import _trim_auto_section
+        content = self._make_content(55, "## Naechste Sektion")
+        result = _trim_auto_section(content, max_entries=50)
+        assert "## Naechste Sektion" in result
+        assert "Inhalt" in result
+
+    def test_h3_next_section_preserved(self) -> None:
+        """H3-Folgesektion wird korrekt erkannt und nicht getrimmt."""
+        from agent.claude_md import _trim_auto_section
+        content = self._make_content(55, "### Sub-Sektion")
+        result = _trim_auto_section(content, max_entries=50)
+        assert "### Sub-Sektion" in result
+        assert "Inhalt" in result
+
+    def test_h1_next_section_preserved(self) -> None:
+        """H1-Folgesektion wird korrekt erkannt."""
+        from agent.claude_md import _trim_auto_section
+        content = self._make_content(55, "# Haupt-Titel")
+        result = _trim_auto_section(content, max_entries=50)
+        assert "# Haupt-Titel" in result
+
+    def test_regex_requires_space_after_hashes(self) -> None:
+        """##OhneSpace wird nicht als Sektion erkannt – Schutz vor false positives."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"- Eintrag {i}" for i in range(55))
+        # ##OhneSpace sollte NICHT als Sektionsgrenze erkannt werden
+        content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n\n##OhneSpace\nText\n"
+        result = _trim_auto_section(content, max_entries=50)
+        # Trim soll trotzdem funktionieren
+        entry_lines = [l for l in result.split('\n') if l.strip().startswith('- ')]
+        assert len(entry_lines) == 50
+
+
+class TestEntryDetectionAllMarkers:
+    """Tests fuer Entry-Detection mit -, * und + Listenmarkern."""
+
+    def test_dash_entries_counted(self) -> None:
+        """- Eintraege werden gezaehlt."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"- Eintrag {i}" for i in range(55))
+        content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
+        result = _trim_auto_section(content, max_entries=50)
+        entry_lines = [l for l in result.split('\n') if re.match(r'\s*[-*+]\s', l)]
+        assert len(entry_lines) == 50
+
+    def test_asterisk_entries_counted(self) -> None:
+        """* Eintraege werden gezaehlt und getrimmt."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"* Eintrag {i}" for i in range(55))
+        content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
+        result = _trim_auto_section(content, max_entries=50)
+        entry_lines = [l for l in result.split('\n') if re.match(r'\s*[-*+]\s', l)]
+        assert len(entry_lines) == 50
+
+    def test_plus_entries_counted(self) -> None:
+        """+ Eintraege werden gezaehlt und getrimmt."""
+        from agent.claude_md import _trim_auto_section
+        entries = "\n".join(f"+ Eintrag {i}" for i in range(55))
+        content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
+        result = _trim_auto_section(content, max_entries=50)
+        entry_lines = [l for l in result.split('\n') if re.match(r'\s*[-*+]\s', l)]
+        assert len(entry_lines) == 50
+
+    def test_mixed_markers_counted_together(self) -> None:
+        """Gemischte Listenmarker werden zusammen gezaehlt."""
+        from agent.claude_md import _trim_auto_section
+        entries = []
+        for i in range(55):
+            marker = ['-', '*', '+'][i % 3]
+            entries.append(f"{marker} Eintrag {i}")
+        content = f"# FabBot\n\n## Automatisch gelernt\n" + "\n".join(entries) + "\n"
+        result = _trim_auto_section(content, max_entries=50)
+        entry_lines = [l for l in result.split('\n') if re.match(r'\s*[-*+]\s', l)]
+        assert len(entry_lines) == 50
+
+
+class TestGilCommentPresent:
+    """Prueft dass der GIL-Erklaerungskommentar in load_claude_md() vorhanden ist."""
+
+    def test_gil_comment_in_load_claude_md(self) -> None:
+        """load_claude_md() muss einen Kommentar zur GIL-Sicherheit enthalten."""
+        import agent.claude_md as module
+        source = inspect.getsource(module.load_claude_md)
+        assert "GIL" in source or "atomar" in source.lower(), \
+            "Kommentar zur GIL-Sicherheit fehlt in load_claude_md()"
