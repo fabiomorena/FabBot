@@ -3981,3 +3981,216 @@ class TestChatAgentDynamicPrompt:
 
         assert p1 == p2
         assert "Regel A" in p1
+
+# ---------------------------------------------------------------------------
+# Phase 64 Tests – "Merke dir das" → Bot-Instruktion aus Kontext
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+from langchain_core.messages import HumanMessage, AIMessage
+
+
+class TestIsMerkeDirDas:
+    """Tests fuer _is_merke_dir_das() Erkennung."""
+
+    def test_merke_dir_das_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merke dir das") is True
+
+    def test_merk_dir_das_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merk dir das") is True
+
+    def test_merke_das_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merke das") is True
+
+    def test_merk_das_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merk das") is True
+
+    def test_bitte_merk_dir_das_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("bitte merk dir das") is True
+
+    def test_with_punctuation_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merke dir das!") is True
+        assert _is_merke_dir_das("merk dir das.") is True
+
+    def test_with_whitespace_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("  merke dir das  ") is True
+
+    def test_merke_dir_dass_not_recognized(self) -> None:
+        """'merke dir dass' mit Inhalt geht an normalen Parser."""
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merke dir dass ich Yoga mag") is False
+
+    def test_normal_sentence_not_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("ich antworte morgens kurz") is False
+
+    def test_empty_not_recognized(self) -> None:
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("") is False
+
+    def test_grundsaetzlich_not_recognized(self) -> None:
+        """Grundsätzlich-Variante geht an normalen Parser."""
+        from agent.agents.memory_agent import _is_merke_dir_das
+        assert _is_merke_dir_das("merke dir grundsätzlich dass du kürzer antwortest") is False
+
+
+class TestGetPrevHumanMessage:
+    """Tests fuer _get_prev_human_message()."""
+
+    def test_returns_second_to_last_human(self) -> None:
+        from agent.agents.memory_agent import _get_prev_human_message
+        messages = [
+            HumanMessage(content="Ich antworte morgens kurz"),
+            AIMessage(content="Verstanden"),
+            HumanMessage(content="merke dir das"),
+        ]
+        result = _get_prev_human_message(messages)
+        assert result == "Ich antworte morgens kurz"
+
+    def test_no_prev_message_returns_empty(self) -> None:
+        from agent.agents.memory_agent import _get_prev_human_message
+        messages = [HumanMessage(content="merke dir das")]
+        result = _get_prev_human_message(messages)
+        assert result == ""
+
+    def test_skips_ai_messages(self) -> None:
+        from agent.agents.memory_agent import _get_prev_human_message
+        messages = [
+            HumanMessage(content="Erster"),
+            AIMessage(content="Bot 1"),
+            AIMessage(content="Bot 2"),
+            HumanMessage(content="merke dir das"),
+        ]
+        result = _get_prev_human_message(messages)
+        assert result == "Erster"
+
+    def test_multiple_exchanges(self) -> None:
+        from agent.agents.memory_agent import _get_prev_human_message
+        messages = [
+            HumanMessage(content="Frage 1"),
+            AIMessage(content="Antwort 1"),
+            HumanMessage(content="Ich mag es morgens kurz"),
+            AIMessage(content="Okay"),
+            HumanMessage(content="merke dir das"),
+        ]
+        result = _get_prev_human_message(messages)
+        assert result == "Ich mag es morgens kurz"
+
+
+class TestMerkeDirDasInMemoryAgent:
+    """Integration-Tests fuer 'merke dir das' im memory_agent."""
+
+    @pytest.mark.asyncio
+    async def test_merke_dir_das_calls_formulate(self) -> None:
+        """'merke dir das' ruft _formulate_bot_instruction_from_context auf."""
+        from agent.agents.memory_agent import memory_agent
+
+        state = {
+            "messages": [
+                HumanMessage(content="Ich antworte morgens meistens kurz weil ich im Flow bin"),
+                AIMessage(content="Verstanden"),
+                HumanMessage(content="merke dir das"),
+            ],
+            "telegram_chat_id": 12345,
+        }
+
+        with patch("agent.agents.memory_agent._formulate_bot_instruction_from_context",
+                   new_callable=AsyncMock,
+                   return_value="Fabio antwortet morgens kurz – im Flow, kurz bleiben") as mock_formulate, \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True):
+            result = await memory_agent(state)
+
+        mock_formulate.assert_called_once_with("Ich antworte morgens meistens kurz weil ich im Flow bin")
+        assert "🤖" in result["messages"][0].content
+
+    @pytest.mark.asyncio
+    async def test_merke_dir_das_writes_to_claude_md(self) -> None:
+        """'merke dir das' schreibt in claude.md, nicht in profile.yaml."""
+        from agent.agents.memory_agent import memory_agent
+
+        state = {
+            "messages": [
+                HumanMessage(content="Ich höre beim Arbeiten gerne Techno"),
+                HumanMessage(content="merk dir das"),
+            ],
+            "telegram_chat_id": 12345,
+        }
+
+        with patch("agent.agents.memory_agent._formulate_bot_instruction_from_context",
+                   new_callable=AsyncMock,
+                   return_value="Fabio hoert beim Arbeiten Techno"), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True) as mock_append, \
+             patch("agent.profile.write_profile", new_callable=AsyncMock) as mock_write:
+            await memory_agent(state)
+
+        mock_append.assert_called_once()
+        mock_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_merke_dir_das_no_context_returns_hint(self) -> None:
+        """'merke dir das' ohne vorherige Aussage gibt hilfreiche Meldung."""
+        from agent.agents.memory_agent import memory_agent
+
+        state = {
+            "messages": [HumanMessage(content="merke dir das")],
+            "telegram_chat_id": 12345,
+        }
+
+        result = await memory_agent(state)
+        content = result["messages"][0].content
+        assert len(content) > 0
+        assert "beziehst" in content.lower() or "kontext" in content.lower() or "aussage" in content.lower()
+
+    @pytest.mark.asyncio
+    async def test_merke_dir_das_confirmation_contains_instruction(self) -> None:
+        """Bestätigung enthält die formulierte Instruktion."""
+        from agent.agents.memory_agent import memory_agent
+
+        state = {
+            "messages": [
+                HumanMessage(content="Ich mag direkte Antworten ohne viel Drumherum"),
+                HumanMessage(content="merke dir das"),
+            ],
+            "telegram_chat_id": 12345,
+        }
+
+        instruction = "Fabio mag direkte Antworten ohne Umschweife"
+
+        with patch("agent.agents.memory_agent._formulate_bot_instruction_from_context",
+                   new_callable=AsyncMock, return_value=instruction), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True):
+            result = await memory_agent(state)
+
+        content = result["messages"][0].content
+        assert instruction in content
+        assert "aktiv" in content.lower()
+
+    @pytest.mark.asyncio
+    async def test_merke_dir_das_bypasses_parser(self) -> None:
+        """'merke dir das' ruft _parse_memory_intent NICHT auf."""
+        from agent.agents.memory_agent import memory_agent
+
+        state = {
+            "messages": [
+                HumanMessage(content="Ich bin morgens konzentrierter"),
+                HumanMessage(content="merk dir das"),
+            ],
+            "telegram_chat_id": 12345,
+        }
+
+        with patch("agent.agents.memory_agent._parse_memory_intent",
+                   new_callable=AsyncMock) as mock_parser, \
+             patch("agent.agents.memory_agent._formulate_bot_instruction_from_context",
+                   new_callable=AsyncMock, return_value="Fabio morgens konzentrierter"), \
+             patch("agent.claude_md.append_to_claude_md", new_callable=AsyncMock, return_value=True):
+            await memory_agent(state)
+
+        mock_parser.assert_not_called()

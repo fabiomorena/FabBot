@@ -1,31 +1,24 @@
 """
-Memory Agent fuer FabBot – Phase 45/46/63.
+Memory Agent fuer FabBot – Phase 45/46/63/64.
 
-Phase 63: neue Kategorie bot_instruction → schreibt in claude.md statt profile.yaml
+Phase 64: "Merke dir das" – vorherige Aussage wird als Bot-Instruktion gespeichert.
 
-Unterstuetzte Kategorien (Hybrid):
-Feste Sektionen: people, projects, places, media, preferences, work, identity
-Freie Sektion:   custom (key/value Paare)
-Bot-Kontext:     bot_instruction → claude.md (nicht profile.yaml)
+Workflow:
+    User: "Ich antworte morgens meistens kurz weil ich im Flow bin"
+    Bot:  [normale Antwort]
+    User: "Merke dir das"
+    Bot:  🤖 Bot-Instruktion gespeichert:
+          _Fabio antwortet morgens kurz – er ist im Flow, kurz bleiben_
+          Ab sofort aktiv – kein Neustart nötig.
 
-Trigger fuer bot_instruction:
-- "merke dir grundsaetzlich dass du..."
-- "von jetzt an sollst du..."
-- "du sollst immer..."
-- "dein Verhalten soll..."
+Trigger-Phrases (exakter Match nach Normalisierung):
+    "merke dir das", "merk dir das", "merke das", "merk das",
+    "das merken", "bitte merk dir das", etc.
 
-Pipeline (fuer alle ausser bot_instruction):
-1. Sonnet versteht Anfrage + Kontext → strukturiertes JSON
-2. Python wendet Update an
-3. Haiku reviewt YAML
-4. Schreiben via write_profile()
-5. Bestaetigung an User
-
-Fuer bot_instruction:
-1. Sonnet erkennt Kategorie
-2. append_to_claude_md() → claude.md
-3. reload_claude_md() → sofort aktiv
-4. Bestaetigung an User
+Pipeline:
+- "merke dir das" → _is_merke_dir_das() → vorherige HumanMessage holen
+  → Sonnet formuliert Bot-Instruktion → append_to_claude_md()
+- Alle anderen Memory-Befehle → normaler Pfad (profile.yaml oder claude.md)
 """
 
 import copy
@@ -39,6 +32,103 @@ from agent.state import AgentState
 from agent.llm import get_llm, get_fast_llm
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Phase 64: "Merke dir das" Trigger
+# ---------------------------------------------------------------------------
+
+_MERKE_DIR_DAS_TRIGGERS = frozenset({
+    "merke dir das",
+    "merk dir das",
+    "merke das",
+    "merk das",
+    "das merken",
+    "bitte merken",
+    "kannst du dir merken",
+    "bitte merk dir das",
+    "merke dir das bitte",
+    "das kannst du dir merken",
+    "das solltest du dir merken",
+    "merk dir das bitte",
+})
+
+_FORMULATE_PROMPT = """Du bist ein Assistent der Bot-Instruktionen formuliert.
+
+Der User hat folgendes gesagt:
+"{context}"
+
+Formuliere daraus eine praezise Bot-Instruktion (1 Satz, max. 20 Woerter).
+Die Instruktion beschreibt wie der Bot sich verhalten soll basierend auf dieser Info.
+Fokus: Kommunikationsstil, Reaktion auf den User, Anpassung an seine Gewohnheiten.
+
+Antworte NUR mit der Bot-Instruktion – kein Markdown, keine Erklaerung, kein Prefix.
+
+Gute Beispiele:
+- "Fabio antwortet morgens kurz – er ist im Flow, kurz und praezise bleiben"
+- "Fabio hoert beim Coden Techno – bei Musik-Empfehlungen elektronische Musik bevorzugen"
+- "Fabio bevorzugt direkte Empfehlungen statt 'es kommt drauf an'"
+- "Wenn Fabio beschaeftigt klingt, Antworten besonders kurz halten"
+"""
+
+
+def _is_merke_dir_das(text: str) -> bool:
+    """Erkennt kurze 'merke dir das' Nachrichten ohne weiteren spezifischen Inhalt."""
+    normalized = text.strip().lower().rstrip("!.?").strip()
+    return normalized in _MERKE_DIR_DAS_TRIGGERS
+
+
+def _get_current_human_message(messages: list) -> str:
+    """Gibt den Text der letzten HumanMessage zurueck."""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content).strip()
+            return str(content).strip()
+    return ""
+
+
+def _get_prev_human_message(messages: list) -> str:
+    """Gibt den Text der vorletzten HumanMessage zurueck (vor 'merke dir das')."""
+    human_texts = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                text = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content).strip()
+            else:
+                text = str(content).strip()
+            if text:
+                human_texts.append(text)
+    # Letzte = "merke dir das", vorletzte = der Kontext
+    if len(human_texts) >= 2:
+        return human_texts[-2]
+    return ""
+
+
+async def _formulate_bot_instruction_from_context(context: str) -> str:
+    """
+    Sonnet formuliert aus einer Aussage des Users eine Bot-Instruktion.
+    Gibt leeren String zurueck bei Fehler.
+    """
+    try:
+        llm = get_llm()
+        prompt = _FORMULATE_PROMPT.format(context=context[:500])
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        result = content.strip()
+        logger.info(f"MemoryAgent Phase64: Instruktion formuliert: {result[:80]}")
+        return result
+    except Exception as e:
+        logger.error(f"MemoryAgent Phase64: Formulierung fehlgeschlagen: {e}")
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Parser-Prompt (Sonnet – Stufe 1)
+# ---------------------------------------------------------------------------
 
 _PARSER_PROMPT = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
 Bestimme was gespeichert, aktualisiert oder gelöscht werden soll.
@@ -64,7 +154,7 @@ place:
   {"name": "Ortsname", "type": "restaurant|bar|cafe|gym|shop|sonstige", "location": "Stadtteil, Stadt", "context": "Warum relevant, mit wem, wie oft"}
 
 media:
-  {"title": "Titel", "type": "song|album|film|serie|podcast|buch|künstler", "artist": "Künstler/Regisseur/Autor (optional)", "context": "Warum relevant, z.B. Lieblingslied, gerade gehört"}
+  {"title": "Titel", "type": "song|album|film|serie|podcast|buch|künstler", "artist": "Künstler/Regisseur/Autor (optional)", "context": "Warum relevant"}
 
 preference:
   {"key": "aussagekraeftiger_schluessel", "value": "Wert als Text"}
@@ -82,24 +172,21 @@ bot_instruction:
   {"text": "Die vollständige Bot-Instruktion als präziser, aktionsorientierter Satz"}
 
 Für delete:
-  {"name": "Name des Eintrags"} oder {"key": "Schlüssel"} oder {"title": "Titel"}
+  {"name": "Name"} oder {"key": "Schlüssel"} oder {"title": "Titel"}
 
 Wichtige Regeln:
-- Restaurants, Bars, Cafés, Gyms, Lieblingsläden → IMMER category=place
-- Lieder, Alben, Filme, Serien, Podcasts, Bücher, Künstler → IMMER category=media
-- Firmen wo der User arbeitet → category=job (NICHT project)
-- Eigene Software-Projekte die der User baut → category=project
+- Restaurants, Bars, Cafés, Gyms → category=place
+- Lieder, Alben, Filme, Serien, Podcasts, Bücher → category=media
+- Firmen wo der User arbeitet → category=job
+- Eigene Software-Projekte → category=project
 - Bot-Verhalten, Antwort-Stil, dauerhafte Instruktionen FÜR DEN BOT → category=bot_instruction
-  Trigger: "grundsätzlich", "von jetzt an", "du sollst immer", "dein Verhalten", "wie du antwortest"
-- Persönliche Infos ÜBER DEN USER (Vorlieben, Hobbys, Fakten) → preference oder custom
-- Wenn unklar welche Kategorie: category=custom mit sinnvollem key
+  Trigger: "grundsätzlich", "von jetzt an", "du sollst immer", "dein Verhalten"
+- Persönliche Infos ÜBER DEN USER → preference oder custom
+- Wenn unklar: category=custom
 
 Beispiele:
 "füge Saporito zum Kontext hinzu – Lieblings-Italiener in Friedrichshain"
 → {"action": "save", "category": "place", "data": {"name": "Saporito", "type": "restaurant", "location": "Friedrichshain, Berlin", "context": "Lieblings-Italiener"}}
-
-"merke dir dass Insieme von Valentino Vivace mein Lieblingslied ist"
-→ {"action": "save", "category": "media", "data": {"title": "Insieme", "type": "song", "artist": "Valentino Vivace", "context": "Lieblingslied"}}
 
 "merke dir grundsätzlich dass du immer vollständige Dateien lieferst"
 → {"action": "save", "category": "bot_instruction", "data": {"text": "Immer vollständige Dateien liefern, keine Snippets"}}
@@ -107,14 +194,8 @@ Beispiele:
 "von jetzt an sollst du kürzer antworten"
 → {"action": "save", "category": "bot_instruction", "data": {"text": "Antworten kurz halten, auf den Punkt kommen"}}
 
-"du sollst grundsätzlich immer zuerst nach dem Ziel fragen bevor du code schreibst"
-→ {"action": "save", "category": "bot_instruction", "data": {"text": "Vor dem Code schreiben immer zuerst nach dem Ziel fragen"}}
-
 "merke dir dass ich gerne Yoga mache"
 → {"action": "save", "category": "custom", "data": {"key": "hobby_yoga", "value": "macht gerne Yoga"}}
-
-"aktualisiere Marco – er ist jetzt mein Vorgesetzter"
-→ {"action": "update", "category": "people", "data": {"name": "Marco", "context": "Vorgesetzter bei Bonial"}}
 """
 
 _REVIEWER_PROMPT = """Du bist ein YAML-Validator. Vergleiche Original- und neues YAML.
@@ -454,11 +535,32 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
 async def memory_agent(state: AgentState) -> AgentState:
     """
     Vollständige Memory-Pipeline.
-    Phase 63: bot_instruction → claude.md statt profile.yaml.
+    Phase 63: bot_instruction → claude.md
+    Phase 64: 'merke dir das' → vorherige Aussage als Bot-Instruktion
     """
     try:
         import yaml
         from agent.profile import load_profile, add_note_to_profile, write_profile
+
+        # ── Phase 64: "Merke dir das" → vorherige Message als Bot-Instruktion ──
+        current_human = _get_current_human_message(state["messages"])
+        if _is_merke_dir_das(current_human):
+            prev_human = _get_prev_human_message(state["messages"])
+            if not prev_human:
+                return {"messages": [AIMessage(content="Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")]}
+
+            instruction = await _formulate_bot_instruction_from_context(prev_human)
+            if not instruction:
+                return {"messages": [AIMessage(content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")]}
+
+            from agent.claude_md import append_to_claude_md
+            success = await append_to_claude_md(instruction)
+            if success:
+                logger.info(f"MemoryAgent Phase64: gespeichert aus Kontext: {instruction[:80]}")
+                return {"messages": [AIMessage(content=f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")]}
+            else:
+                return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion.")]}
+        # ────────────────────────────────────────────────────────────────────────
 
         # Stufe 1: Sonnet parst die Anfrage
         parsed = await _parse_memory_intent(state["messages"])
@@ -469,7 +571,7 @@ async def memory_agent(state: AgentState) -> AgentState:
         if action == "error" or not data:
             return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
 
-        # ── Phase 63: bot_instruction → claude.md ────────────────────────
+        # ── Phase 63: bot_instruction → claude.md ────────────────────────────
         if action in ("save", "update") and category == "bot_instruction":
             text = data.get("text", "").strip()
             if not text:
@@ -477,12 +579,11 @@ async def memory_agent(state: AgentState) -> AgentState:
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(text)
             if success:
-                logger.info(f"MemoryAgent: bot_instruction in claude.md gespeichert: {text[:80]}")
-                confirmation = _build_confirmation(action, category, data)
-                return {"messages": [AIMessage(content=confirmation)]}
+                logger.info(f"MemoryAgent: bot_instruction gespeichert: {text[:80]}")
+                return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
             else:
                 return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion in claude.md.")]}
-        # ─────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────────
 
         # Stufe 2: Python-seitiger Update (profile.yaml)
         current_profile = load_profile()
@@ -495,7 +596,6 @@ async def memory_agent(state: AgentState) -> AgentState:
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")]}
 
-        # YAML serialisieren
         original_yaml = yaml.dump(
             current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False
         )
@@ -512,7 +612,6 @@ async def memory_agent(state: AgentState) -> AgentState:
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert – YAML-Review fehlgeschlagen)_")]}
 
-        # Finale YAML-Validierung
         try:
             yaml.safe_load(new_yaml)
         except yaml.YAMLError as e:
@@ -520,14 +619,12 @@ async def memory_agent(state: AgentState) -> AgentState:
             await add_note_to_profile(f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}")
             return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – als Notiz gespeichert.")]}
 
-        # Schreiben
         success = await write_profile(updated_profile)
         if not success:
             return {"messages": [AIMessage(content="Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")]}
 
         logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
-        confirmation = _build_confirmation(action, category, data)
-        return {"messages": [AIMessage(content=confirmation)]}
+        return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
 
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")

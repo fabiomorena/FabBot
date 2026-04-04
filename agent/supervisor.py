@@ -21,7 +21,7 @@ _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 agent_graph = None
 _db_conn = None
-_init_lock = asyncio.Lock()  # Verhindert Double-Init bei gleichzeitigen Aufrufen
+_init_lock = asyncio.Lock()
 
 SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, eine der folgenden Antworten zurueckzugeben.
 
@@ -32,17 +32,17 @@ Verfuegbare Agenten:
 - calendar_agent: Kalendertermine lesen oder erstellen
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
-- memory_agent: Persoenliche Informationen ins Profil speichern, aktualisieren oder loeschen.
-  NUR bei sehr expliziten Speicher-Befehlen MIT klarem Speicher-Intent:
-  JA: 'merke dir dass...', 'speichere...', 'füge ... hinzu', 'vergiss den Eintrag...', 'fuege X zum Kontext hinzu'
-  NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzählungen, Beschreibungen ohne explizites Speicher-Wort
-  NEIN: 'ich mag X', 'ich war bei X', 'ich höre gerne X', 'eher X als Y', kurze Antworten ohne Speicher-Absicht
+- memory_agent: Persoenliche Informationen oder Bot-Instruktionen speichern, aktualisieren oder loeschen.
+  NUR bei expliziten Speicher-Befehlen:
+  JA: 'merke dir dass...', 'speichere...', 'füge ... hinzu', 'vergiss den Eintrag...'
+  JA: 'merke dir grundsaetzlich...', 'von jetzt an sollst du...', 'du sollst immer...'
+  JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
+  NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
+  NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
 - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
-- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Berichte und Mitteilungen,
+- chat_agent: Smalltalk, Folgefragen, Zusammenfassungen, Hoeflichkeiten, persoenliche Berichte,
   persoenliche Fragen ueber den User (Projekte, Standort, Praeferenzen),
-  ALLE Folgefragen zu einem Foto oder Bild das der User zuvor gesendet hat –
-  z.B. 'wo wurde das aufgenommen?', 'was erkennst du noch?', 'welche Sprache ist das?', 'was steht da?',
-  'was glaubst du wo...', alles was sich auf ein vorher gesendetes Bild bezieht,
+  ALLE Folgefragen zu einem Foto oder Bild,
   alles was kein konkreter Systembefehl oder externe Suche ist
 
 Regeln:
@@ -50,9 +50,9 @@ Regeln:
 - Sonst: waehle den passenden Agenten
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 - Im Zweifel zwischen web_agent und chat_agent: chat_agent waehlen
-- Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto oder Bild im Gespraechsverlauf beziehen: IMMER chat_agent, NIEMALS web_agent
+- Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
 
-WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes, keine Erklaerung):
+WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes):
 computer_agent
 terminal_agent
 file_agent
@@ -66,11 +66,11 @@ FINISH
 
 
 def _filter_hitl_messages(messages: list) -> list:
-    """Entfernt HITL-Nachrichten aus dem Kontext bevor sie an den LLM uebergeben werden."""
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
-        if (isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__"))) or                 (isinstance(content, str) and content.startswith("__MEMORY__") and "Bildbeschreibung" not in content):
+        if (isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__"))) or \
+                (isinstance(content, str) and content.startswith("__MEMORY__") and "Bildbeschreibung" not in content):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
             continue
@@ -79,14 +79,11 @@ def _filter_hitl_messages(messages: list) -> list:
 
 
 async def supervisor_node(state: AgentState) -> AgentState:
-    """Routing via Haiku – schnell und kostenguenstig."""
     llm = get_fast_llm()
     messages = state["messages"]
 
     if messages and isinstance(messages[-1], AIMessage):
         last = messages[-1].content
-        # __VISION_RESULT__ Branch entfernt – vision_agent gibt keinen solchen Prefix
-        # mehr zurück, analyze_image_direct() wird direkt in bot.py aufgerufen.
         if not last.startswith("__MEMORY__:"):
             return {"next_agent": "FINISH"}
 
@@ -157,15 +154,9 @@ def _build_graph() -> StateGraph:
 
 
 async def init_graph() -> None:
-    """
-    Initialisiert den Graphen mit persistentem AsyncSqliteSaver.
-    Guard gegen Double-Init: early-return wenn bereits initialisiert.
-    asyncio.Lock verhindert Race Condition bei gleichzeitigen Aufrufen.
-    """
     global agent_graph, _db_conn
 
     async with _init_lock:
-        # Early-return wenn bereits initialisiert – verhindert Connection Leak
         if agent_graph is not None:
             return
 
@@ -176,7 +167,6 @@ async def init_graph() -> None:
 
 
 async def close_graph() -> None:
-    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
     global _db_conn
     if _db_conn:
         await _db_conn.close()
