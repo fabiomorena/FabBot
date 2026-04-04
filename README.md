@@ -56,7 +56,9 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Dedup-Fix – chat_agent never repeats answers on short confirmations (Genau, Ok, Danke) |
 | ✅ | ElevenLabs TTS – Stimme Ami (eleven_multilingual_v2), edge-tts als Fallback, Voice ID via .env |
 | ✅ | claude.md – persistente Bot-Instruktionen, in chat_agent System-Prompt injiziert, überlebt Context Trim |
+| ✅ | Bot-Instruktionen lernbar – "Merke dir grundsätzlich..." schreibt direkt in claude.md, sofort aktiv |
 ---
+
 
 ## Architecture
 
@@ -182,6 +184,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 60** ✅ ElevenLabs TTS – Stimme Ami, edge-tts Fallback, Voice ID via .env
 - **Phase 61** ✅ TTS Logger – Truncation-Logging + ElevenLabs voice_settings via .env
 - **Phase 62** ✅ claude.md – persistente Bot-Instruktionen für Charakter, Verhalten und Arbeitsweise
+- **Phase 63** ✅ Bot-Instruktionen lernbar – memory_agent erkennt bot_instruction, schreibt in claude.md, sofort aktiv ohne Neustart
 ---
 
 ## License
