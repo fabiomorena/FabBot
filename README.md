@@ -63,6 +63,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | claude.md Hardening II – Lock-Granularität, robuster Heading-Regex H1-H6, Entry-Detection -, * und + |
 | ✅ | OpenAI TTS – primärer Provider (nova/shimmer/...), ElevenLabs entfernt, edge-tts Fallback |
 | ✅ | TTS Hardening – tmp_path Safety, gather return_exceptions, Startup-Validierung, Retry 429/503, lazy API-Key |
+| ✅ | TTS Config Cleanup – _validate_tts_config nach Logger, lazy getters, Retry-Log spezifischer |
 ---
 
 
@@ -197,6 +198,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 67** ✅ claude.md Hardening II – Lock-Granularität, Regex, Entry-Detection, GIL-Kommentar
 - **Phase 68** ✅ OpenAI TTS – ElevenLabs ersetzt, OPENAI_TTS_VOICE/MODEL konfigurierbar
 - **Phase 69** ✅ TTS Hardening – tmp_path, gather, Validierung, Retry, lazy API-Key
+- **Phase 70** ✅ TTS Config Cleanup – Validierung nach Logger, lazy getters, Retry-Log
 ---
 
 ## License
