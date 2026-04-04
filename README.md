@@ -115,7 +115,7 @@ FabBot/
 ```
 
 **Stack:**
-- Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-20250514`)
+- Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-5-20250929`)
 - Claude Haiku – supervisor routing + LLM-Guard (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`, default: `claude-haiku-4-5-20251001`)
 - LangGraph – multi-agent state machine with AsyncSqliteSaver
 - python-telegram-bot – Telegram interface
