@@ -2232,7 +2232,7 @@ class TestSynthesizeWithMock:
         """synthesize() gibt None zurück wenn weder ElevenLabs noch edge-tts verfügbar."""
         from bot.tts import synthesize
 
-        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=None), \
+        with patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=None), \
              patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock, return_value=None):
             result = await synthesize("Test")
 
@@ -3241,7 +3241,7 @@ class TestTtsTruncationLogging:
 
         long_text = "Hallo Fabio! " * 100  # deutlich > 1000 Zeichen
 
-        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+        with patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=b"audio"), \
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize(long_text)
 
@@ -3255,7 +3255,7 @@ class TestTtsTruncationLogging:
 
         long_text = "x " * 600  # ~1200 Zeichen nach _clean_for_tts
 
-        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+        with patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=b"audio"), \
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize(long_text)
 
@@ -3270,7 +3270,7 @@ class TestTtsTruncationLogging:
 
         long_text = "a " * 600
 
-        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+        with patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=b"audio"), \
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize(long_text)
 
@@ -3282,7 +3282,7 @@ class TestTtsTruncationLogging:
         """Kurzer Text → kein Truncation-Log."""
         from bot.tts import synthesize
 
-        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+        with patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=b"audio"), \
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize("Kurze Nachricht.")
 
@@ -3301,7 +3301,7 @@ class TestTtsTruncationLogging:
 
         long_text = "Wort " * 300
 
-        with patch("bot.tts._synthesize_elevenlabs", side_effect=fake_elevenlabs):
+        with patch("bot.tts._synthesize_openai", side_effect=fake_elevenlabs):
             await synthesize(long_text)
 
         if captured_texts:
@@ -3320,154 +3320,11 @@ class TestTtsTruncationLogging:
 
         long_text = "a " * 1000  # >> TTS_MAX_CHARS
 
-        with patch("bot.tts._synthesize_elevenlabs", side_effect=fake_elevenlabs):
+        with patch("bot.tts._synthesize_openai", side_effect=fake_elevenlabs):
             await synthesize(long_text)
 
         if captured_texts:
             assert len(captured_texts[-1]) <= TTS_MAX_CHARS + 3  # +3 für "..."
-
-
-class TestElevenLabsVoiceSettings:
-    """Tests für konfigurierbare ElevenLabs voice_settings."""
-
-    def test_stability_constant_is_float(self) -> None:
-        """ELEVENLABS_STABILITY ist ein Float."""
-        import bot.tts as tts_module
-        assert isinstance(tts_module.ELEVENLABS_STABILITY, float)
-
-    def test_similarity_boost_constant_is_float(self) -> None:
-        """ELEVENLABS_SIMILARITY_BOOST ist ein Float."""
-        import bot.tts as tts_module
-        assert isinstance(tts_module.ELEVENLABS_SIMILARITY_BOOST, float)
-
-    def test_stability_default_value(self) -> None:
-        """Standard-Stability ist 0.5."""
-        import bot.tts as tts_module
-        # Default in .env.example ist 0.5 – falls kein Override gesetzt
-        assert 0.0 <= tts_module.ELEVENLABS_STABILITY <= 1.0
-
-    def test_similarity_boost_default_value(self) -> None:
-        """Standard-Similarity-Boost liegt zwischen 0 und 1."""
-        import bot.tts as tts_module
-        assert 0.0 <= tts_module.ELEVENLABS_SIMILARITY_BOOST <= 1.0
-
-    @pytest.mark.asyncio
-    async def test_voice_settings_in_api_call(self) -> None:
-        """_synthesize_elevenlabs() übergibt ELEVENLABS_STABILITY und SIMILARITY_BOOST an API."""
-        import bot.tts as tts_module
-
-        captured_payload = {}
-
-        async def fake_post(url, headers, json, **kwargs):
-            captured_payload.update(json)
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.content = b"fake_audio"
-            return mock_resp
-
-        mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(side_effect=fake_post)
-
-        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            await tts_module._synthesize_elevenlabs("Test")
-
-        settings = captured_payload.get("voice_settings", {})
-        assert "stability" in settings
-        assert "similarity_boost" in settings
-        assert settings["stability"] == tts_module.ELEVENLABS_STABILITY
-        assert settings["similarity_boost"] == tts_module.ELEVENLABS_SIMILARITY_BOOST
-
-    @pytest.mark.asyncio
-    async def test_custom_stability_used_in_api_call(self) -> None:
-        """Benutzerdefinierte ELEVENLABS_STABILITY wird korrekt an API übergeben."""
-        import bot.tts as tts_module
-
-        captured_payload = {}
-
-        async def fake_post(url, headers, json, **kwargs):
-            captured_payload.update(json)
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.content = b"audio"
-            return mock_resp
-
-        mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(side_effect=fake_post)
-
-        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
-             patch("bot.tts.ELEVENLABS_STABILITY", 0.8), \
-             patch("bot.tts.ELEVENLABS_SIMILARITY_BOOST", 0.9), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            await tts_module._synthesize_elevenlabs("Test")
-
-        settings = captured_payload.get("voice_settings", {})
-        assert settings["stability"] == 0.8
-        assert settings["similarity_boost"] == 0.9
-
-    @pytest.mark.asyncio
-    async def test_style_always_zero(self) -> None:
-        """style ist immer 0.0 – nicht konfigurierbar."""
-        import bot.tts as tts_module
-
-        captured_payload = {}
-
-        async def fake_post(url, headers, json, **kwargs):
-            captured_payload.update(json)
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.content = b"audio"
-            return mock_resp
-
-        mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(side_effect=fake_post)
-
-        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            await tts_module._synthesize_elevenlabs("Test")
-
-        settings = captured_payload.get("voice_settings", {})
-        assert settings.get("style") == 0.0
-
-    @pytest.mark.asyncio
-    async def test_speaker_boost_always_true(self) -> None:
-        """use_speaker_boost ist immer True."""
-        import bot.tts as tts_module
-
-        captured_payload = {}
-
-        async def fake_post(url, headers, json, **kwargs):
-            captured_payload.update(json)
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.content = b"audio"
-            return mock_resp
-
-        mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(side_effect=fake_post)
-
-        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            await tts_module._synthesize_elevenlabs("Test")
-
-        settings = captured_payload.get("voice_settings", {})
-        assert settings.get("use_speaker_boost") is True
-
-# ---------------------------------------------------------------------------
-# Phase 62 Tests – claude_md Loader
-# ---------------------------------------------------------------------------
-
-import pytest
-from pathlib import Path
-from unittest.mock import patch
 
 
 class TestClaudeMdLoader:
@@ -4675,3 +4532,163 @@ class TestGilCommentPresent:
         source = inspect.getsource(module.load_claude_md)
         assert "GIL" in source or "atomar" in source.lower(), \
             "Kommentar zur GIL-Sicherheit fehlt in load_claude_md()"
+
+# ---------------------------------------------------------------------------
+# Phase 68 Tests – OpenAI TTS
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestOpenAITts:
+    """Tests fuer _synthesize_openai()."""
+
+    @pytest.mark.asyncio
+    async def test_returns_bytes_on_success(self) -> None:
+        """_synthesize_openai() gibt bytes zurueck bei HTTP 200."""
+        from bot.tts import _synthesize_openai
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"fake_mp3_audio"
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _synthesize_openai("Hallo Welt")
+        assert result == b"fake_mp3_audio"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_without_api_key(self) -> None:
+        """Ohne API-Key gibt _synthesize_openai() None zurueck."""
+        from bot.tts import _synthesize_openai
+        with patch("bot.tts.OPENAI_API_KEY", ""):
+            result = await _synthesize_openai("Hallo")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_api_error(self) -> None:
+        """Bei API-Fehler (non-200) gibt _synthesize_openai() None zurueck."""
+        from bot.tts import _synthesize_openai
+        mock_resp = MagicMock()
+        mock_resp.status_code = 429
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _synthesize_openai("Hallo")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_exception(self) -> None:
+        """Bei Exception gibt _synthesize_openai() None zurueck (fail-safe)."""
+        from bot.tts import _synthesize_openai
+        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+             patch("httpx.AsyncClient", side_effect=Exception("Netzwerkfehler")):
+            result = await _synthesize_openai("Hallo")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_sends_correct_voice_and_model(self) -> None:
+        """API-Call verwendet konfigurierten Voice und Model."""
+        from bot.tts import _synthesize_openai
+        captured = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"audio"
+        async def fake_post(url, headers, json, **kwargs):
+            captured.update(json)
+            return mock_resp
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+             patch("bot.tts.OPENAI_TTS_VOICE", "shimmer"), \
+             patch("bot.tts.OPENAI_TTS_MODEL", "tts-1-hd"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            await _synthesize_openai("Test")
+        assert captured["voice"] == "shimmer"
+        assert captured["model"] == "tts-1-hd"
+        assert captured["input"] == "Test"
+
+    @pytest.mark.asyncio
+    async def test_uses_bearer_auth(self) -> None:
+        """API-Call verwendet Bearer-Auth mit OPENAI_API_KEY."""
+        from bot.tts import _synthesize_openai
+        captured_headers = {}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"audio"
+        async def fake_post(url, headers, json, **kwargs):
+            captured_headers.update(headers)
+            return mock_resp
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+        with patch("bot.tts.OPENAI_API_KEY", "sk-testkey-123"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            await _synthesize_openai("Test")
+        assert captured_headers.get("Authorization") == "Bearer sk-testkey-123"
+
+
+class TestOpenAITtsVoiceConfig:
+    """Tests fuer OPENAI_TTS_VOICE und OPENAI_TTS_MODEL Konstanten."""
+
+    def test_voice_constant_is_string(self) -> None:
+        import bot.tts as tts
+        assert isinstance(tts.OPENAI_TTS_VOICE, str)
+        assert len(tts.OPENAI_TTS_VOICE) > 0
+
+    def test_model_constant_is_string(self) -> None:
+        import bot.tts as tts
+        assert isinstance(tts.OPENAI_TTS_MODEL, str)
+        assert tts.OPENAI_TTS_MODEL in ("tts-1", "tts-1-hd")
+
+    def test_elevenlabs_not_in_module(self) -> None:
+        """ElevenLabs ist komplett entfernt – keine Referenzen mehr."""
+        import inspect, bot.tts as tts
+        source = inspect.getsource(tts)
+        assert "elevenlabs" not in source.lower(), \
+            "ElevenLabs-Referenz noch im Code – sollte entfernt sein"
+        assert "ELEVENLABS" not in source, \
+            "ELEVENLABS-Konstante noch im Code"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_uses_openai_when_key_set(self) -> None:
+        """synthesize() ruft _synthesize_openai() auf wenn API-Key gesetzt."""
+        from bot.tts import synthesize
+        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+             patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=b"audio") as mock_openai, \
+             patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock) as mock_edge:
+            result = await synthesize("Test")
+        mock_openai.assert_called_once()
+        mock_edge.assert_not_called()
+        assert result == b"audio"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_falls_back_to_edge_tts(self) -> None:
+        """synthesize() faellt auf edge-tts zurueck wenn OpenAI None liefert."""
+        from bot.tts import synthesize
+        with patch("bot.tts.OPENAI_API_KEY", "sk-test"), \
+             patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=None), \
+             patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock, return_value=b"fallback") as mock_edge:
+            result = await synthesize("Test")
+        mock_edge.assert_called_once()
+        assert result == b"fallback"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_uses_edge_tts_without_key(self) -> None:
+        """synthesize() nutzt direkt edge-tts wenn kein API-Key."""
+        from bot.tts import synthesize
+        with patch("bot.tts.OPENAI_API_KEY", ""), \
+             patch("bot.tts._synthesize_openai", new_callable=AsyncMock) as mock_openai, \
+             patch("bot.tts._synthesize_edge_tts", new_callable=AsyncMock, return_value=b"edge") as mock_edge:
+            result = await synthesize("Test")
+        mock_openai.assert_not_called()
+        mock_edge.assert_called_once()

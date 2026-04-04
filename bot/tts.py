@@ -1,20 +1,18 @@
 """
-Text-to-Speech fuer FabBot – Phase 61.
-Provider: ElevenLabs (primär) → edge-tts (Fallback)
+Text-to-Speech fuer FabBot – Phase 68.
+Provider: OpenAI TTS (primär) → edge-tts (Fallback)
 
-ElevenLabs:
-- Stimme: Ami (Voice ID via ELEVENLABS_VOICE_ID in .env)
-- Modell: eleven_multilingual_v2
-- API Key: ELEVENLABS_API_KEY in .env
-- Stability: ELEVENLABS_STABILITY (default: 0.5)
-- Similarity Boost: ELEVENLABS_SIMILARITY_BOOST (default: 0.75)
+Phase 68: ElevenLabs komplett entfernt, OpenAI TTS als primärer Provider.
+
+OpenAI TTS:
+- API Key: OPENAI_API_KEY in .env (bereits vorhanden)
+- Stimme: OPENAI_TTS_VOICE (default: nova) – alloy|echo|fable|onyx|nova|shimmer
+- Modell: OPENAI_TTS_MODEL (default: tts-1) – tts-1 oder tts-1-hd
+- Preis: ~$15/1M Zeichen (tts-1) vs. tts-1-hd (~$30/1M)
 
 edge-tts (Fallback):
-- Wird verwendet wenn ELEVENLABS_API_KEY nicht gesetzt oder API-Fehler
+- Wird verwendet wenn OPENAI_API_KEY nicht gesetzt oder API-Fehler
 - Deutsche Stimme: de-DE-KatjaNeural
-
-TTS kann zur Laufzeit via /tts on|off togglen werden.
-Laufende Sprachausgabe kann via /stop gestoppt werden.
 """
 import asyncio
 import logging
@@ -26,12 +24,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# ElevenLabs Konfiguration
-ELEVENLABS_API_KEY          = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID         = os.getenv("ELEVENLABS_VOICE_ID", "xTXZTtb6MuzG0jJR05Y9")
-ELEVENLABS_MODEL            = "eleven_multilingual_v2"
-ELEVENLABS_STABILITY        = float(os.getenv("ELEVENLABS_STABILITY", "0.5"))
-ELEVENLABS_SIMILARITY_BOOST = float(os.getenv("ELEVENLABS_SIMILARITY_BOOST", "0.75"))
+# OpenAI TTS Konfiguration
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
+OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
 
 # edge-tts Fallback
 TTS_VOICE = "de-DE-KatjaNeural"
@@ -89,41 +85,36 @@ def _clean_for_tts(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ElevenLabs
+# OpenAI TTS
 # ---------------------------------------------------------------------------
 
-async def _synthesize_elevenlabs(text: str) -> bytes | None:
-    """Generiert Audio via ElevenLabs API."""
-    if not ELEVENLABS_API_KEY:
+async def _synthesize_openai(text: str) -> bytes | None:
+    """Generiert Audio via OpenAI TTS API."""
+    if not OPENAI_API_KEY:
         return None
     try:
         import httpx
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                "https://api.openai.com/v1/audio/speech",
                 headers={
-                    "xi-api-key": ELEVENLABS_API_KEY,
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "text": text,
-                    "model_id": ELEVENLABS_MODEL,
-                    "voice_settings": {
-                        "stability": ELEVENLABS_STABILITY,
-                        "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
-                        "style": 0.0,
-                        "use_speaker_boost": True,
-                    },
+                    "model": OPENAI_TTS_MODEL,
+                    "input": text,
+                    "voice": OPENAI_TTS_VOICE,
                 },
             )
             if resp.status_code == 200:
-                logger.info(f"ElevenLabs TTS: {len(resp.content)} bytes")
+                logger.info(f"OpenAI TTS: {len(resp.content)} bytes, voice={OPENAI_TTS_VOICE}, model={OPENAI_TTS_MODEL}")
                 return resp.content
             else:
-                logger.warning(f"ElevenLabs API Fehler: {resp.status_code} – Fallback zu edge-tts")
+                logger.warning(f"OpenAI TTS API Fehler: {resp.status_code} – Fallback zu edge-tts")
                 return None
     except Exception as e:
-        logger.warning(f"ElevenLabs Fehler (Fallback zu edge-tts): {e}")
+        logger.warning(f"OpenAI TTS Fehler (Fallback zu edge-tts): {e}")
         return None
 
 
@@ -139,14 +130,14 @@ def _is_edge_tts_available() -> bool:
         return False
 
 
-# Alias für Test-Kompatibilität (Tests mocken _is_tts_available)
+# Alias fuer Test-Kompatibilitaet
 _is_tts_available = _is_edge_tts_available
 
 
 async def _synthesize_edge_tts(text: str) -> bytes | None:
     """Generiert Audio via edge-tts (Fallback)."""
     if not _is_edge_tts_available():
-        logger.warning("edge-tts nicht installiert – TTS nicht verfügbar.")
+        logger.warning("edge-tts nicht installiert – TTS nicht verfuegbar.")
         return None
     try:
         import edge_tts
@@ -166,17 +157,17 @@ async def _synthesize_edge_tts(text: str) -> bytes | None:
 # ---------------------------------------------------------------------------
 
 async def synthesize(text: str) -> bytes | None:
-    """Konvertiert Text zu Audio. ElevenLabs primär, edge-tts als Fallback."""
+    """Konvertiert Text zu Audio. OpenAI TTS primär, edge-tts als Fallback."""
     text = _clean_for_tts(text)
     if not text:
         return None
     if len(text) > TTS_MAX_CHARS:
-        logger.info(f"TTS Text auf {TTS_MAX_CHARS} Zeichen gekürzt (original: {len(text)})")
+        logger.info(f"TTS Text auf {TTS_MAX_CHARS} Zeichen gekuerzt (original: {len(text)})")
         text = text[:TTS_MAX_CHARS] + "..."
 
-    # ElevenLabs primär
-    if ELEVENLABS_API_KEY:
-        audio = await _synthesize_elevenlabs(text)
+    # OpenAI TTS primär
+    if OPENAI_API_KEY:
+        audio = await _synthesize_openai(text)
         if audio:
             return audio
 
@@ -186,7 +177,7 @@ async def synthesize(text: str) -> bytes | None:
 
 
 async def speak_and_send(text: str, bot, chat_id: int) -> bool:
-    """Spricht Text über Mac-Lautsprecher und schickt Sprachnachricht an Telegram."""
+    """Spricht Text ueber Mac-Lautsprecher und schickt Sprachnachricht an Telegram."""
     stop_speaking()
     if not _tts_enabled:
         return False
@@ -195,7 +186,6 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
     if not audio_bytes:
         return False
 
-    # ElevenLabs liefert MP3, edge-tts auch
     suffix = ".mp3"
 
     try:
@@ -220,7 +210,7 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
 
 
 async def _play_on_mac(path: Path) -> None:
-    """Spielt Audio über Mac-Lautsprecher via afplay."""
+    """Spielt Audio ueber Mac-Lautsprecher via afplay."""
     global _current_afplay
     try:
         def _run() -> None:
