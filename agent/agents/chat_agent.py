@@ -42,25 +42,46 @@ WICHTIGE VERHALTENSREGELN:
 
 def _build_chat_prompt() -> str:
     """
-    Baut den Chat-Prompt mit vollständigem persönlichem Kontext.
-    Fail-safe: Bei jedem Fehler wird der Basis-Prompt zurückgegeben.
+    Baut den Chat-Prompt aus drei Quellen – alle ueberleben den Context Trim:
+    1. _CHAT_PROMPT_BASE        – Basis-Instruktionen
+    2. claude.md                – persistente Bot-Instruktionen (Charakter, Arbeitsweise)
+    3. personal_profile.yaml    – persoenlicher Kontext des Users
+
+    Fail-safe: Bei jedem Fehler wird der Basis-Prompt zurueckgegeben.
     """
     try:
+        from agent.claude_md import load_claude_md
         from agent.profile import get_profile_context_full
-        ctx = get_profile_context_full()
-        if ctx:
-            return (
-                _CHAT_PROMPT_BASE
-                + "\nDer folgende Kontext ist deine primaere Wissensquelle ueber den User. "
-                + "Nutze ihn bevorzugt gegenueber dem Gespraechsverlauf:\n\n"
-                + ctx
+
+        parts = [_CHAT_PROMPT_BASE]
+
+        # claude.md – persistente Bot-Instruktionen
+        claude_ctx = load_claude_md()
+        if claude_ctx:
+            parts.append(
+                "\n=== Persistente Bot-Instruktionen (claude.md) ===\n"
+                + claude_ctx
+                + "\n=== Ende Bot-Instruktionen ==="
             )
+
+        # personal_profile.yaml – Kontext ueber den User
+        profile_ctx = get_profile_context_full()
+        if profile_ctx:
+            parts.append(
+                "\nDer folgende Kontext ist deine primaere Wissensquelle ueber den User. "
+                "Nutze ihn bevorzugt gegenueber dem Gespraechsverlauf:\n\n"
+                + profile_ctx
+            )
+
+        return "\n\n".join(parts)
+
     except Exception:
         pass
     return _CHAT_PROMPT_BASE
 
 
-# Einmalig beim Modulimport gebaut – kein Overhead pro Aufruf
+# Einmalig beim Modulimport gebaut – kein Overhead pro Aufruf.
+# Aenderungen an claude.md oder personal_profile.yaml → Bot neu starten.
 PROMPT = _build_chat_prompt()
 
 _HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__", "__VISION_RESULT__")
@@ -87,7 +108,6 @@ def _clean_messages_for_chat(messages: list) -> list:
                 elif content.startswith("__SCREENSHOT__:"):
                     cleaned.append(AIMessage(content="[Screenshot erstellt]"))
                 elif content.startswith("__VISION_RESULT__:"):
-                    # Safety net – Vision-Ergebnis als lesbarer Platzhalter statt [Aktion ausgefuehrt].
                     vision_text = content[len("__VISION_RESULT__:"):]
                     cleaned.append(AIMessage(content=f"[Bildanalyse: {vision_text[:300]}]"))
                 else:
@@ -139,6 +159,7 @@ async def chat_agent(state: AgentState) -> AgentState:
     Context wird auf CHAT_CONTEXT_WINDOW Messages getrimmt (default 40) –
     verhindert unbegrenztes Wachstum des LLM-Calls bei langer Nutzungsdauer.
     SQLite bleibt vollständig – nur der LLM-Call wird begrenzt.
+    claude.md + personal_profile.yaml sind im SystemMessage – nie getrimmt.
     Nach der Antwort: Auto-Learn-Hook als non-blocking Background-Task.
     """
     llm = get_llm()
@@ -155,7 +176,6 @@ async def chat_agent(state: AgentState) -> AgentState:
     result = content.strip()
 
     # Dedup-Sicherheitsnetz: verhindert exakte Wiederholung der letzten AI-Antwort.
-    # Greift wenn der Prompt-Fix nicht ausreicht (z.B. bei sehr aehnlichem Kontext).
     prev_ai_messages = [m for m in trimmed_messages if isinstance(m, AIMessage)]
     if prev_ai_messages:
         last_ai_content = prev_ai_messages[-1].content
@@ -168,8 +188,6 @@ async def chat_agent(state: AgentState) -> AgentState:
             result = "Noch etwas, womit ich helfen kann?"
 
     # Auto-Learn: letzte HumanMessage als Background-Task analysieren
-    # Non-blocking – Antwort an User wird nicht verzögert
-    # Fail-safe – Fehler im Learner beeinflussen den Bot nicht
     try:
         human_text = _get_last_human_message(state["messages"])
         if human_text:

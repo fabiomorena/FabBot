@@ -3460,3 +3460,203 @@ class TestElevenLabsVoiceSettings:
 
         settings = captured_payload.get("voice_settings", {})
         assert settings.get("use_speaker_boost") is True
+
+# ---------------------------------------------------------------------------
+# Phase 62 Tests – claude_md Loader
+# ---------------------------------------------------------------------------
+
+import pytest
+from pathlib import Path
+from unittest.mock import patch
+
+
+class TestClaudeMdLoader:
+    """Tests fuer agent/claude_md.py."""
+
+    def setup_method(self) -> None:
+        """Cache vor jedem Test leeren."""
+        import agent.claude_md as cmd_module
+        cmd_module._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        """Cache nach jedem Test leeren."""
+        import agent.claude_md as cmd_module
+        cmd_module._claude_md_cache = None
+
+    def test_missing_file_returns_empty_string(self, tmp_path: Path) -> None:
+        """Fehlende claude.md gibt leeren String zurueck – kein Crash."""
+        from agent.claude_md import load_claude_md
+        nonexistent = tmp_path / "claude.md"
+        with patch("agent.claude_md._CLAUDE_MD_PATH", nonexistent):
+            result = load_claude_md()
+        assert result == ""
+
+    def test_existing_file_returns_content(self, tmp_path: Path) -> None:
+        """Vorhandene claude.md gibt Inhalt zurueck."""
+        from agent.claude_md import load_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("# FabBot\n\n## Kommunikation\n- Immer Deutsch", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            result = load_claude_md()
+        assert "FabBot" in result
+        assert "Kommunikation" in result
+
+    def test_content_is_stripped(self, tmp_path: Path) -> None:
+        """Whitespace am Anfang/Ende wird entfernt."""
+        from agent.claude_md import load_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("\n\n# FabBot\n\n", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            result = load_claude_md()
+        assert result == "# FabBot"
+
+    def test_empty_file_returns_empty_string(self, tmp_path: Path) -> None:
+        """Leere claude.md gibt leeren String zurueck."""
+        from agent.claude_md import load_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            result = load_claude_md()
+        assert result == ""
+
+    def test_whitespace_only_file_returns_empty_string(self, tmp_path: Path) -> None:
+        """Nur-Whitespace claude.md gibt leeren String zurueck."""
+        from agent.claude_md import load_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("   \n\n   ", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            result = load_claude_md()
+        assert result == ""
+
+    def test_caching_works(self, tmp_path: Path) -> None:
+        """Zweiter Aufruf gibt gecachten Wert zurueck ohne Datei zu lesen."""
+        from agent.claude_md import load_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("# Erster Inhalt", encoding="utf-8")
+
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            first = load_claude_md()
+            # Datei nachträglich ändern – sollte nicht sichtbar sein wegen Cache
+            md_file.write_text("# Zweiter Inhalt", encoding="utf-8")
+            second = load_claude_md()
+
+        assert first == second == "# Erster Inhalt"
+
+    def test_reload_clears_cache(self, tmp_path: Path) -> None:
+        """reload_claude_md() laedt die Datei neu."""
+        from agent.claude_md import load_claude_md, reload_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("# Version 1", encoding="utf-8")
+
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            first = load_claude_md()
+            md_file.write_text("# Version 2", encoding="utf-8")
+            second = reload_claude_md()
+
+        assert first == "# Version 1"
+        assert second == "# Version 2"
+
+    def test_read_error_returns_empty_string(self, tmp_path: Path) -> None:
+        """Lesefehler gibt leeren String zurueck – kein Crash (fail-safe)."""
+        from agent.claude_md import load_claude_md
+        md_file = tmp_path / "claude.md"
+        md_file.write_text("Inhalt", encoding="utf-8")
+
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file), \
+             patch("pathlib.Path.read_text", side_effect=PermissionError("kein Zugriff")):
+            result = load_claude_md()
+
+        assert result == ""
+
+    def test_unicode_content_preserved(self, tmp_path: Path) -> None:
+        """Umlaute und Sonderzeichen werden korrekt geladen."""
+        from agent.claude_md import load_claude_md
+        content = "## Kommunikation\n- Präzise und direkt\n- Keine Füllsätze\n- Straße"
+        md_file = tmp_path / "claude.md"
+        md_file.write_text(content, encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            result = load_claude_md()
+        assert "Präzise" in result
+        assert "Füllsätze" in result
+        assert "Straße" in result
+
+    def test_multiline_content_preserved(self, tmp_path: Path) -> None:
+        """Mehrzeiliger Inhalt bleibt vollstaendig erhalten."""
+        from agent.claude_md import load_claude_md
+        content = "# Titel\n\n## Abschnitt 1\n- Punkt A\n- Punkt B\n\n## Abschnitt 2\nText hier."
+        md_file = tmp_path / "claude.md"
+        md_file.write_text(content, encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
+            result = load_claude_md()
+        assert "Abschnitt 1" in result
+        assert "Abschnitt 2" in result
+        assert "Punkt A" in result
+
+
+class TestClaudeMdInChatPrompt:
+    """Tests fuer die Integration von claude.md in den chat_agent System-Prompt."""
+
+    def test_claude_md_content_in_prompt(self) -> None:
+        """claude.md Inhalt erscheint im generierten System-Prompt."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("agent.claude_md.load_claude_md", return_value="## Meine Regel\n- Immer Deutsch"), \
+             patch("agent.profile.get_profile_context_full", return_value=""):
+            prompt = _build_chat_prompt()
+
+        assert "Meine Regel" in prompt
+        assert "Immer Deutsch" in prompt
+
+    def test_empty_claude_md_not_in_prompt(self) -> None:
+        """Leere claude.md fuegt keinen leeren Abschnitt ein."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("agent.claude_md.load_claude_md", return_value=""), \
+             patch("agent.profile.get_profile_context_full", return_value=""):
+            prompt = _build_chat_prompt()
+
+        assert "Bot-Instruktionen" not in prompt
+
+    def test_profile_still_in_prompt_with_claude_md(self) -> None:
+        """Profile-Kontext erscheint weiterhin im Prompt wenn claude.md aktiv ist."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("agent.claude_md.load_claude_md", return_value="## Regeln\n- Test"), \
+             patch("agent.profile.get_profile_context_full", return_value="Name: Fabio\nStandort: Berlin"):
+            prompt = _build_chat_prompt()
+
+        assert "Regeln" in prompt
+        assert "Fabio" in prompt
+        assert "Berlin" in prompt
+
+    def test_claude_md_before_profile_in_prompt(self) -> None:
+        """claude.md erscheint im Prompt VOR dem User-Profil."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("agent.claude_md.load_claude_md", return_value="BOT_INSTRUCTION"), \
+             patch("agent.profile.get_profile_context_full", return_value="USER_PROFILE"):
+            prompt = _build_chat_prompt()
+
+        bot_pos = prompt.index("BOT_INSTRUCTION")
+        user_pos = prompt.index("USER_PROFILE")
+        assert bot_pos < user_pos
+
+    def test_prompt_falls_back_to_base_on_error(self) -> None:
+        """Bei Fehler in claude_md oder profile wird Basis-Prompt zurueckgegeben."""
+        from agent.agents.chat_agent import _build_chat_prompt, _CHAT_PROMPT_BASE
+
+        with patch("agent.claude_md.load_claude_md", side_effect=Exception("Fehler")):
+            prompt = _build_chat_prompt()
+
+        assert _CHAT_PROMPT_BASE in prompt
+
+    def test_base_prompt_always_present(self) -> None:
+        """Basis-Prompt ist immer im generierten Prompt enthalten."""
+        from agent.agents.chat_agent import _build_chat_prompt, _CHAT_PROMPT_BASE
+
+        with patch("agent.claude_md.load_claude_md", return_value="Regeln"), \
+             patch("agent.profile.get_profile_context_full", return_value="Profil"):
+            prompt = _build_chat_prompt()
+
+        # Kerninhalt des Basis-Prompts ist vorhanden
+        assert "persoenlicher Assistent" in prompt
