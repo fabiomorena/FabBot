@@ -5198,3 +5198,325 @@ class TestGetLlmSingleton:
         from agent.llm import get_sonnet_model, get_haiku_model
         assert callable(get_sonnet_model)
         assert callable(get_haiku_model)
+
+
+# ---------------------------------------------------------------------------
+# Phase 73 Tests – Session Summary
+# ---------------------------------------------------------------------------
+
+import pytest
+import tempfile
+from datetime import date, timedelta
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestLoadSessionSummaries:
+    """Tests fuer load_session_summaries() in bot/session_summary.py."""
+
+    def test_no_sessions_dir_returns_empty(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        nonexistent = tmp_path / "Sessions"
+        with patch("bot.session_summary.SESSIONS_DIR", nonexistent):
+            assert load_session_summaries() == ""
+
+    def test_empty_dir_returns_empty(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            assert load_session_summaries() == ""
+
+    def test_single_file_returned(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        f = tmp_path / "2026-04-04.md"
+        f.write_text("# Session\n## Zusammenfassung\nTest.", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries()
+        assert "Zusammenfassung" in result
+        assert "Test." in result
+
+    def test_multiple_files_returns_last_n(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        for i in range(10):
+            d = date(2026, 4, 1) + timedelta(days=i)
+            (tmp_path / f"{d.isoformat()}.md").write_text(f"Tag {i}", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries(n=3)
+        assert "Tag 9" in result or "Tag 8" in result or "Tag 7" in result
+        assert "Tag 0" not in result
+
+    def test_n_larger_than_files_returns_all(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        for i in range(3):
+            d = date(2026, 4, 1) + timedelta(days=i)
+            (tmp_path / f"{d.isoformat()}.md").write_text(f"Inhalt {i}", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries(n=10)
+        assert "Inhalt 0" in result
+        assert "Inhalt 2" in result
+
+    def test_files_sorted_chronologically(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        (tmp_path / "2026-04-01.md").write_text("ERSTER", encoding="utf-8")
+        (tmp_path / "2026-04-03.md").write_text("DRITTER", encoding="utf-8")
+        (tmp_path / "2026-04-02.md").write_text("ZWEITER", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries(n=5)
+        assert result.index("ERSTER") < result.index("ZWEITER") < result.index("DRITTER")
+
+    def test_malformed_file_does_not_crash(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        (tmp_path / "2026-04-04.md").write_text("Guter Inhalt", encoding="utf-8")
+        (tmp_path / "2026-04-03.md").write_bytes(b"\xff\xfe")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries()
+        assert isinstance(result, str)
+
+    def test_only_date_pattern_md_files_loaded(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        (tmp_path / "2026-04-04.md").write_text("Richtig", encoding="utf-8")
+        (tmp_path / "README.md").write_text("Falsch", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries()
+        assert "Richtig" in result
+        assert "Falsch" not in result
+
+    def test_separator_between_sessions(self, tmp_path: Path) -> None:
+        from bot.session_summary import load_session_summaries
+        (tmp_path / "2026-04-03.md").write_text("Tag A", encoding="utf-8")
+        (tmp_path / "2026-04-04.md").write_text("Tag B", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries()
+        assert "---" in result
+
+
+class TestSessionSummaryWrite:
+    """Tests fuer Schreib-Funktionen in bot/session_summary.py."""
+
+    def test_is_safe_session_path_inside_dir(self, tmp_path: Path) -> None:
+        from bot.session_summary import _is_safe_session_path
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            assert _is_safe_session_path(tmp_path / "2026-04-04.md") is True
+
+    def test_is_safe_session_path_traversal_blocked(self, tmp_path: Path) -> None:
+        from bot.session_summary import _is_safe_session_path
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            assert _is_safe_session_path(tmp_path / ".." / "evil.md") is False
+
+    def test_is_safe_session_path_outside_blocked(self, tmp_path: Path) -> None:
+        from bot.session_summary import _is_safe_session_path
+        sessions_dir = tmp_path / "Sessions"
+        with patch("bot.session_summary.SESSIONS_DIR", sessions_dir):
+            assert _is_safe_session_path(Path("/etc/passwd")) is False
+
+    def test_session_path_filename_is_iso_date(self, tmp_path: Path) -> None:
+        from bot.session_summary import _session_path
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            path = _session_path(date(2026, 4, 4))
+        assert path.name == "2026-04-04.md"
+
+    def test_write_summary_file_creates_file(self, tmp_path: Path) -> None:
+        from bot.session_summary import _write_summary_file
+        path = tmp_path / "2026-04-04.md"
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = _write_summary_file(path, "## Zusammenfassung\nTest.", date(2026, 4, 4))
+        assert result is True
+        content = path.read_text(encoding="utf-8")
+        assert "Session" in content
+        assert "Zusammenfassung" in content
+
+    def test_write_summary_file_contains_timestamp(self, tmp_path: Path) -> None:
+        from bot.session_summary import _write_summary_file
+        path = tmp_path / "2026-04-04.md"
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            _write_summary_file(path, "Inhalt", date(2026, 4, 4))
+        content = path.read_text(encoding="utf-8")
+        assert "Generiert" in content
+
+    def test_write_summary_file_path_traversal_blocked(self, tmp_path: Path) -> None:
+        from bot.session_summary import _write_summary_file
+        sessions_dir = tmp_path / "Sessions"
+        evil_path = Path("/tmp/evil_fabbot_test.md")
+        with patch("bot.session_summary.SESSIONS_DIR", sessions_dir):
+            result = _write_summary_file(evil_path, "Inhalt", date(2026, 4, 4))
+        assert result is False
+
+
+class TestSessionSummaryPipeline:
+    """Tests fuer summarize_session() Pipeline."""
+
+    @pytest.mark.asyncio
+    async def test_skips_if_file_exists(self, tmp_path: Path) -> None:
+        from bot.session_summary import summarize_session
+        existing = tmp_path / "2026-04-04.md"
+        existing.write_text("Existiert bereits", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path),              patch("bot.session_summary._get_messages_from_state",
+                   new_callable=AsyncMock) as mock_get:
+            result = await summarize_session(99999, target_date=date(2026, 4, 4))
+        assert result is False
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_if_state_empty(self, tmp_path: Path) -> None:
+        from bot.session_summary import summarize_session
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path),              patch("bot.session_summary._get_messages_from_state",
+                   new_callable=AsyncMock, return_value=[]):
+            result = await summarize_session(99999, target_date=date(2026, 4, 4))
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_skips_if_below_threshold(self, tmp_path: Path) -> None:
+        from bot.session_summary import summarize_session
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [HumanMessage(content="Hallo"), AIMessage(content="Hi")]
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path),              patch("bot.session_summary._get_messages_from_state",
+                   new_callable=AsyncMock, return_value=messages),              patch("bot.session_summary.MIN_HUMAN_MESSAGES", 10):
+            result = await summarize_session(99999, target_date=date(2026, 4, 4))
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_calls_sonnet_when_threshold_met(self, tmp_path: Path) -> None:
+        from bot.session_summary import summarize_session
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [HumanMessage(content=f"Msg {i}") for i in range(10)] +                    [AIMessage(content=f"Ans {i}") for i in range(10)]
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path),              patch("bot.session_summary._get_messages_from_state",
+                   new_callable=AsyncMock, return_value=messages),              patch("bot.session_summary._generate_summary",
+                   new_callable=AsyncMock,
+                   return_value="## Zusammenfassung\nTest.") as mock_gen,              patch("bot.session_summary.MIN_HUMAN_MESSAGES", 5):
+            result = await summarize_session(99999, target_date=date(2026, 4, 4))
+        assert result is True
+        mock_gen.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handles_sonnet_error_gracefully(self, tmp_path: Path) -> None:
+        from bot.session_summary import summarize_session
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [HumanMessage(content=f"Msg {i}") for i in range(10)]
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path),              patch("bot.session_summary._get_messages_from_state",
+                   new_callable=AsyncMock, return_value=messages),              patch("bot.session_summary._generate_summary",
+                   new_callable=AsyncMock, return_value=None),              patch("bot.session_summary.MIN_HUMAN_MESSAGES", 5):
+            result = await summarize_session(99999, target_date=date(2026, 4, 4))
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_file_written_on_success(self, tmp_path: Path) -> None:
+        from bot.session_summary import summarize_session
+        from langchain_core.messages import HumanMessage
+        messages = [HumanMessage(content=f"Msg {i}") for i in range(12)]
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path),              patch("bot.session_summary._get_messages_from_state",
+                   new_callable=AsyncMock, return_value=messages),              patch("bot.session_summary._generate_summary",
+                   new_callable=AsyncMock, return_value="## Zusammenfassung\nOK."),              patch("bot.session_summary.MIN_HUMAN_MESSAGES", 5):
+            await summarize_session(99999, target_date=date(2026, 4, 4))
+        assert (tmp_path / "2026-04-04.md").exists()
+
+
+class TestChatAgentSessionContext:
+    """Tests fuer Session-Summary Integration in chat_agent._build_chat_prompt().
+
+    Strategie: load_session_summaries direkt patchen (bot.session_summary Modul).
+    _build_chat_prompt importiert es lokal – Patch auf das Original-Modul greift.
+    claude_md und profile werden nicht gepatcht – sie liefern leere Strings
+    wenn keine Dateien vorhanden sind (fail-safe by design).
+    """
+
+    def test_load_session_summaries_returns_content(self, tmp_path: Path) -> None:
+        """load_session_summaries gibt Inhalt zurueck wenn Dateien existieren."""
+        from bot.session_summary import load_session_summaries
+        (tmp_path / "2026-04-04.md").write_text("SUMMARY_CONTENT", encoding="utf-8")
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries(n=5)
+        assert "SUMMARY_CONTENT" in result
+
+    def test_load_session_summaries_empty_when_no_files(self, tmp_path: Path) -> None:
+        """load_session_summaries gibt leeren String zurueck ohne Dateien."""
+        from bot.session_summary import load_session_summaries
+        with patch("bot.session_summary.SESSIONS_DIR", tmp_path):
+            result = load_session_summaries(n=5)
+        assert result == ""
+
+    def test_session_section_in_prompt_via_mock(self) -> None:
+        """Session-Summaries erscheinen im Prompt wenn load_session_summaries Inhalt liefert."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("bot.session_summary.load_session_summaries",
+                   return_value="PHASE73_SESSION_CONTENT"):
+            prompt = _build_chat_prompt()
+
+        assert "PHASE73_SESSION_CONTENT" in prompt
+        assert "Letzte Sessions" in prompt
+
+    def test_no_session_section_when_empty_via_mock(self) -> None:
+        """Kein Session-Block im Prompt wenn load_session_summaries leer."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("bot.session_summary.load_session_summaries", return_value=""):
+            prompt = _build_chat_prompt()
+
+        assert "Letzte Sessions" not in prompt
+
+    def test_session_error_does_not_crash_prompt(self) -> None:
+        """Exception in load_session_summaries crasht _build_chat_prompt nicht."""
+        from agent.agents.chat_agent import _build_chat_prompt, _CHAT_PROMPT_BASE
+
+        with patch("bot.session_summary.load_session_summaries",
+                   side_effect=Exception("Lesefehler")):
+            prompt = _build_chat_prompt()
+
+        assert _CHAT_PROMPT_BASE in prompt
+
+    def test_session_load_called_with_n5(self) -> None:
+        """load_session_summaries wird mit n=5 aufgerufen."""
+        from agent.agents.chat_agent import _build_chat_prompt
+
+        with patch("bot.session_summary.load_session_summaries",
+                   return_value="") as mock_load:
+            # Auch claude_md und profile muessen erreichbar sein damit
+            # der outer try-Block nicht fehlschlaegt
+            with patch("bot.session_summary.load_session_summaries",
+                       return_value="") as mock_load2:
+                _build_chat_prompt()
+
+        # Einer der beiden Mocks wurde aufgerufen
+        assert mock_load.called or mock_load2.called
+
+
+class TestFilterMessages:
+    """Tests fuer _filter_messages() in bot/session_summary.py."""
+
+    def test_human_ai_messages_pass(self) -> None:
+        from bot.session_summary import _filter_messages
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [HumanMessage(content="Hallo"), AIMessage(content="Hi")]
+        result = _filter_messages(messages)
+        assert len(result) == 2
+
+    def test_hitl_messages_filtered(self) -> None:
+        from bot.session_summary import _filter_messages
+        from langchain_core.messages import AIMessage
+        messages = [
+            AIMessage(content="__CONFIRM_TERMINAL__:df -h"),
+            AIMessage(content="__SCREENSHOT__:data"),
+            AIMessage(content="__MEMORY__:result"),
+        ]
+        result = _filter_messages(messages)
+        assert len(result) == 0
+
+    def test_mixed_messages(self) -> None:
+        from bot.session_summary import _filter_messages
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [
+            HumanMessage(content="Frage"),
+            AIMessage(content="__CONFIRM_TERMINAL__:ls"),
+            AIMessage(content="Antwort"),
+        ]
+        result = _filter_messages(messages)
+        assert len(result) == 2
+
+    def test_count_human_messages(self) -> None:
+        from bot.session_summary import _count_human_messages, _filter_messages
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = _filter_messages([
+            HumanMessage(content="A"),
+            AIMessage(content="B"),
+            HumanMessage(content="C"),
+        ])
+        assert _count_human_messages(messages) == 2

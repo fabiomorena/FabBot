@@ -42,16 +42,14 @@ WICHTIGE VERHALTENSREGELN:
 
 def _build_chat_prompt() -> str:
     """
-    Baut den Chat-Prompt dynamisch aus drei Quellen – alle ueberleben den Context Trim:
+    Baut den Chat-Prompt dynamisch aus vier Quellen – alle ueberleben den Context Trim:
     1. _CHAT_PROMPT_BASE        – Basis-Instruktionen
     2. claude.md                – persistente Bot-Instruktionen (load_claude_md() gecacht)
-    3. personal_profile.yaml    – persoenlicher Kontext des Users
+    3. Session-Summaries        – Cross-Session-Kontext der letzten Tage (Phase 73)
+    4. personal_profile.yaml    – persoenlicher Kontext des Users
 
     Dynamisch statt Singleton: neue Bot-Instruktionen via append_to_claude_md()
     wirken beim naechsten Call sofort – kein Bot-Neustart noetig.
-    Kein wesentlicher Overhead da load_claude_md() und get_profile_context_full()
-    gecacht sind (nur String-Konkatenation pro Call).
-
     Fail-safe: Bei jedem Fehler wird der Basis-Prompt zurueckgegeben.
     """
     try:
@@ -68,6 +66,20 @@ def _build_chat_prompt() -> str:
                 + claude_ctx
                 + "\n=== Ende Bot-Instruktionen ==="
             )
+
+        # Session-Summaries – Cross-Session-Kontext (Phase 73)
+        # Sync-Leserei, kein Overhead – liefert komprimierte Tages-Zusammenfassungen
+        try:
+            from bot.session_summary import load_session_summaries
+            session_ctx = load_session_summaries(n=5)
+            if session_ctx:
+                parts.append(
+                    "\n=== Letzte Sessions (Kurzzusammenfassungen) ===\n"
+                    + session_ctx
+                    + "\n=== Ende Sessions ==="
+                )
+        except Exception:
+            pass  # fail-safe: Session-Summaries sind optional
 
         # personal_profile.yaml – Kontext ueber den User (gecacht)
         profile_ctx = get_profile_context_full()
@@ -152,15 +164,14 @@ async def chat_agent(state: AgentState) -> AgentState:
     """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools.
 
     Phase 63: _build_chat_prompt() wird dynamisch aufgerufen statt als Singleton.
-    load_claude_md() ist gecacht → minimaler Overhead.
-    Neue Bot-Instruktionen via append_to_claude_md() wirken sofort.
+    Phase 73: Session-Summaries fuer Cross-Session-Kontext integriert.
     """
     llm = get_llm()
     clean_messages = _clean_messages_for_chat(state["messages"])
     context_window = _get_context_window_size()
     trimmed_messages = clean_messages[-context_window:]
 
-    # Dynamisch – neue claude.md Eintraege wirken sofort ohne Neustart
+    # Dynamisch – neue claude.md Eintraege und Session-Summaries wirken sofort
     prompt = _build_chat_prompt()
     messages = [SystemMessage(content=prompt)] + trimmed_messages
 

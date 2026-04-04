@@ -65,6 +65,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Hardening – tmp_path Safety, gather return_exceptions, Startup-Validierung, Retry 429/503, lazy API-Key |
 | ✅ | TTS Config Cleanup – _validate_tts_config nach Logger, lazy getters, Retry-Log spezifischer |
 | ✅ | Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU konfigurierbar, lazy singleton |
+| ✅ | Session Summary – tägliche Konversationszusammenfassung (23:30), Cross-Session-Kontext im chat_agent |
 | ✅ | Immer aktuelle Antworten – web_agent als Fallback für Faktenfragen, chat_agent nur konversationell |
 ---
 
@@ -202,6 +203,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 69** ✅ TTS Hardening – tmp_path, gather, Validierung, Retry, lazy API-Key
 - **Phase 70** ✅ TTS Config Cleanup – Validierung nach Logger, lazy getters, Retry-Log
 - **Phase 71** ✅ Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU, lazy singleton, kein Neustart bei Modellwechsel nötig
+- **Phase 73** ✅ Session Summary Writer – tägliche Zusammenfassung, Cross-Session-Kontext
 - **Phase 72** ✅ Supervisor-Routing – web_agent als Fallback für alle Faktenfragen, chat_agent nur noch für rein konversationelle Nachrichten
 ---
 
