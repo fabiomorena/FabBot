@@ -21,6 +21,7 @@ from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
+from bot.session_summary import summarize_session, run_session_summary_scheduler, SESSIONS_DIR
 from agent.agents.vision_agent import analyze_image_direct
 
 logger = logging.getLogger(__name__)
@@ -363,6 +364,21 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("❌ Fehler beim Speichern der Notiz.")
 
 
+
+@restricted
+async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Erstellt manuell eine Session-Zusammenfassung fuer heute."""
+    chat_id = update.effective_chat.id
+    thinking = await update.message.reply_text("Erstelle Session-Zusammenfassung...")
+    success = await summarize_session(chat_id)
+    if success:
+        await thinking.edit_text("✅ Session-Zusammenfassung gespeichert.")
+    else:
+        await thinking.edit_text(
+            "ℹ️ Keine Zusammenfassung erstellt.\n"
+            "(Moegliche Gruende: Datei existiert bereits, oder zu wenige Nachrichten heute.)"
+        )
+
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet eingehende Fotos – Bildanalyse via Claude Vision."""
@@ -702,6 +718,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("clip", cmd_clip, block=False))
     app.add_handler(CommandHandler("search", cmd_search, block=False))
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
+    app.add_handler(CommandHandler("summary", cmd_summary, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))

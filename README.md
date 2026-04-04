@@ -40,7 +40,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – /tts on|off or TTS_ENABLED env var |
 | ✅ | TTS Stop – /stop kills running afplay immediately |
 | ✅ | German date format – 18.03.2026, 19:06 Uhr |
-| ✅ | GitHub Actions CI – runs 530 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 497 pytest tests on every push |
 | ✅ | Personal Context Layer – personal_profile.yaml injected into all agents |
 | ✅ | /remember – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -65,7 +65,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Hardening – tmp_path Safety, gather return_exceptions, Startup-Validierung, Retry 429/503, lazy API-Key |
 | ✅ | TTS Config Cleanup – _validate_tts_config nach Logger, lazy getters, Retry-Log spezifischer |
 | ✅ | Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU konfigurierbar, lazy singleton |
-| ✅ | Session Summary – tägliche Konversationszusammenfassung (23:30 Uhr), Cross-Session-Kontext im chat_agent, /summary Command |
+| ✅ | Session Summary – tägliche Konversationszusammenfassung (23:30), Cross-Session-Kontext im chat_agent |
 | ✅ | Immer aktuelle Antworten – web_agent als Fallback für Faktenfragen, chat_agent nur konversationell |
 ---
 
@@ -83,7 +83,7 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/test_security_terminal.py  # pytest suite (530 tests)
+├── tests/test_security_terminal.py  # pytest suite (497 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -114,7 +114,6 @@ FabBot/
     ├── briefing.py          # Morning briefing scheduler (07:30)
     ├── reminders.py         # Reminder storage + proactive delivery
     ├── health_check.py      # Daily health check scheduler (06:00)
-    ├── session_summary.py   # Session Summary Writer (23:30, Cross-Session-Kontext)
     └── party_report.py      # Weekend Party Report (Mittwoch 20:00)
 ```
 
@@ -162,7 +161,7 @@ cp .env.example .env   # fill in API keys
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (530 tests)
+pytest tests/ -v      # Run tests (498 tests)
 ```
 
 ### Run as Launch Agent
@@ -204,7 +203,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 69** ✅ TTS Hardening – tmp_path, gather, Validierung, Retry, lazy API-Key
 - **Phase 70** ✅ TTS Config Cleanup – Validierung nach Logger, lazy getters, Retry-Log
 - **Phase 71** ✅ Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU, lazy singleton, kein Neustart bei Modellwechsel nötig
-- **Phase 73** ✅ Session Summary Writer – tägliche Zusammenfassung, /summary Command, Cross-Session-Kontext
+- **Phase 73** ✅ Session Summary Writer – tägliche Zusammenfassung, Cross-Session-Kontext
 - **Phase 72** ✅ Supervisor-Routing – web_agent als Fallback für alle Faktenfragen, chat_agent nur noch für rein konversationelle Nachrichten
 ---
 
