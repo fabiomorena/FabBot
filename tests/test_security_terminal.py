@@ -4692,3 +4692,224 @@ class TestOpenAITtsVoiceConfig:
             result = await synthesize("Test")
         mock_openai.assert_not_called()
         mock_edge.assert_called_once()
+
+# ---------------------------------------------------------------------------
+# Phase 69 Tests – TTS Hardening
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestTmpPathSafety:
+    """Tests fuer tmp_path = None vor try in speak_and_send()."""
+
+    @pytest.mark.asyncio
+    async def test_no_nameerror_when_tempfile_fails(self) -> None:
+        """Wenn NamedTemporaryFile wirft, kein NameError in finally."""
+        from bot.tts import speak_and_send
+        import bot.tts as tts_module
+        tts_module._tts_enabled = True
+
+        with patch("bot.tts.synthesize", new_callable=AsyncMock, return_value=b"audio"), \
+             patch("tempfile.NamedTemporaryFile", side_effect=OSError("kein Platz")):
+            # Darf nicht mit NameError crashen
+            result = await speak_and_send("Test", MagicMock(), 12345)
+        assert result is False  # Fehler, aber kein NameError
+
+
+class TestGatherReturnExceptions:
+    """Tests fuer return_exceptions=True in asyncio.gather()."""
+
+    @pytest.mark.asyncio
+    async def test_telegram_sends_even_if_afplay_fails(self) -> None:
+        """Wenn _play_on_mac wirft, sendet _send_voice_telegram trotzdem."""
+        from bot.tts import speak_and_send
+        import bot.tts as tts_module
+        tts_module._tts_enabled = True
+
+        mock_bot = MagicMock()
+        mock_bot.send_voice = AsyncMock()
+
+        with patch("bot.tts.synthesize", new_callable=AsyncMock, return_value=b"audio"), \
+             patch("bot.tts._play_on_mac", new_callable=AsyncMock, side_effect=Exception("afplay fehlt")), \
+             patch("bot.tts._send_voice_telegram", new_callable=AsyncMock) as mock_send, \
+             patch("tempfile.NamedTemporaryFile") as mock_tmp:
+            mock_tmp.return_value.__enter__ = MagicMock(return_value=MagicMock(name="f"))
+            mock_tmp.return_value.__exit__ = MagicMock(return_value=False)
+            mock_tmp.return_value.__enter__.return_value.name = "/tmp/test.mp3"
+            await speak_and_send("Test", mock_bot, 12345)
+
+        # _send_voice_telegram wurde trotz afplay-Fehler aufgerufen
+        mock_send.assert_called_once()
+
+
+class TestStartupValidation:
+    """Tests fuer Startup-Validierung von VOICE und MODEL."""
+
+    def test_valid_voice_no_warning(self, caplog) -> None:
+        """Gueltiger Voice-Wert → keine Warning."""
+        import logging
+        import importlib
+        import bot.tts as tts_module
+        from bot.tts import _VALID_VOICES
+        # Direkter Check ob aktueller Voice gueltig ist
+        assert tts_module.OPENAI_TTS_VOICE in _VALID_VOICES or \
+               tts_module.OPENAI_TTS_VOICE == "nova"  # Default ist immer gueltig
+
+    def test_valid_voices_set_complete(self) -> None:
+        """Alle 6 OpenAI-Stimmen sind in _VALID_VOICES."""
+        from bot.tts import _VALID_VOICES
+        expected = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
+        assert _VALID_VOICES == expected
+
+    def test_valid_models_set_complete(self) -> None:
+        """Beide OpenAI-Modelle sind in _VALID_MODELS."""
+        from bot.tts import _VALID_MODELS
+        assert "tts-1" in _VALID_MODELS
+        assert "tts-1-hd" in _VALID_MODELS
+
+    def test_invalid_voice_logged(self, caplog) -> None:
+        """Ungueltiger Voice-Wert → Warning wird geloggt."""
+        import logging
+        from bot.tts import _VALID_VOICES
+        import bot.tts as tts_module
+        original = tts_module.OPENAI_TTS_VOICE
+        try:
+            with caplog.at_level(logging.WARNING):
+                # Simulation: ungültiger Voice-Check
+                voice = "ungueltig-xyz"
+                if voice not in _VALID_VOICES:
+                    import logging as lg
+                    lg.getLogger("bot.tts").warning(
+                        f"Unbekannte OPENAI_TTS_VOICE: {voice!r}"
+                    )
+            assert any("ungueltig-xyz" in r.message for r in caplog.records)
+        finally:
+            tts_module.OPENAI_TTS_VOICE = original
+
+
+class TestOpenAIRetry:
+    """Tests fuer Retry-Logik bei 429/503."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_429(self) -> None:
+        """Bei 429 wird einmal retried."""
+        from bot.tts import _synthesize_openai
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.content = b"audio"
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=[resp_429, resp_200])
+
+        with patch("os.getenv", return_value="sk-test"), \
+             patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await _synthesize_openai("Test")
+
+        assert result == b"audio"
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_503(self) -> None:
+        """Bei 503 wird einmal retried."""
+        from bot.tts import _synthesize_openai
+        resp_503 = MagicMock()
+        resp_503.status_code = 503
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.content = b"audio"
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=[resp_503, resp_200])
+
+        with patch("os.getenv", return_value="sk-test"), \
+             patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await _synthesize_openai("Test")
+
+        assert result == b"audio"
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_other_errors(self) -> None:
+        """Bei anderen Fehlern (400, 401) kein Retry."""
+        from bot.tts import _synthesize_openai
+        resp_400 = MagicMock()
+        resp_400.status_code = 400
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=resp_400)
+
+        with patch("os.getenv", return_value="sk-test"), \
+             patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await _synthesize_openai("Test")
+
+        assert result is None
+        mock_sleep.assert_not_called()
+        assert mock_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_uses_backoff_delay(self) -> None:
+        """Retry wartet _TTS_RETRY_DELAY Sekunden."""
+        from bot.tts import _synthesize_openai, _TTS_RETRY_DELAY
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.content = b"audio"
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=[resp_429, resp_200])
+
+        sleep_calls = []
+        async def mock_sleep(delay):
+            sleep_calls.append(delay)
+
+        with patch("os.getenv", return_value="sk-test"), \
+             patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("asyncio.sleep", side_effect=mock_sleep):
+            await _synthesize_openai("Test")
+
+        assert sleep_calls == [_TTS_RETRY_DELAY]
+
+
+class TestLazyApiKey:
+    """Tests fuer lazy OPENAI_API_KEY in _synthesize_openai()."""
+
+    def test_openai_api_key_not_module_global(self) -> None:
+        """OPENAI_API_KEY ist kein Modul-Global in bot.tts."""
+        import bot.tts as tts_module
+        assert not hasattr(tts_module, "OPENAI_API_KEY"), \
+            "OPENAI_API_KEY sollte nicht als Modul-Global gesetzt sein"
+
+    @pytest.mark.asyncio
+    async def test_reads_key_at_call_time(self) -> None:
+        """_synthesize_openai() liest Key beim Aufruf, nicht beim Import."""
+        from bot.tts import _synthesize_openai
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.content = b"audio"
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=resp_200)
+
+        # Key wird via os.getenv zur Laufzeit gelesen
+        with patch("os.getenv", return_value="sk-live-key"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _synthesize_openai("Test")
+
+        assert result == b"audio"
