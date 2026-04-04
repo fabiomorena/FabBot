@@ -3399,7 +3399,8 @@ class TestClaudeMdLoader:
 
         assert first == second == "# Erster Inhalt"
 
-    def test_reload_clears_cache(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_reload_clears_cache(self, tmp_path: Path) -> None:
         """reload_claude_md() laedt die Datei neu."""
         from agent.claude_md import load_claude_md, reload_claude_md
         md_file = tmp_path / "claude.md"
@@ -3408,7 +3409,7 @@ class TestClaudeMdLoader:
         with patch("agent.claude_md._CLAUDE_MD_PATH", md_file):
             first = load_claude_md()
             md_file.write_text("# Version 2", encoding="utf-8")
-            second = reload_claude_md()
+            second = await reload_claude_md()
 
         assert first == "# Version 1"
         assert second == "# Version 2"
