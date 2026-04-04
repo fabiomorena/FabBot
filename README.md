@@ -40,7 +40,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – /tts on|off or TTS_ENABLED env var |
 | ✅ | TTS Stop – /stop kills running afplay immediately |
 | ✅ | German date format – 18.03.2026, 19:06 Uhr |
-| ✅ | GitHub Actions CI – runs 351 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 497 pytest tests on every push |
 | ✅ | Personal Context Layer – personal_profile.yaml injected into all agents |
 | ✅ | /remember – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -80,7 +80,7 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/test_security_terminal.py  # pytest suite (351 tests)
+├── tests/test_security_terminal.py  # pytest suite (497 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -115,8 +115,8 @@ FabBot/
 ```
 
 **Stack:**
-- Claude Sonnet 4 – AI backbone (`claude-sonnet-4-20250514`)
-- Claude Haiku 4.5 – supervisor routing + LLM-Guard (`claude-haiku-4-5-20251001`)
+- Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-20250514`)
+- Claude Haiku – supervisor routing + LLM-Guard (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`, default: `claude-haiku-4-5-20251001`)
 - LangGraph – multi-agent state machine with AsyncSqliteSaver
 - python-telegram-bot – Telegram interface
 - Whisper – local voice transcription
@@ -199,6 +199,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 68** ✅ OpenAI TTS – ElevenLabs ersetzt, OPENAI_TTS_VOICE/MODEL konfigurierbar
 - **Phase 69** ✅ TTS Hardening – tmp_path, gather, Validierung, Retry, lazy API-Key
 - **Phase 70** ✅ TTS Config Cleanup – Validierung nach Logger, lazy getters, Retry-Log
+- **Phase 71** ✅ Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU, lazy singleton, kein Neustart bei Modellwechsel nötig
 ---
 
 ## License

@@ -5068,3 +5068,133 @@ class TestRetryExhaustedLog:
         error_logs = [r for r in caplog.records if "400" in r.message]
         assert len(error_logs) >= 1
         assert not any("erschoepft" in r.message.lower() for r in caplog.records)
+
+# ---------------------------------------------------------------------------
+# Phase 71 Tests – Modell via .env konfigurierbar
+# ---------------------------------------------------------------------------
+
+from unittest.mock import patch
+
+
+class TestGetSonnetModel:
+    """Tests fuer get_sonnet_model()."""
+
+    def test_default_returned_without_env(self) -> None:
+        """Ohne ENV-Variable wird Default-Modell zurückgegeben."""
+        from agent.llm import get_sonnet_model, _DEFAULT_SONNET
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_MODEL_SONNET"}
+        with patch.dict("os.environ", env, clear=True):
+            assert get_sonnet_model() == _DEFAULT_SONNET
+
+    def test_env_var_returned_when_set(self) -> None:
+        """ANTHROPIC_MODEL_SONNET aus .env wird zurückgegeben."""
+        from agent.llm import get_sonnet_model
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-opus-4-6"}):
+            assert get_sonnet_model() == "claude-opus-4-6"
+
+    def test_whitespace_stripped(self) -> None:
+        """Whitespace im Modell-String wird entfernt."""
+        from agent.llm import get_sonnet_model
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "  claude-sonnet-4-20250514  "}):
+            assert get_sonnet_model() == "claude-sonnet-4-20250514"
+
+
+class TestGetHaikuModel:
+    """Tests fuer get_haiku_model()."""
+
+    def test_default_returned_without_env(self) -> None:
+        """Ohne ENV-Variable wird Default-Modell zurückgegeben."""
+        from agent.llm import get_haiku_model, _DEFAULT_HAIKU
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_MODEL_HAIKU"}
+        with patch.dict("os.environ", env, clear=True):
+            assert get_haiku_model() == _DEFAULT_HAIKU
+
+    def test_env_var_returned_when_set(self) -> None:
+        """ANTHROPIC_MODEL_HAIKU aus .env wird zurückgegeben."""
+        from agent.llm import get_haiku_model
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_HAIKU": "claude-haiku-4-5-20251001"}):
+            assert get_haiku_model() == "claude-haiku-4-5-20251001"
+
+    def test_whitespace_stripped(self) -> None:
+        """Whitespace im Modell-String wird entfernt."""
+        from agent.llm import get_haiku_model
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_HAIKU": "  claude-haiku-4-5-20251001  "}):
+            assert get_haiku_model() == "claude-haiku-4-5-20251001"
+
+
+class TestGetLlmSingleton:
+    """Tests fuer get_llm() Singleton-Verhalten."""
+
+    def setup_method(self) -> None:
+        import agent.llm as llm_module
+        llm_module._llm = None
+        llm_module._fast_llm = None
+
+    def teardown_method(self) -> None:
+        import agent.llm as llm_module
+        llm_module._llm = None
+        llm_module._fast_llm = None
+
+    def test_get_llm_returns_chatanthropic(self) -> None:
+        """get_llm() gibt eine ChatAnthropic-Instanz zurück."""
+        from agent.llm import get_llm
+        from langchain_anthropic import ChatAnthropic
+        result = get_llm()
+        assert isinstance(result, ChatAnthropic)
+
+    def test_get_fast_llm_returns_chatanthropic(self) -> None:
+        """get_fast_llm() gibt eine ChatAnthropic-Instanz zurück."""
+        from agent.llm import get_fast_llm
+        from langchain_anthropic import ChatAnthropic
+        result = get_fast_llm()
+        assert isinstance(result, ChatAnthropic)
+
+    def test_get_llm_uses_env_model(self) -> None:
+        """get_llm() nutzt das konfigurierte Modell."""
+        import agent.llm as llm_module
+        llm_module._llm = None
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-opus-4-6"}):
+            llm = llm_module.get_llm()
+            assert llm.model == "claude-opus-4-6"
+
+    def test_get_fast_llm_uses_env_model(self) -> None:
+        """get_fast_llm() nutzt das konfigurierte Modell."""
+        import agent.llm as llm_module
+        llm_module._fast_llm = None
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_HAIKU": "claude-haiku-4-5-20251001"}):
+            llm = llm_module.get_fast_llm()
+            assert llm.model == "claude-haiku-4-5-20251001"
+
+    def test_get_llm_reinitializes_on_model_change(self) -> None:
+        """get_llm() erstellt neue Instanz wenn Modell sich ändert."""
+        import agent.llm as llm_module
+        llm_module._llm = None
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-sonnet-4-20250514"}):
+            llm1 = llm_module.get_llm()
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-opus-4-6"}):
+            llm2 = llm_module.get_llm()
+        assert llm1 is not llm2
+        assert llm2.model == "claude-opus-4-6"
+
+    def test_get_llm_reuses_singleton_same_model(self) -> None:
+        """get_llm() gibt dasselbe Objekt zurück wenn Modell gleich bleibt."""
+        import agent.llm as llm_module
+        llm_module._llm = None
+        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-sonnet-4-20250514"}):
+            llm1 = llm_module.get_llm()
+            llm2 = llm_module.get_llm()
+        assert llm1 is llm2
+
+    def test_defaults_are_strings(self) -> None:
+        """_DEFAULT_SONNET und _DEFAULT_HAIKU sind nicht-leere Strings."""
+        from agent.llm import _DEFAULT_SONNET, _DEFAULT_HAIKU
+        assert isinstance(_DEFAULT_SONNET, str) and len(_DEFAULT_SONNET) > 0
+        assert isinstance(_DEFAULT_HAIKU, str) and len(_DEFAULT_HAIKU) > 0
+
+    def test_helper_functions_exported(self) -> None:
+        """get_sonnet_model() und get_haiku_model() sind aus agent.llm importierbar."""
+        from agent.llm import get_sonnet_model, get_haiku_model
+        assert callable(get_sonnet_model)
+        assert callable(get_haiku_model)
