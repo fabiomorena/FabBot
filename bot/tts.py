@@ -1,11 +1,13 @@
 """
-Text-to-Speech fuer FabBot – Phase 60.
+Text-to-Speech fuer FabBot – Phase 61.
 Provider: ElevenLabs (primär) → edge-tts (Fallback)
 
 ElevenLabs:
-- Stimme: Anna Jung (Voice ID via ELEVENLABS_VOICE_ID in .env)
+- Stimme: Ami (Voice ID via ELEVENLABS_VOICE_ID in .env)
 - Modell: eleven_multilingual_v2
 - API Key: ELEVENLABS_API_KEY in .env
+- Stability: ELEVENLABS_STABILITY (default: 0.5)
+- Similarity Boost: ELEVENLABS_SIMILARITY_BOOST (default: 0.75)
 
 edge-tts (Fallback):
 - Wird verwendet wenn ELEVENLABS_API_KEY nicht gesetzt oder API-Fehler
@@ -25,9 +27,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # ElevenLabs Konfiguration
-ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "xTXZTtb6MuzG0jJR05Y9")
-ELEVENLABS_MODEL    = "eleven_multilingual_v2"
+ELEVENLABS_API_KEY          = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID         = os.getenv("ELEVENLABS_VOICE_ID", "xTXZTtb6MuzG0jJR05Y9")
+ELEVENLABS_MODEL            = "eleven_multilingual_v2"
+ELEVENLABS_STABILITY        = float(os.getenv("ELEVENLABS_STABILITY", "0.5"))
+ELEVENLABS_SIMILARITY_BOOST = float(os.getenv("ELEVENLABS_SIMILARITY_BOOST", "0.75"))
 
 # edge-tts Fallback
 TTS_VOICE = "de-DE-KatjaNeural"
@@ -105,8 +109,8 @@ async def _synthesize_elevenlabs(text: str) -> bytes | None:
                     "text": text,
                     "model_id": ELEVENLABS_MODEL,
                     "voice_settings": {
-                        "stability": 0.5,
-                        "similarity_boost": 0.75,
+                        "stability": ELEVENLABS_STABILITY,
+                        "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
                         "style": 0.0,
                         "use_speaker_boost": True,
                     },
@@ -167,6 +171,7 @@ async def synthesize(text: str) -> bytes | None:
     if not text:
         return None
     if len(text) > TTS_MAX_CHARS:
+        logger.info(f"TTS Text auf {TTS_MAX_CHARS} Zeichen gekürzt (original: {len(text)})")
         text = text[:TTS_MAX_CHARS] + "..."
 
     # ElevenLabs primär

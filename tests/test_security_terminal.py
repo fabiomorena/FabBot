@@ -3221,3 +3221,242 @@ class TestChatAgentContextTrim:
         clean = _clean_messages_for_chat(messages)
         trimmed = clean[-40:]
         assert len(trimmed) == 3
+
+# ---------------------------------------------------------------------------
+# Phase 61 Tests – TTS Truncation Logging + ElevenLabs voice_settings
+# ---------------------------------------------------------------------------
+
+import logging
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestTtsTruncationLogging:
+    """Tests für Truncation-Logging in synthesize()."""
+
+    @pytest.mark.asyncio
+    async def test_long_text_triggers_log(self, caplog) -> None:
+        """Text über TTS_MAX_CHARS → INFO-Log mit Originalläge."""
+        from bot.tts import synthesize, TTS_MAX_CHARS
+
+        long_text = "Hallo Fabio! " * 100  # deutlich > 1000 Zeichen
+
+        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+             caplog.at_level(logging.INFO, logger="bot.tts"):
+            await synthesize(long_text)
+
+        assert any("gekürzt" in r.message for r in caplog.records), \
+            "Kein Truncation-Log gefunden"
+
+    @pytest.mark.asyncio
+    async def test_log_contains_original_length(self, caplog) -> None:
+        """Log-Nachricht enthält die Originalläge."""
+        from bot.tts import synthesize, TTS_MAX_CHARS
+
+        long_text = "x " * 600  # ~1200 Zeichen nach _clean_for_tts
+
+        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+             caplog.at_level(logging.INFO, logger="bot.tts"):
+            await synthesize(long_text)
+
+        truncation_logs = [r for r in caplog.records if "gekürzt" in r.message]
+        assert len(truncation_logs) >= 1
+        assert "original" in truncation_logs[0].message.lower()
+
+    @pytest.mark.asyncio
+    async def test_log_contains_max_chars(self, caplog) -> None:
+        """Log-Nachricht enthält TTS_MAX_CHARS."""
+        from bot.tts import synthesize, TTS_MAX_CHARS
+
+        long_text = "a " * 600
+
+        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+             caplog.at_level(logging.INFO, logger="bot.tts"):
+            await synthesize(long_text)
+
+        truncation_logs = [r for r in caplog.records if "gekürzt" in r.message]
+        assert any(str(TTS_MAX_CHARS) in r.message for r in truncation_logs)
+
+    @pytest.mark.asyncio
+    async def test_short_text_no_truncation_log(self, caplog) -> None:
+        """Kurzer Text → kein Truncation-Log."""
+        from bot.tts import synthesize
+
+        with patch("bot.tts._synthesize_elevenlabs", new_callable=AsyncMock, return_value=b"audio"), \
+             caplog.at_level(logging.INFO, logger="bot.tts"):
+            await synthesize("Kurze Nachricht.")
+
+        assert not any("gekürzt" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_truncated_text_ends_with_ellipsis(self) -> None:
+        """Gekürzter Text endet mit '...'."""
+        from bot.tts import synthesize, TTS_MAX_CHARS
+
+        captured_texts = []
+
+        async def fake_elevenlabs(text: str) -> bytes:
+            captured_texts.append(text)
+            return b"audio"
+
+        long_text = "Wort " * 300
+
+        with patch("bot.tts._synthesize_elevenlabs", side_effect=fake_elevenlabs):
+            await synthesize(long_text)
+
+        if captured_texts:
+            assert captured_texts[-1].endswith("...")
+
+    @pytest.mark.asyncio
+    async def test_truncated_text_length_within_limit(self) -> None:
+        """Gekürzter Text ist maximal TTS_MAX_CHARS + 3 Zeichen lang."""
+        from bot.tts import synthesize, TTS_MAX_CHARS
+
+        captured_texts = []
+
+        async def fake_elevenlabs(text: str) -> bytes:
+            captured_texts.append(text)
+            return b"audio"
+
+        long_text = "a " * 1000  # >> TTS_MAX_CHARS
+
+        with patch("bot.tts._synthesize_elevenlabs", side_effect=fake_elevenlabs):
+            await synthesize(long_text)
+
+        if captured_texts:
+            assert len(captured_texts[-1]) <= TTS_MAX_CHARS + 3  # +3 für "..."
+
+
+class TestElevenLabsVoiceSettings:
+    """Tests für konfigurierbare ElevenLabs voice_settings."""
+
+    def test_stability_constant_is_float(self) -> None:
+        """ELEVENLABS_STABILITY ist ein Float."""
+        import bot.tts as tts_module
+        assert isinstance(tts_module.ELEVENLABS_STABILITY, float)
+
+    def test_similarity_boost_constant_is_float(self) -> None:
+        """ELEVENLABS_SIMILARITY_BOOST ist ein Float."""
+        import bot.tts as tts_module
+        assert isinstance(tts_module.ELEVENLABS_SIMILARITY_BOOST, float)
+
+    def test_stability_default_value(self) -> None:
+        """Standard-Stability ist 0.5."""
+        import bot.tts as tts_module
+        # Default in .env.example ist 0.5 – falls kein Override gesetzt
+        assert 0.0 <= tts_module.ELEVENLABS_STABILITY <= 1.0
+
+    def test_similarity_boost_default_value(self) -> None:
+        """Standard-Similarity-Boost liegt zwischen 0 und 1."""
+        import bot.tts as tts_module
+        assert 0.0 <= tts_module.ELEVENLABS_SIMILARITY_BOOST <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_voice_settings_in_api_call(self) -> None:
+        """_synthesize_elevenlabs() übergibt ELEVENLABS_STABILITY und SIMILARITY_BOOST an API."""
+        import bot.tts as tts_module
+
+        captured_payload = {}
+
+        async def fake_post(url, headers, json, **kwargs):
+            captured_payload.update(json)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = b"fake_audio"
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+
+        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            await tts_module._synthesize_elevenlabs("Test")
+
+        settings = captured_payload.get("voice_settings", {})
+        assert "stability" in settings
+        assert "similarity_boost" in settings
+        assert settings["stability"] == tts_module.ELEVENLABS_STABILITY
+        assert settings["similarity_boost"] == tts_module.ELEVENLABS_SIMILARITY_BOOST
+
+    @pytest.mark.asyncio
+    async def test_custom_stability_used_in_api_call(self) -> None:
+        """Benutzerdefinierte ELEVENLABS_STABILITY wird korrekt an API übergeben."""
+        import bot.tts as tts_module
+
+        captured_payload = {}
+
+        async def fake_post(url, headers, json, **kwargs):
+            captured_payload.update(json)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = b"audio"
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+
+        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
+             patch("bot.tts.ELEVENLABS_STABILITY", 0.8), \
+             patch("bot.tts.ELEVENLABS_SIMILARITY_BOOST", 0.9), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            await tts_module._synthesize_elevenlabs("Test")
+
+        settings = captured_payload.get("voice_settings", {})
+        assert settings["stability"] == 0.8
+        assert settings["similarity_boost"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_style_always_zero(self) -> None:
+        """style ist immer 0.0 – nicht konfigurierbar."""
+        import bot.tts as tts_module
+
+        captured_payload = {}
+
+        async def fake_post(url, headers, json, **kwargs):
+            captured_payload.update(json)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = b"audio"
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+
+        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            await tts_module._synthesize_elevenlabs("Test")
+
+        settings = captured_payload.get("voice_settings", {})
+        assert settings.get("style") == 0.0
+
+    @pytest.mark.asyncio
+    async def test_speaker_boost_always_true(self) -> None:
+        """use_speaker_boost ist immer True."""
+        import bot.tts as tts_module
+
+        captured_payload = {}
+
+        async def fake_post(url, headers, json, **kwargs):
+            captured_payload.update(json)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = b"audio"
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+
+        with patch("bot.tts.ELEVENLABS_API_KEY", "test-key"), \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            await tts_module._synthesize_elevenlabs("Test")
+
+        settings = captured_payload.get("voice_settings", {})
+        assert settings.get("use_speaker_boost") is True
