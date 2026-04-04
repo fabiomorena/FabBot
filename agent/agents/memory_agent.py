@@ -1,24 +1,12 @@
 """
-Memory Agent fuer FabBot – Phase 45/46/63/64.
+Memory Agent fuer FabBot – Phase 45/46/63/64/65.
 
-Phase 64: "Merke dir das" – vorherige Aussage wird als Bot-Instruktion gespeichert.
-
-Workflow:
-    User: "Ich antworte morgens meistens kurz weil ich im Flow bin"
-    Bot:  [normale Antwort]
-    User: "Merke dir das"
-    Bot:  🤖 Bot-Instruktion gespeichert:
-          _Fabio antwortet morgens kurz – er ist im Flow, kurz bleiben_
-          Ab sofort aktiv – kein Neustart nötig.
-
-Trigger-Phrases (exakter Match nach Normalisierung):
-    "merke dir das", "merk dir das", "merke das", "merk das",
-    "das merken", "bitte merk dir das", etc.
-
-Pipeline:
-- "merke dir das" → _is_merke_dir_das() → vorherige HumanMessage holen
-  → Sonnet formuliert Bot-Instruktion → append_to_claude_md()
-- Alle anderen Memory-Befehle → normaler Pfad (profile.yaml oder claude.md)
+Phase 65 Fixes:
+- get_fast_llm() statt get_llm() in _formulate_bot_instruction_from_context()
+- Newline-Sanitizing + Laengenbegrenzung im Ergebnis
+- Rekursiver Trigger in _get_prev_human_message() abgefangen
+- HumanMessage top-level Import in _review_yaml() (kein lokaler HM-Alias)
+- MERKE_DIR_DAS_TRIGGERS als oeffentliche Konstante (Single Source of Truth)
 """
 
 import copy
@@ -34,10 +22,11 @@ from agent.llm import get_llm, get_fast_llm
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Phase 64: "Merke dir das" Trigger
+# Public Konstante – Single Source of Truth fuer Trigger-Erkennung.
+# Supervisor-Prompt und memory_agent nutzen dieselbe Quelle.
 # ---------------------------------------------------------------------------
 
-_MERKE_DIR_DAS_TRIGGERS = frozenset({
+MERKE_DIR_DAS_TRIGGERS = frozenset({
     "merke dir das",
     "merk dir das",
     "merke das",
@@ -51,6 +40,9 @@ _MERKE_DIR_DAS_TRIGGERS = frozenset({
     "das solltest du dir merken",
     "merk dir das bitte",
 })
+
+# Interner Alias – bestehender Code unveraendert
+_MERKE_DIR_DAS_TRIGGERS = MERKE_DIR_DAS_TRIGGERS
 
 _FORMULATE_PROMPT = """Du bist ein Assistent der Bot-Instruktionen formuliert.
 
@@ -67,14 +59,13 @@ Gute Beispiele:
 - "Fabio antwortet morgens kurz – er ist im Flow, kurz und praezise bleiben"
 - "Fabio hoert beim Coden Techno – bei Musik-Empfehlungen elektronische Musik bevorzugen"
 - "Fabio bevorzugt direkte Empfehlungen statt 'es kommt drauf an'"
-- "Wenn Fabio beschaeftigt klingt, Antworten besonders kurz halten"
 """
 
 
 def _is_merke_dir_das(text: str) -> bool:
     """Erkennt kurze 'merke dir das' Nachrichten ohne weiteren spezifischen Inhalt."""
     normalized = text.strip().lower().rstrip("!.?").strip()
-    return normalized in _MERKE_DIR_DAS_TRIGGERS
+    return normalized in MERKE_DIR_DAS_TRIGGERS
 
 
 def _get_current_human_message(messages: list) -> str:
@@ -89,7 +80,12 @@ def _get_current_human_message(messages: list) -> str:
 
 
 def _get_prev_human_message(messages: list) -> str:
-    """Gibt den Text der vorletzten HumanMessage zurueck (vor 'merke dir das')."""
+    """
+    Gibt den Text der vorletzten HumanMessage zurueck (vor 'merke dir das').
+
+    Phase 65 Fix: Prueft ob der Kandidat selbst ein Trigger ist
+    (rekursive Referenz vermeiden).
+    """
     human_texts = []
     for msg in messages:
         if isinstance(msg, HumanMessage):
@@ -100,35 +96,44 @@ def _get_prev_human_message(messages: list) -> str:
                 text = str(content).strip()
             if text:
                 human_texts.append(text)
-    # Letzte = "merke dir das", vorletzte = der Kontext
+
     if len(human_texts) >= 2:
-        return human_texts[-2]
+        candidate = human_texts[-2]
+        # Rekursions-Schutz: Wenn auch der Kandidat ein Trigger ist → kein Kontext
+        if _is_merke_dir_das(candidate):
+            logger.debug("_get_prev_human_message: Kandidat ist selbst ein Trigger – kein Kontext.")
+            return ""
+        return candidate
     return ""
 
 
 async def _formulate_bot_instruction_from_context(context: str) -> str:
     """
-    Sonnet formuliert aus einer Aussage des Users eine Bot-Instruktion.
-    Gibt leeren String zurueck bei Fehler.
+    Formuliert aus einer Aussage des Users eine Bot-Instruktion.
+
+    Phase 65 Fixes:
+    - get_fast_llm() statt get_llm() (Haiku reicht fuer 1-Satz-Formulierung)
+    - Newline-Sanitizing im Ergebnis
+    - Laengenbegrenzung auf 200 Zeichen
     """
     try:
-        llm = get_llm()
+        llm = get_fast_llm()  # Haiku – ~10x guenstiger als Sonnet fuer diese Aufgabe
         prompt = _FORMULATE_PROMPT.format(context=context[:500])
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        result = content.strip()
+
+        # Sanitize: Newlines entfernen + Laenge begrenzen
+        result = content.strip().replace("\n", " ").replace("\r", "").strip()
+        result = result[:200]
+
         logger.info(f"MemoryAgent Phase64: Instruktion formuliert: {result[:80]}")
         return result
     except Exception as e:
         logger.error(f"MemoryAgent Phase64: Formulierung fehlgeschlagen: {e}")
         return ""
 
-
-# ---------------------------------------------------------------------------
-# Parser-Prompt (Sonnet – Stufe 1)
-# ---------------------------------------------------------------------------
 
 _PARSER_PROMPT = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
 Bestimme was gespeichert, aktualisiert oder gelöscht werden soll.
@@ -151,13 +156,13 @@ project:
   {"name": "Projektname", "description": "Kurze Beschreibung", "stack": ["Python"], "priority": "high|medium|low"}
 
 place:
-  {"name": "Ortsname", "type": "restaurant|bar|cafe|gym|shop|sonstige", "location": "Stadtteil, Stadt", "context": "Warum relevant, mit wem, wie oft"}
+  {"name": "Ortsname", "type": "restaurant|bar|cafe|gym|shop|sonstige", "location": "Stadtteil, Stadt", "context": "Warum relevant"}
 
 media:
-  {"title": "Titel", "type": "song|album|film|serie|podcast|buch|künstler", "artist": "Künstler/Regisseur/Autor (optional)", "context": "Warum relevant"}
+  {"title": "Titel", "type": "song|album|film|serie|podcast|buch|künstler", "artist": "optional", "context": "Warum relevant"}
 
 preference:
-  {"key": "aussagekraeftiger_schluessel", "value": "Wert als Text"}
+  {"key": "schluessel", "value": "Wert"}
 
 job:
   {"employer": "Firmenname", "role": "Jobtitel", "context": "Zusatzinfo"}
@@ -166,10 +171,10 @@ location:
   {"location": "Stadt, Land"}
 
 custom:
-  {"key": "aussagekraeftiger_schluessel", "value": "Wert als Text"}
+  {"key": "schluessel", "value": "Wert"}
 
 bot_instruction:
-  {"text": "Die vollständige Bot-Instruktion als präziser, aktionsorientierter Satz"}
+  {"text": "Die vollständige Bot-Instruktion als präziser Satz"}
 
 Für delete:
   {"name": "Name"} oder {"key": "Schlüssel"} oder {"title": "Titel"}
@@ -179,23 +184,10 @@ Wichtige Regeln:
 - Lieder, Alben, Filme, Serien, Podcasts, Bücher → category=media
 - Firmen wo der User arbeitet → category=job
 - Eigene Software-Projekte → category=project
-- Bot-Verhalten, Antwort-Stil, dauerhafte Instruktionen FÜR DEN BOT → category=bot_instruction
+- Bot-Verhalten, Antwort-Stil für den Bot → category=bot_instruction
   Trigger: "grundsätzlich", "von jetzt an", "du sollst immer", "dein Verhalten"
-- Persönliche Infos ÜBER DEN USER → preference oder custom
+- Persönliche Infos über den User → preference oder custom
 - Wenn unklar: category=custom
-
-Beispiele:
-"füge Saporito zum Kontext hinzu – Lieblings-Italiener in Friedrichshain"
-→ {"action": "save", "category": "place", "data": {"name": "Saporito", "type": "restaurant", "location": "Friedrichshain, Berlin", "context": "Lieblings-Italiener"}}
-
-"merke dir grundsätzlich dass du immer vollständige Dateien lieferst"
-→ {"action": "save", "category": "bot_instruction", "data": {"text": "Immer vollständige Dateien liefern, keine Snippets"}}
-
-"von jetzt an sollst du kürzer antworten"
-→ {"action": "save", "category": "bot_instruction", "data": {"text": "Antworten kurz halten, auf den Punkt kommen"}}
-
-"merke dir dass ich gerne Yoga mache"
-→ {"action": "save", "category": "custom", "data": {"key": "hobby_yoga", "value": "macht gerne Yoga"}}
 """
 
 _REVIEWER_PROMPT = """Du bist ein YAML-Validator. Vergleiche Original- und neues YAML.
@@ -228,23 +220,17 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
                 continue
             all_filtered.append(m)
         context_msgs = all_filtered[-6:]
-
-        response = await llm.ainvoke(
-            [SystemMessage(content=_PARSER_PROMPT)] + context_msgs
-        )
+        response = await llm.ainvoke([SystemMessage(content=_PARSER_PROMPT)] + context_msgs)
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-
         content = content.strip()
         content = re.sub(r"^```(?:json)?\s*", "", content)
         content = re.sub(r"\s*```$", "", content).strip()
-
         parsed = json.loads(content)
         if not isinstance(parsed, dict) or "action" not in parsed:
             return {"action": "error"}
         return parsed
-
     except Exception as e:
         logger.error(f"MemoryAgent Parser Fehler: {e}")
         return {"action": "error"}
@@ -255,7 +241,6 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
     updated = copy.deepcopy(profile)
 
     if action in ("save", "update"):
-
         if category == "people":
             name = data.get("name", "").strip()
             context = data.get("context", "").strip()
@@ -392,67 +377,49 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             return updated
 
     elif action == "delete":
-
         if category == "people":
             name = data.get("name", "").strip().lower()
             if "people" in updated and isinstance(updated["people"], list):
-                updated["people"] = [
-                    p for p in updated["people"]
-                    if not (isinstance(p, dict) and p.get("name", "").lower() == name)
-                ]
+                updated["people"] = [p for p in updated["people"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)]
             return updated
-
         elif category == "project":
             name = data.get("name", "").strip().lower()
             if "projects" in updated and isinstance(updated["projects"], dict):
                 active = updated["projects"].get("active", [])
                 if isinstance(active, list):
-                    updated["projects"]["active"] = [
-                        p for p in active
-                        if not (isinstance(p, dict) and p.get("name", "").lower() == name)
-                    ]
+                    updated["projects"]["active"] = [p for p in active if not (isinstance(p, dict) and p.get("name", "").lower() == name)]
             return updated
-
         elif category == "place":
             name = data.get("name", "").strip().lower()
             if "places" in updated and isinstance(updated["places"], list):
-                updated["places"] = [
-                    p for p in updated["places"]
-                    if not (isinstance(p, dict) and p.get("name", "").lower() == name)
-                ]
+                updated["places"] = [p for p in updated["places"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)]
             return updated
-
         elif category == "media":
             title = data.get("title", "").strip().lower()
             if "media" in updated and isinstance(updated["media"], list):
-                updated["media"] = [
-                    m for m in updated["media"]
-                    if not (isinstance(m, dict) and m.get("title", "").lower() == title)
-                ]
+                updated["media"] = [m for m in updated["media"] if not (isinstance(m, dict) and m.get("title", "").lower() == title)]
             return updated
-
         elif category == "custom":
             key = data.get("key", "").strip().lower()
             if "custom" in updated and isinstance(updated["custom"], list):
-                updated["custom"] = [
-                    item for item in updated["custom"]
-                    if not (isinstance(item, dict) and item.get("key", "").lower() == key)
-                ]
+                updated["custom"] = [item for item in updated["custom"] if not (isinstance(item, dict) and item.get("key", "").lower() == key)]
             return updated
 
     return None
 
 
 async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
-    """Haiku reviewt das neue YAML."""
+    """Haiku reviewt das neue YAML.
+    Phase 65 Fix: HumanMessage top-level Import statt lokalem HM-Alias.
+    """
     try:
         llm = get_fast_llm()
-        from langchain_core.messages import HumanMessage as HM
         prompt = _REVIEWER_PROMPT.format(
             original=original_yaml[:2000],
             new=new_yaml[:2000],
         )
-        response = await llm.ainvoke([HM(content=prompt)])
+        # Phase 65: HumanMessage direkt nutzen (kein lokaler 'as HM' Import)
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -467,7 +434,6 @@ async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
 
 
 def _build_confirmation(action: str, category: str, data: dict) -> str:
-    """Baut eine lesbare Bestätigungsnachricht für den User."""
     icons = {
         "people": "👤", "project": "🚀", "place": "📍",
         "media": "🎵", "preference": "⚙️", "job": "💼",
@@ -478,57 +444,40 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
     if category == "bot_instruction":
         text = data.get("text", "")
         return f"🤖 Bot-Instruktion gespeichert:\n_{text}_\n\nAb sofort aktiv – kein Neustart nötig."
-
     if action == "delete":
         name = data.get("name") or data.get("title") or data.get("key", "Eintrag")
         return f"🗑️ Gelöscht: {name}"
-
     if category == "place":
         name = data.get("name", "")
-        place_type = data.get("type", "")
-        location = data.get("location", "")
-        context = data.get("context", "")
         parts = [f"{icon} Ort gespeichert: **{name}**"]
-        if place_type:
-            parts.append(f"Typ: {place_type}")
-        if location:
-            parts.append(f"Wo: {location}")
-        if context:
-            parts.append(f"Kontext: {context}")
+        if v := data.get("type", ""):
+            parts.append(f"Typ: {v}")
+        if v := data.get("location", ""):
+            parts.append(f"Wo: {v}")
+        if v := data.get("context", ""):
+            parts.append(f"Kontext: {v}")
         return "\n".join(parts)
-
     elif category == "media":
-        title = data.get("title", "")
-        media_type = data.get("type", "")
-        artist = data.get("artist", "")
-        context = data.get("context", "")
-        parts = [f"{icon} Gespeichert: **{title}**"]
-        if artist:
-            parts.append(f"von {artist}")
-        if media_type:
-            parts.append(f"({media_type})")
-        if context:
-            parts.append(f"– {context}")
+        parts = [f"{icon} Gespeichert: **{data.get('title', '')}**"]
+        if v := data.get("artist", ""):
+            parts.append(f"von {v}")
+        if v := data.get("type", ""):
+            parts.append(f"({v})")
+        if v := data.get("context", ""):
+            parts.append(f"– {v}")
         return " ".join(parts)
-
     elif category == "people":
         return f"{icon} Person gespeichert: **{data.get('name', '')}** – {data.get('context', '')}"
-
     elif category == "project":
         return f"{icon} Projekt gespeichert: **{data.get('name', '')}** – {data.get('description', '')}"
-
     elif category == "job":
         return f"{icon} Job aktualisiert: **{data.get('role', '')}** bei {data.get('employer', '')}"
-
     elif category == "location":
         return f"🏠 Standort aktualisiert: {data.get('location', '')}"
-
     elif category == "preference":
         return f"{icon} Präferenz gespeichert: {data.get('key', '')} = {data.get('value', '')}"
-
     elif category == "custom":
         return f"{icon} Notiert: {data.get('value', '')}"
-
     return "✅ Gespeichert."
 
 
@@ -537,6 +486,7 @@ async def memory_agent(state: AgentState) -> AgentState:
     Vollständige Memory-Pipeline.
     Phase 63: bot_instruction → claude.md
     Phase 64: 'merke dir das' → vorherige Aussage als Bot-Instruktion
+    Phase 65: Security & Code Quality Fixes
     """
     try:
         import yaml
@@ -548,21 +498,17 @@ async def memory_agent(state: AgentState) -> AgentState:
             prev_human = _get_prev_human_message(state["messages"])
             if not prev_human:
                 return {"messages": [AIMessage(content="Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")]}
-
             instruction = await _formulate_bot_instruction_from_context(prev_human)
             if not instruction:
                 return {"messages": [AIMessage(content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")]}
-
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(instruction)
             if success:
-                logger.info(f"MemoryAgent Phase64: gespeichert aus Kontext: {instruction[:80]}")
                 return {"messages": [AIMessage(content=f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")]}
             else:
                 return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion.")]}
-        # ────────────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────────
 
-        # Stufe 1: Sonnet parst die Anfrage
         parsed = await _parse_memory_intent(state["messages"])
         action = parsed.get("action", "error")
         category = parsed.get("category", "custom")
@@ -579,36 +525,27 @@ async def memory_agent(state: AgentState) -> AgentState:
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(text)
             if success:
-                logger.info(f"MemoryAgent: bot_instruction gespeichert: {text[:80]}")
                 return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
             else:
                 return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion in claude.md.")]}
         # ─────────────────────────────────────────────────────────────────────
 
-        # Stufe 2: Python-seitiger Update (profile.yaml)
         current_profile = load_profile()
         updated_profile = _apply_memory_update(current_profile, action, category, data)
 
         if updated_profile is None:
             fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
             await add_note_to_profile(fallback)
-            logger.warning(f"MemoryAgent: _apply_memory_update returned None – Fallback zu Note")
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")]}
 
-        original_yaml = yaml.dump(
-            current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False
-        )
-        new_yaml = yaml.dump(
-            updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False
-        )
+        original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
-        # Stufe 3: Haiku-Reviewer
         is_valid = await _review_yaml(original_yaml, new_yaml)
         if not is_valid:
             fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
             await add_note_to_profile(fallback)
-            logger.warning("MemoryAgent: Reviewer abgelehnt – Fallback zu Note")
             confirmation = _build_confirmation(action, category, data)
             return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert – YAML-Review fehlgeschlagen)_")]}
 

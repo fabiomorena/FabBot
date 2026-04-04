@@ -4194,3 +4194,191 @@ class TestMerkeDirDasInMemoryAgent:
             await memory_agent(state)
 
         mock_parser.assert_not_called()
+
+# ---------------------------------------------------------------------------
+# Phase 65 Tests – Security & Code Quality Fixes
+# ---------------------------------------------------------------------------
+
+import pytest
+from pathlib import Path
+from unittest.mock import AsyncMock, patch, MagicMock
+
+
+class TestNewlineSanitizingAppendToClaudeMd:
+    """Tests fuer Newline-Sanitizing in append_to_claude_md()."""
+
+    def setup_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    @pytest.mark.asyncio
+    async def test_newlines_stripped_from_text(self, tmp_path: Path) -> None:
+        """Newlines im Text werden entfernt bevor in claude.md geschrieben wird."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await append_to_claude_md("Erste Zeile\nZweite Zeile\nDritte Zeile")
+        content = md.read_text(encoding="utf-8")
+        lines = [l for l in content.split("\n") if "Erste" in l or "Zweite" in l or "Dritte" in l]
+        assert len(lines) == 1, "Newlines wurden nicht entfernt – mehrere Zeilen gefunden"
+        assert "Erste Zeile Zweite Zeile" in lines[0]
+
+    @pytest.mark.asyncio
+    async def test_carriage_return_stripped(self, tmp_path: Path) -> None:
+        """Carriage Returns werden entfernt."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            await append_to_claude_md("Text\r\nMit Windows Zeilenenden\r\n")
+        content = md.read_text(encoding="utf-8")
+        assert "\r" not in content
+
+    @pytest.mark.asyncio
+    async def test_only_whitespace_after_strip_returns_false(self, tmp_path: Path) -> None:
+        """Text der nach Sanitizing leer ist → False."""
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md):
+            result = await append_to_claude_md("\n\n\n")
+        assert result is False
+
+
+class TestNewlineSanitizingFormulate:
+    """Tests fuer Newline-Sanitizing in _formulate_bot_instruction_from_context()."""
+
+    @pytest.mark.asyncio
+    async def test_newlines_removed_from_llm_output(self) -> None:
+        """Newlines in LLM-Ausgabe werden entfernt."""
+        from agent.agents.memory_agent import _formulate_bot_instruction_from_context
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Zeile 1\nZeile 2\nZeile 3"))
+        with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
+            result = await _formulate_bot_instruction_from_context("Test")
+        assert "\n" not in result
+        assert "Zeile 1 Zeile 2 Zeile 3" == result
+
+    @pytest.mark.asyncio
+    async def test_result_max_200_chars(self) -> None:
+        """Ergebnis wird auf 200 Zeichen begrenzt."""
+        from agent.agents.memory_agent import _formulate_bot_instruction_from_context
+        long_text = "x" * 300
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content=long_text))
+        with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
+            result = await _formulate_bot_instruction_from_context("Test")
+        assert len(result) <= 200
+
+    @pytest.mark.asyncio
+    async def test_uses_fast_llm_not_slow(self) -> None:
+        """_formulate_bot_instruction_from_context() nutzt get_fast_llm() (Haiku)."""
+        from agent.agents.memory_agent import _formulate_bot_instruction_from_context
+        mock_fast = MagicMock()
+        mock_fast.ainvoke = AsyncMock(return_value=MagicMock(content="Instruktion"))
+        with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_fast) as mock_get_fast, \
+             patch("agent.agents.memory_agent.get_llm") as mock_get_slow:
+            await _formulate_bot_instruction_from_context("Test")
+        mock_get_fast.assert_called_once()
+        mock_get_slow.assert_not_called()
+
+
+class TestRecursiveTriggerProtection:
+    """Tests fuer Rekursions-Schutz in _get_prev_human_message()."""
+
+    def test_recursive_trigger_returns_empty(self) -> None:
+        """Wenn vorherige Nachricht selbst ein Trigger ist → leerer String."""
+        from agent.agents.memory_agent import _get_prev_human_message
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [
+            HumanMessage(content="merke dir das"),
+            AIMessage(content="Worauf beziehst du dich?"),
+            HumanMessage(content="merke dir das"),
+        ]
+        result = _get_prev_human_message(messages)
+        assert result == ""
+
+    def test_normal_prev_message_returned(self) -> None:
+        """Normale vorherige Nachricht wird korrekt zurückgegeben."""
+        from agent.agents.memory_agent import _get_prev_human_message
+        from langchain_core.messages import HumanMessage, AIMessage
+        messages = [
+            HumanMessage(content="Ich mag direkte Antworten"),
+            AIMessage(content="Verstanden"),
+            HumanMessage(content="merke dir das"),
+        ]
+        result = _get_prev_human_message(messages)
+        assert result == "Ich mag direkte Antworten"
+
+    def test_single_message_returns_empty(self) -> None:
+        """Nur eine HumanMessage → kein Kontext vorhanden."""
+        from agent.agents.memory_agent import _get_prev_human_message
+        from langchain_core.messages import HumanMessage
+        messages = [HumanMessage(content="merk dir das")]
+        result = _get_prev_human_message(messages)
+        assert result == ""
+
+
+class TestSizeWarning:
+    """Tests fuer claude.md Size-Warning."""
+
+    def setup_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    def teardown_method(self) -> None:
+        import agent.claude_md as cmd
+        cmd._claude_md_cache = None
+
+    @pytest.mark.asyncio
+    async def test_size_warning_logged_when_large(self, tmp_path: Path, caplog) -> None:
+        """Warnung wird geloggt wenn claude.md > 5000 Zeichen."""
+        import logging
+        from agent.claude_md import append_to_claude_md, _SIZE_WARNING_CHARS
+        md = tmp_path / "claude.md"
+        # Datei schon nahe am Limit befüllen
+        md.write_text("# FabBot\n" + "x" * (_SIZE_WARNING_CHARS + 100), encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md), \
+             caplog.at_level(logging.WARNING, logger="agent.claude_md"):
+            await append_to_claude_md("Neue Regel")
+        assert any("lang" in r.message.lower() or "zeichen" in r.message.lower()
+                   for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_no_warning_for_small_file(self, tmp_path: Path, caplog) -> None:
+        """Keine Warnung bei kleiner claude.md."""
+        import logging
+        from agent.claude_md import append_to_claude_md
+        md = tmp_path / "claude.md"
+        md.write_text("# FabBot\n\n## Kommunikation\n- Direkt", encoding="utf-8")
+        with patch("agent.claude_md._CLAUDE_MD_PATH", md), \
+             caplog.at_level(logging.WARNING, logger="agent.claude_md"):
+            await append_to_claude_md("Neue Regel")
+        size_warnings = [r for r in caplog.records if "zeichen" in r.message.lower() and "lang" in r.message.lower()]
+        assert len(size_warnings) == 0
+
+
+class TestMerkeDirDasTriggerSingleSource:
+    """Tests dass MERKE_DIR_DAS_TRIGGERS public und konsistent ist."""
+
+    def test_public_constant_accessible(self) -> None:
+        """MERKE_DIR_DAS_TRIGGERS ist als public Konstante zugaenglich."""
+        from agent.agents.memory_agent import MERKE_DIR_DAS_TRIGGERS
+        assert isinstance(MERKE_DIR_DAS_TRIGGERS, frozenset)
+        assert len(MERKE_DIR_DAS_TRIGGERS) > 0
+
+    def test_internal_alias_same_as_public(self) -> None:
+        """_MERKE_DIR_DAS_TRIGGERS und MERKE_DIR_DAS_TRIGGERS sind identisch."""
+        from agent.agents.memory_agent import MERKE_DIR_DAS_TRIGGERS, _MERKE_DIR_DAS_TRIGGERS
+        assert MERKE_DIR_DAS_TRIGGERS is _MERKE_DIR_DAS_TRIGGERS
+
+    def test_is_merke_dir_das_uses_public_constant(self) -> None:
+        """_is_merke_dir_das() erkennt alle Eintraege aus MERKE_DIR_DAS_TRIGGERS."""
+        from agent.agents.memory_agent import _is_merke_dir_das, MERKE_DIR_DAS_TRIGGERS
+        for trigger in MERKE_DIR_DAS_TRIGGERS:
+            assert _is_merke_dir_das(trigger), f"Trigger nicht erkannt: '{trigger}'"
