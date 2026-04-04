@@ -4609,8 +4609,8 @@ class TestOpenAITts:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=fake_post)
         with patch("bot.tts._get_openai_api_key", return_value="sk-test"), \
-             patch("bot.tts.OPENAI_TTS_VOICE", "shimmer"), \
-             patch("bot.tts.OPENAI_TTS_MODEL", "tts-1-hd"), \
+             patch("bot.tts._get_tts_voice", return_value="shimmer"), \
+             patch("bot.tts._get_tts_model", return_value="tts-1-hd"), \
              patch("httpx.AsyncClient", return_value=mock_client):
             await _synthesize_openai("Test")
         assert captured["voice"] == "shimmer"
