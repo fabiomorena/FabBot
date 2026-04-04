@@ -36,7 +36,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Knowledge Search – /search searches saved notes locally |
 | ✅ | Persistent Conversation Memory – SQLite via AsyncSqliteSaver, survives restarts |
 | ✅ | Chat Agent – answers follow-up questions directly from conversation history |
-| ✅ | Text-to-Speech – ElevenLabs (primär) + edge-tts (Fallback), Mac speaker + Telegram voice |
+| ✅ | Text-to-Speech – OpenAI TTS (primär) + edge-tts (Fallback), Mac speaker + Telegram voice |
 | ✅ | TTS Toggle – /tts on|off or TTS_ENABLED env var |
 | ✅ | TTS Stop – /stop kills running afplay immediately |
 | ✅ | German date format – 18.03.2026, 19:06 Uhr |
@@ -64,6 +64,8 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | OpenAI TTS – primärer Provider (nova/shimmer/...), ElevenLabs entfernt, edge-tts Fallback |
 | ✅ | TTS Hardening – tmp_path Safety, gather return_exceptions, Startup-Validierung, Retry 429/503, lazy API-Key |
 | ✅ | TTS Config Cleanup – _validate_tts_config nach Logger, lazy getters, Retry-Log spezifischer |
+| ✅ | Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU konfigurierbar, lazy singleton |
+| ✅ | Immer aktuelle Antworten – web_agent als Fallback für Faktenfragen, chat_agent nur konversationell |
 ---
 
 
@@ -120,7 +122,7 @@ FabBot/
 - LangGraph – multi-agent state machine with AsyncSqliteSaver
 - python-telegram-bot – Telegram interface
 - Whisper – local voice transcription
-- ElevenLabs – primary TTS (Ami, eleven_multilingual_v2)
+- OpenAI TTS – primary TTS (nova, konfigurierbar via OPENAI_TTS_VOICE)
 - edge-tts – TTS fallback (de-DE-KatjaNeural)
 - aiosqlite – async SQLite for persistent memory
 - Tavily + Brave Search – web search
@@ -158,7 +160,7 @@ cp .env.example .env   # fill in API keys
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (351 tests)
+pytest tests/ -v      # Run tests (498 tests)
 ```
 
 ### Run as Launch Agent
