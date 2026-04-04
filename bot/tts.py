@@ -38,7 +38,7 @@ _SOURCE_HEADERS = {"quellen:", "quellen", "sources:", "sources", "source:"}
 _VALID_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
 _VALID_MODELS = {"tts-1", "tts-1-hd"}
 
-# Modul-Globals fuer Voice + Model (selten geaendert, Neustart akzeptabel)
+# Öffentlich für externe Lesbarkeit/Tests – intern immer _get_tts_voice()/_get_tts_model() verwenden
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
 OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
 
