@@ -3245,7 +3245,7 @@ class TestTtsTruncationLogging:
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize(long_text)
 
-        assert any("gekürzt" in r.message for r in caplog.records), \
+        assert any("gekuerzt" in r.message or "gekürzt" in r.message for r in caplog.records), \
             "Kein Truncation-Log gefunden"
 
     @pytest.mark.asyncio
@@ -3259,7 +3259,7 @@ class TestTtsTruncationLogging:
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize(long_text)
 
-        truncation_logs = [r for r in caplog.records if "gekürzt" in r.message]
+        truncation_logs = [r for r in caplog.records if "gekuerzt" in r.message or "gekürzt" in r.message]
         assert len(truncation_logs) >= 1
         assert "original" in truncation_logs[0].message.lower()
 
@@ -3274,7 +3274,7 @@ class TestTtsTruncationLogging:
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize(long_text)
 
-        truncation_logs = [r for r in caplog.records if "gekürzt" in r.message]
+        truncation_logs = [r for r in caplog.records if "gekuerzt" in r.message or "gekürzt" in r.message]
         assert any(str(TTS_MAX_CHARS) in r.message for r in truncation_logs)
 
     @pytest.mark.asyncio
@@ -3286,7 +3286,7 @@ class TestTtsTruncationLogging:
              caplog.at_level(logging.INFO, logger="bot.tts"):
             await synthesize("Kurze Nachricht.")
 
-        assert not any("gekürzt" in r.message for r in caplog.records)
+        assert not any("gekuerzt" in r.message or "gekürzt" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_truncated_text_ends_with_ellipsis(self) -> None:

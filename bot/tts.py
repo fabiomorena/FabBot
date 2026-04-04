@@ -141,7 +141,7 @@ async def synthesize(text: str) -> bytes | None:
     if not text:
         return None
     if len(text) > TTS_MAX_CHARS:
-        logger.info(f"TTS Text auf {TTS_MAX_CHARS} Zeichen gekuerzt (original: {len(text)})")
+        logger.info(f"TTS Text auf {TTS_MAX_CHARS} Zeichen gekürzt (original: {len(text)})")
         text = text[:TTS_MAX_CHARS] + "..."
     if _get_openai_api_key():
         audio = await _synthesize_openai(text)
