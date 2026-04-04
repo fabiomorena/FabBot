@@ -203,8 +203,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 69** ✅ TTS Hardening – tmp_path, gather, Validierung, Retry, lazy API-Key
 - **Phase 70** ✅ TTS Config Cleanup – Validierung nach Logger, lazy getters, Retry-Log
 - **Phase 71** ✅ Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU, lazy singleton, kein Neustart bei Modellwechsel nötig
-- **Phase 73** ✅ Session Summary Writer – tägliche Zusammenfassung, Cross-Session-Kontext
 - **Phase 72** ✅ Supervisor-Routing – web_agent als Fallback für alle Faktenfragen, chat_agent nur noch für rein konversationelle Nachrichten
+- **Phase 73** ✅ Session Summary Writer – tägliche Zusammenfassung, Cross-Session-Kontext
 ---
 
 ## License
