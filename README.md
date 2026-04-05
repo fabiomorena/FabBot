@@ -73,7 +73,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Morning Briefing News – Haiku formatiert Tavily-Ergebnisse zu sauberen Bullets (keine Artefakte) |
 | ✅ | Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval aus Notizen/Sessions/Profil |
 | ✅ | /reindex – manuelle Neu-Indexierung der Wissensbasis |
-| ✅ | WhatsApp Agent – Nachrichten senden via Playwright (Whitelist-gesichert, HITL)
+| ✅ | WhatsApp Agent – Nachrichten senden via whatsapp-web.js Node.js Service (Whitelist-gesichert, HITL, QR via Telegram)
 | ✅ | Stability Fixes – session_summary TOCTOU (Lock), _post_init ValueError-Guard, on_document Größen-Limit |
 
 ---
@@ -226,7 +226,9 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 78** ✅ retrieval.py Code Quality – Semaphore-Kommentar, httpx Client außerhalb Batch-Loop, SHA256-Hash für virtuelle Quellen
 - **Phase 79** ✅ claude.md aus ChromaDB entfernt – direkte Prompt-Injektion übernimmt vollständig, keine Doppel-Injektion
 - **Phase 80** ✅ Stability Fixes
-- **Phase 81** ✅ WhatsApp Agent – Playwright, Session-persistent, Whitelist, HITL – session_summary TOCTOU (Double-Checked Locking), _post_init ValueError-Guard, on_document Größen-Limit vor Download
+- **Phase 81** ✅ WhatsApp Agent – Playwright, Session-persistent, Whitelist, HITL – session_summary TOCTOU (Double-Checked Locking), _post_init ValueError-Guard, on_document Größen-Limit
+- **Phase 82** ✅ /wa_contact Command – add/remove/list WhatsApp-Kontakte, verschlüsselte YAML
+- **Phase 83** ✅ whatsapp-web.js Microservice – Node.js ersetzt Playwright, Session via ~/.fabbot/wa_ready, QR-Code via Telegram, Markdown-Fix vor Download
 
 ---
 
