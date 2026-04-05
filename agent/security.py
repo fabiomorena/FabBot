@@ -163,7 +163,7 @@ async def _llm_guard(text: str) -> bool:
     """
     Prueft verdaechtige Eingaben via Haiku.
     Gibt True zurueck wenn die Eingabe sicher ist, False wenn Injection erkannt.
-    Fail-open: Bei Fehler → True (sicher durchlassen).
+    Fail-closed: Bei Fehler → False (blockieren).
     """
     try:
         from agent.llm import get_fast_llm
