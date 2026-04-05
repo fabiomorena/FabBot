@@ -16,3 +16,4 @@ homoglyphs
 
 keyring
 cryptography
+chromadb>=0.5.0
