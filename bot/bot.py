@@ -22,8 +22,6 @@ from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
-from bot.whatsapp import (init_whatsapp_session, send_whatsapp_message, is_session_ready,
-                          add_whatsapp_contact, remove_whatsapp_contact, list_whatsapp_contacts_formatted)
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +61,13 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
 
 _scheduler_tasks: list = []
 
+# Retry-Konfiguration für 529 Overloaded
 _RETRY_MAX_ATTEMPTS = 3
-_RETRY_BASE_DELAY = 2.0
+_RETRY_BASE_DELAY = 2.0  # Sekunden – wird verdoppelt pro Versuch (2s, 4s, 8s)
 
 
 def _extract_content(msg) -> str:
-    """Extrahiert Text aus einer LangChain Message."""
+    """Extrahiert Text aus einer LangChain Message – egal ob str oder list."""
     content = msg.content
     if isinstance(content, list):
         return " ".join(
@@ -109,7 +108,10 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
 
 
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
-    """Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf."""
+    """
+    Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf.
+    Versuche: 3 – Wartezeiten: 2s → 4s → 8s
+    """
     from agent.supervisor import agent_graph
 
     last_exception = None
@@ -207,117 +209,18 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
         log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
 
-
-async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_WHATSAPP):].split("::", 1)
-    whatsapp_name = parts[0] if len(parts) > 0 else ""
-    message_text  = parts[1] if len(parts) > 1 else ""
-    confirmed = await request_confirmation(
-        bot, chat_id, "whatsapp_agent",
-        f"WhatsApp an {whatsapp_name}:\n{message_text}"
-    )
-    if confirmed:
-        success, detail = await send_whatsapp_message(whatsapp_name, message_text)
-        await bot.send_message(chat_id=chat_id, text=detail)
-        await _update_memory(chat_id, f"WhatsApp gesendet an {whatsapp_name}: {message_text}")
-        log_action("whatsapp_agent", "send", f"to={whatsapp_name} len={len(message_text)}", chat_id,
-                   status="executed" if success else "error")
-    else:
-        log_action("whatsapp_agent", "send", f"user rejected: {whatsapp_name}", chat_id, status="rejected")
-
 _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
     (Proto.SCREENSHOT,           _handle_screenshot),
     (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
     (Proto.CONFIRM_TERMINAL,     _handle_confirm_terminal),
     (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
     (Proto.CONFIRM_FILE_WRITE,   _handle_confirm_file_write),
-    (Proto.CONFIRM_WHATSAPP,      _handle_confirm_whatsapp),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Command Handlers
 # ---------------------------------------------------------------------------
-
-
-
-@restricted
-async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    /wa_contact add <Name> <WhatsApp-Name>   – Kontakt hinzufügen/aktualisieren
-    /wa_contact remove <Name>                – Kontakt entfernen
-    /wa_contact list                         – Alle Kontakte anzeigen
-
-    Beispiele:
-      /wa_contact add Steffi "Steffi 🌞"
-      /wa_contact add Amalia Amalia
-      /wa_contact remove Steffi
-      /wa_contact list
-    """
-    if not ctx.args:
-        await update.message.reply_text(
-            "Verwendung:\n"
-            "/wa_contact add <Name> <WhatsApp-Name>\n"
-            "/wa_contact remove <Name>\n"
-            "/wa_contact list\n\n"
-            "Beispiel:\n"
-            '/wa_contact add Steffi "Steffi 🌞"'
-        )
-        return
-
-    subcmd = ctx.args[0].lower()
-
-    if subcmd == "list":
-        result = list_whatsapp_contacts_formatted()
-        await update.message.reply_text(result, parse_mode="Markdown")
-        return
-
-    elif subcmd == "add":
-        if len(ctx.args) < 3:
-            await update.message.reply_text(
-                "Verwendung: /wa_contact add <Name> <WhatsApp-Name>\n"
-                "Beispiel: /wa_contact add Steffi \"Steffi 🌞\""
-            )
-            return
-        name = ctx.args[1]
-        # WhatsApp-Name kann Leerzeichen enthalten (z.B. "Fabio Morena (du)")
-        whatsapp_name = " ".join(ctx.args[2:])
-        success, detail = await add_whatsapp_contact(name, whatsapp_name)
-        await update.message.reply_text(detail)
-        return
-
-    elif subcmd == "remove":
-        if len(ctx.args) < 2:
-            await update.message.reply_text("Verwendung: /wa_contact remove <Name>")
-            return
-        name = ctx.args[1]
-        success, detail = await remove_whatsapp_contact(name)
-        await update.message.reply_text(detail)
-        return
-
-    else:
-        await update.message.reply_text(
-            f"Unbekannter Unterbefehl: {subcmd}\n"
-            "Verfügbar: add, remove, list"
-        )
-
-@restricted
-async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Einmaliges WhatsApp Web Setup via QR-Code."""
-    chat_id = update.effective_chat.id
-    if is_session_ready():
-        await update.message.reply_text(
-            "WhatsApp Session bereits vorhanden.\n"
-            "Falls du dich neu einloggen möchtest, lösche:\n"
-            "~/.fabbot/whatsapp_session/session.json"
-        )
-        return
-    await update.message.reply_text(
-        "Browser wird geöffnet – bitte QR-Code in WhatsApp scannen.\n"
-        "Du hast 2 Minuten Zeit."
-    )
-    success, detail = await init_whatsapp_session()
-    await update.message.reply_text(detail)
 
 @restricted
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -330,11 +233,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/search #Tag – Nach Tag suchen\n"
         "/search – Alle Notizen auflisten\n"
         "/remember <Text> – Persönliche Notiz speichern\n"
-        "/reindex – Wissensbasis neu indexieren\n"
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
         "/stop – Laufende Sprachausgabe stoppen\n"
-        "/wa_setup – WhatsApp Web einrichten\n"
-        "/wa_contact add/remove/list – WhatsApp-Kontakte verwalten\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -343,16 +243,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     tts_status = "aktiviert" if is_tts_enabled() else "deaktiviert"
-    # Phase 77: Retrieval-Status anzeigen
-    try:
-        from agent.retrieval import _get_collection
-        col = _get_collection()
-        retrieval_status = f"aktiv ({col.count()} Chunks)" if col else "deaktiviert"
-    except Exception:
-        retrieval_status = "nicht verfügbar"
-    await update.message.reply_text(
-        f"Agent läuft.\nTTS: {tts_status}\nRetrieval: {retrieval_status}"
-    )
+    await update.message.reply_text(f"Agent laeuft. TTS: {tts_status}")
 
 
 @restricted
@@ -368,6 +259,7 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Aktiviert oder deaktiviert TTS zur Laufzeit."""
     if not ctx.args or ctx.args[0].lower() not in ("on", "off"):
         status = "aktiviert" if is_tts_enabled() else "deaktiviert"
         await update.message.reply_text(
@@ -383,6 +275,7 @@ async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Stoppt die laufende Sprachausgabe sofort."""
     stopped = stop_speaking()
     if stopped:
         await update.message.reply_text("Sprachausgabe gestoppt.")
@@ -431,13 +324,6 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if confirmed:
         output = clip_agent_write(result["path"], result["content"], chat_id)
         await ctx.bot.send_message(chat_id=chat_id, text=output)
-        # Phase 77: Neue Notiz sofort in Retrieval-Index aufnehmen
-        try:
-            from agent.retrieval import index_file
-            asyncio.create_task(index_file(result["path"]))
-            logger.info(f"Retrieval: Neue Notiz '{result['filename']}' wird indexiert.")
-        except Exception as e:
-            logger.debug(f"Retrieval index_file nach /clip fehlgeschlagen (ignoriert): {e}")
     else:
         log_action("clip_agent", "write", f"user rejected: {result['filename']}", chat_id, status="rejected")
 
@@ -456,6 +342,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Speichert eine persönliche Notiz in personal_profile.yaml."""
     text = " ".join(ctx.args) if ctx.args else ""
     if not text:
         await update.message.reply_text(
@@ -472,29 +359,11 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
-async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Phase 77: Löst eine vollständige Neu-Indexierung der Wissensbasis aus.
-    force=True: alle Dateien werden re-embedded, auch unveränderte.
-    """
-    thinking = await update.message.reply_text("Indexiere Wissensbasis (force=True)...")
-    try:
-        from agent.retrieval import index_all, _get_collection
-        await index_all(force=True)
-        col = _get_collection()
-        count = col.count() if col else 0
-        await thinking.edit_text(f"✅ Wissensbasis neu indexiert – {count} Chunks gesamt.")
-    except ImportError:
-        await thinking.edit_text("❌ chromadb nicht installiert – Retrieval nicht verfügbar.")
-    except Exception as e:
-        logger.error(f"cmd_reindex Fehler: {e}")
-        await thinking.edit_text(f"❌ Fehler bei Re-Indexierung: {e}")
-
-
-@restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Verarbeitet eingehende Fotos – Bildanalyse via Claude Vision."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+
     caption = update.message.caption or ""
 
     if caption:
@@ -533,21 +402,13 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Verarbeitet Bilder die als Datei gesendet wurden (unkomprimiert)."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     doc = update.message.document
 
     if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
         await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
-        return
-
-    # Phase 80: Größen-Limit vor dem Download – verhindert dass große Dateien
-    # überhaupt heruntergeladen werden (Telegram liefert file_size im Document-Objekt).
-    if doc.file_size and doc.file_size > _IMAGE_MAX_BYTES:
-        await update.message.reply_text(
-            f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB). "
-            f"Bitte verkleinere das Bild und sende es erneut."
-        )
         return
 
     caption = update.message.caption or ""
@@ -624,6 +485,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
+    """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -646,6 +508,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 
         result_state = await _invoke_with_retry(state, config)
 
+        # Nur neu hinzugekommene Messages auswerten – verhindert Echo-Bug bei Folgefragen.
         input_count = len(state["messages"])
         new_messages = result_state["messages"][input_count:]
         ai_messages = [m for m in new_messages if isinstance(m, AIMessage)]
@@ -653,10 +516,12 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
         response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
 
+        # Dedup-Sicherheitsnetz auf bot.py-Ebene: verhindert exakte Wiederholung
+        # der vorletzten AI-Antwort im State (zweite Verteidigungslinie nach chat_agent).
         if len(ai_messages) >= 2:
             prev_content = _extract_content(ai_messages[-2])
             if response_msg == prev_content and response_msg:
-                logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung abgefangen.")
+                logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung der vorletzten AI-Antwort abgefangen.")
                 response_msg = "Noch etwas?"
 
         for prefix, handler in _RESPONSE_DISPATCH:
@@ -744,23 +609,13 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _post_init(app: Application) -> None:
-    """Initialisiert alle Background-Tasks nachdem der Event Loop gestartet ist."""
+    """Initialisiert AsyncSqliteSaver nachdem der Event Loop gestartet ist."""
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
     allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
     if allowed_ids:
-        # Phase 80: ValueError-Guard – ungültige/leere IDs führen zu klarem Fehlerlog
-        # statt ungehandeltem Exception-Crash in _post_init.
-        try:
-            chat_id = int(allowed_ids.split(",")[0].strip())
-        except (ValueError, IndexError) as e:
-            logger.critical(
-                f"TELEGRAM_ALLOWED_USER_IDS ist ungültig: '{allowed_ids}' – "
-                f"Scheduler werden nicht gestartet. Fehler: {e}"
-            )
-            return
-
+        chat_id = int(allowed_ids.split(",")[0].strip())
         from bot.briefing import run_briefing_scheduler
         task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_briefing)
@@ -769,7 +624,6 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Morning Briefing Scheduler gestartet.")
-
         from bot.reminders import run_reminder_scheduler
         task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_reminders)
@@ -778,7 +632,6 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Reminder Scheduler gestartet.")
-
         from bot.health_check import run_health_check_scheduler
         task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_health)
@@ -787,7 +640,6 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Health Check Scheduler gestartet.")
-
         from bot.party_report import run_party_report_scheduler
         task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_party)
@@ -797,24 +649,9 @@ async def _post_init(app: Application) -> None:
         )
         logger.info("Party Report Scheduler gestartet.")
 
-        # Phase 77: Retrieval-Index beim Start aufbauen (Background-Task)
-        # Fail-safe: chromadb nicht installiert → silently skipped
-        try:
-            from agent.retrieval import index_all
-            task_retrieval = asyncio.create_task(index_all())
-            task_retrieval.add_done_callback(
-                lambda t: logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
-                if not t.cancelled() and t.exception() else None
-            )
-            logger.info("Retrieval Index-Aufbau gestartet (Background).")
-        except ImportError:
-            logger.info("chromadb nicht installiert – Retrieval deaktiviert.")
-        except Exception as e:
-            logger.warning(f"Retrieval Index-Aufbau fehlgeschlagen (ignoriert): {e}")
-
 
 async def _post_shutdown(app: Application) -> None:
-    """Schliesst alle Ressourcen sauber beim Shutdown."""
+    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
     for task in _scheduler_tasks:
         if not task.done():
             task.cancel()
@@ -830,6 +667,7 @@ async def _post_shutdown(app: Application) -> None:
 # ---------------------------------------------------------------------------
 
 def build_bot() -> Application:
+    """Erstellt und konfiguriert die Telegram-Bot-Application."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN nicht gesetzt")
@@ -850,9 +688,6 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("clip", cmd_clip, block=False))
     app.add_handler(CommandHandler("search", cmd_search, block=False))
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
-    app.add_handler(CommandHandler("reindex", cmd_reindex, block=False))
-    app.add_handler(CommandHandler("wa_setup", cmd_wa_setup, block=False))
-    app.add_handler(CommandHandler("wa_contact", cmd_wa_contact, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))

@@ -1,0 +1,16 @@
+{
+  "name": "fabbot-whatsapp-service",
+  "version": "1.0.0",
+  "description": "FabBot WhatsApp Web Microservice (whatsapp-web.js)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.26.1",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -2222,6 +2222,7 @@ class TestSynthesizeWithMock:
         mock_communicate.stream = fake_stream
 
         with patch("bot.tts._is_tts_available", return_value=True), \
+             patch("bot.tts._synthesize_openai", new_callable=AsyncMock, return_value=None), \
              patch("edge_tts.Communicate", return_value=mock_communicate):
             result = await synthesize("Test")
 
