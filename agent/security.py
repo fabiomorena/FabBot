@@ -7,16 +7,15 @@ Zweistufige Prompt-Injection-Abwehr:
 
 Weitere Schichten:
 - Homoglyph-Normalisierung (kyrillisch, griechisch, fullwidth)
-- Rate Limiting (max 20 Nachrichten / 60 Sekunden pro User)
+- Rate Limiting global (max 20 Nachrichten / 60 Sekunden pro User)
+- Rate Limiting nach Aktionstyp (Phase 85) – destruktive Aktionen strenger
 - Input-Laenge (max 2000 Zeichen)
 - Null-Byte-Entfernung
 
 Design:
-- sanitize_input()       → sync,  (bool, str)  – kein __SUSPICIOUS__-Präfix
-- sanitize_input_async() → async, (bool, str)  – LLM-Guard bei Verdacht
-  Beide geben saubere Strings zurück – kein interner Präfix im Rückgabewert.
-  Der LLM-Guard-Bedarf wird durch erneutes _pattern_check() bestimmt,
-  nicht durch String-Encoding.
+- sanitize_input()         → sync,  (bool, str)  – Pattern + globales Rate Limit
+- sanitize_input_async()   → async, (bool, str)  – + LLM-Guard bei Verdacht
+- check_action_rate_limit() → sync, bool         – Phase 85: je Aktionstyp
 """
 import logging
 import re
@@ -34,7 +33,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Konfiguration
+# Konfiguration – globales Rate Limit
 # ---------------------------------------------------------------------------
 
 MAX_INPUT_LENGTH = 2000
@@ -42,6 +41,22 @@ RATE_LIMIT_MAX = 20
 RATE_LIMIT_WINDOW = 60
 _rate_limit_store: OrderedDict = OrderedDict()
 MAX_STORE_SIZE = 10_000
+
+# ---------------------------------------------------------------------------
+# Phase 85: Aktions-spezifische Rate Limits
+# ---------------------------------------------------------------------------
+# Destruktive Aktionen (Terminal, File Write, Computer Use, WhatsApp) haben
+# ein eigenes, deutlich strengeres Limit zusätzlich zum globalen Limit.
+# So kann ein User normal chatten, aber nicht in kurzer Zeit viele
+# potentiell gefährliche Aktionen ausführen.
+
+_ACTION_RATE_LIMITS: dict[str, dict] = {
+    "destructive": {"max": 10, "window": 60},  # max 10 destruktive Aktionen/Minute
+}
+
+_action_rate_stores: dict[str, OrderedDict] = {
+    key: OrderedDict() for key in _ACTION_RATE_LIMITS
+}
 
 # LLM-Guard Prompt fuer Haiku
 _GUARD_PROMPT = """Du bist ein Security-Filter. Analysiere die folgende Benutzernachricht.
@@ -79,9 +94,6 @@ _HOMOGLYPH_MAP = {
 
 
 def _normalize(text: str) -> str:
-    """Normalisiert Homoglyphen zu ASCII-Aequivalenten.
-    Nutzt homoglyphs-Library char-by-char wenn verfuegbar, sonst _HOMOGLYPH_MAP.
-    """
     result = []
     for char in text:
         if ord(char) < 128:
@@ -135,12 +147,6 @@ _SUSPICIOUS_PATTERNS = [
 
 
 def _pattern_check(text: str) -> tuple[bool, int, str]:
-    """
-    Prueft Text auf Injection-Muster.
-    Gibt zurueck: (hard_block, suspicion_score, reason)
-    - hard_block=True  → sofort blockieren
-    - suspicion_score > 0 → LLM-Guard aufrufen
-    """
     normalized = _normalize(text.lower())
 
     for pattern in _INJECTION_PATTERNS:
@@ -156,15 +162,11 @@ def _pattern_check(text: str) -> tuple[bool, int, str]:
 
 
 # ---------------------------------------------------------------------------
-# LLM-Guard (Stufe 2) – nur bei Verdacht
+# LLM-Guard (Stufe 2)
 # ---------------------------------------------------------------------------
 
 async def _llm_guard(text: str) -> bool:
-    """
-    Prueft verdaechtige Eingaben via Haiku.
-    Gibt True zurueck wenn die Eingabe sicher ist, False wenn Injection erkannt.
-    Fail-closed: Bei Fehler → False (blockieren).
-    """
+    """Fail-closed: Bei Fehler → False (blockieren)."""
     try:
         from agent.llm import get_fast_llm
         from langchain_core.messages import HumanMessage
@@ -191,21 +193,17 @@ async def _llm_guard(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Rate Limiting
+# Globales Rate Limiting
 # ---------------------------------------------------------------------------
 
 def check_rate_limit(user_id: int) -> bool:
     """
-    Prueft ob der User das Rate-Limit ueberschritten hat.
-
-    Eviction-Strategie: Wenn MAX_STORE_SIZE erreicht, wird der User
-    mit dem aeltesten letzten Timestamp entfernt (nicht blind FIFO).
-    Verhindert stilles Loss des Rate-Limitings fuer aktive User.
+    Prüft ob der User das globale Rate-Limit ueberschritten hat.
+    Eviction: ältester Timestamp bei vollem Store.
     """
     now = time()
     if user_id not in _rate_limit_store:
         if len(_rate_limit_store) >= MAX_STORE_SIZE:
-            # Evict User mit aeltestem letzten Timestamp – nicht blind FIFO
             oldest_user = min(
                 _rate_limit_store,
                 key=lambda uid: _rate_limit_store[uid][-1] if _rate_limit_store[uid] else 0,
@@ -225,17 +223,59 @@ def check_rate_limit(user_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Phase 85: Aktions-spezifisches Rate Limiting
+# ---------------------------------------------------------------------------
+
+def check_action_rate_limit(user_id: int, action_type: str) -> bool:
+    """
+    Prüft ein aktions-spezifisches Rate Limit zusätzlich zum globalen Limit.
+
+    action_type: "destructive" → Terminal, File Write, Computer Use, WhatsApp
+                 Unbekannte Typen → immer True (fail-open für unbekannte Typen,
+                 da globales Limit weiterhin greift).
+
+    Limits (konfigurierbar via _ACTION_RATE_LIMITS):
+      destructive: max 10 Aktionen / 60 Sekunden
+
+    Gibt False zurück wenn Limit überschritten, True wenn erlaubt.
+    """
+    config = _ACTION_RATE_LIMITS.get(action_type)
+    if not config:
+        return True  # Unbekannter Typ – globales Limit greift weiterhin
+
+    store    = _action_rate_stores[action_type]
+    now      = time()
+    window   = config["window"]
+    max_calls = config["max"]
+
+    if user_id not in store:
+        if len(store) >= MAX_STORE_SIZE:
+            oldest = min(store, key=lambda uid: store[uid][-1] if store[uid] else 0)
+            del store[oldest]
+        store[user_id] = []
+
+    timestamps = [t for t in store[user_id] if now - t < window]
+    store[user_id] = timestamps
+
+    if len(timestamps) >= max_calls:
+        logger.warning(
+            f"Action rate limit überschritten: user={user_id} "
+            f"action_type={action_type} ({len(timestamps)}/{max_calls} in {window}s)"
+        )
+        return False
+
+    store[user_id].append(now)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Haupt-Einstiegspunkte
 # ---------------------------------------------------------------------------
 
 def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
     """
     Synchroner Input-Check (Pattern + Rate Limit).
-    Fuer den LLM-Guard: sanitize_input_async() verwenden.
-
-    Gibt zurueck: (is_safe, clean_text_or_reason)
-    Niemals mit internem Präfix im Rückgabewert.
-    Verdächtige Eingaben: (True, original_text) – LLM-Guard via async-Caller.
+    Gibt (True, clean_text) oder (False, reason) zurück.
     """
     if not text or not text.strip():
         return False, "Leere Eingabe."
@@ -243,38 +283,27 @@ def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
     if len(text) > MAX_INPUT_LENGTH:
         return False, f"Eingabe zu lang (max {MAX_INPUT_LENGTH} Zeichen)."
 
-    # Null-Bytes entfernen
     text = text.replace("\x00", "")
 
-    # Rate Limit
     if user_id and not check_rate_limit(user_id):
         return False, "Zu viele Nachrichten – bitte kurz warten."
 
-    # Pattern-Check (Stufe 1)
     hard_block, score, reason = _pattern_check(text)
     if hard_block:
         return False, reason
 
-    # Verdächtig aber nicht hard-blocked → sauber zurückgeben
-    # sanitize_input_async() erkennt den LLM-Guard-Bedarf selbst
-    # via erneutem _pattern_check() – kein String-Encoding nötig
     return True, text
 
 
 async def sanitize_input_async(text: str, user_id: int = 0) -> tuple[bool, str]:
     """
     Asynchroner Input-Check mit LLM-Guard fuer verdaechtige Eingaben.
-    Sollte bevorzugt in bot.py verwendet werden.
-
-    Gibt zurueck: (is_safe, clean_text_or_reason)
-    Niemals mit internem Präfix – immer der ursprüngliche Text oder Fehlergrund.
+    Gibt (True, clean_text) oder (False, reason) zurück.
     """
     ok, result = sanitize_input(text, user_id)
     if not ok:
         return False, result
 
-    # LLM-Guard-Bedarf durch erneutes _pattern_check() bestimmen
-    # (kein String-Prefix-Encoding – sauber und race-condition-frei)
     _, score, _ = _pattern_check(result)
     if score > 0:
         logger.info("LLM-Guard aktiviert fuer verdaechtige Eingabe.")
@@ -283,4 +312,3 @@ async def sanitize_input_async(text: str, user_id: int = 0) -> tuple[bool, str]:
             return False, "Ungültige Eingabe erkannt."
 
     return True, result
-

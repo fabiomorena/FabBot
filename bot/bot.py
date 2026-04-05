@@ -27,7 +27,7 @@ from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import transcribe_audio
 from bot.search import search_knowledge, list_knowledge
 from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled, stop_speaking
-from agent.security import sanitize_input_async
+from agent.security import sanitize_input_async, check_action_rate_limit
 from agent.audit import log_action, log_blocked
 from agent.protocol import Proto
 from agent.agents.terminal import terminal_agent_execute
@@ -241,6 +241,10 @@ async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **
     display  = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
     confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
     if confirmed:
+        if not check_action_rate_limit(chat_id, "destructive"):
+            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
+            log_action("computer_agent", action, "action-rate-limited", chat_id, status="blocked")
+            return
         output = computer_agent_execute(action, x, y, text_arg, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
         await _update_memory(chat_id, f"Desktop-Aktion ausgefuehrt: {display}\nErgebnis: {output}")
@@ -252,6 +256,10 @@ async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **
     command   = response_msg[len(Proto.CONFIRM_TERMINAL):]
     confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
     if confirmed:
+        if not check_action_rate_limit(chat_id, "destructive"):
+            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
+            log_action("terminal_agent", command[:200], "action-rate-limited", chat_id, status="blocked")
+            return
         output = terminal_agent_execute(command, chat_id)
         await bot.send_message(chat_id=chat_id, text=f"Output:\n\n{output}")
         if len(output) <= _TTS_MAX_HITL_OUTPUT:
@@ -286,6 +294,10 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
     file_content = parts[1] if len(parts) > 1 else ""
     confirmed    = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
     if confirmed:
+        if not check_action_rate_limit(chat_id, "destructive"):
+            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
+            log_action("file_agent", "write", f"action-rate-limited: {path_str}", chat_id, status="blocked")
+            return
         output = file_agent_write(Path(path_str), file_content, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
         if len(output) <= _TTS_MAX_HITL_OUTPUT:
@@ -304,6 +316,10 @@ async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **
         f"WhatsApp an {whatsapp_name}:\n{message_text}"
     )
     if confirmed:
+        if not check_action_rate_limit(chat_id, "destructive"):
+            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
+            log_action("whatsapp_agent", "send", f"action-rate-limited: {whatsapp_name}", chat_id, status="blocked")
+            return
         success, detail = await send_whatsapp_message(whatsapp_name, message_text)
         await bot.send_message(chat_id=chat_id, text=detail)
         await _update_memory(chat_id, f"WhatsApp gesendet an {whatsapp_name}: {message_text}")
@@ -841,6 +857,10 @@ async def _post_init(app: Application) -> None:
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
+
+    # Phase 85: LangSmith Telemetry – kein-op wenn nicht konfiguriert
+    from agent.telemetry import setup_telemetry
+    setup_telemetry()
 
     # Phase 84: TELEGRAM_CHAT_ID bevorzugen, Fallback auf erste ALLOWED_ID
     chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
