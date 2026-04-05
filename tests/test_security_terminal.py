@@ -1923,13 +1923,13 @@ class TestSanitizeInputAsync:
         mock_guard.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_llm_guard_error_fails_open(self) -> None:
-        """LLM-Guard Fehler → fail-open (Eingabe durchgelassen)."""
+    async def test_llm_guard_error_fails_closed(self) -> None:
+        """LLM-Guard Fehler → fail-closed (Eingabe blockiert)."""
         from agent.security import sanitize_input_async
         with patch("agent.llm.get_fast_llm") as mock_get_llm:
             mock_get_llm.return_value.ainvoke = AsyncMock(side_effect=Exception("API down"))
             ok, result = await sanitize_input_async("system prompt test", user_id=555555)
-        assert ok is True  # fail-open
+        assert ok is False  # fail-closed
 
     @pytest.mark.asyncio
     async def test_empty_input_blocked_without_llm(self) -> None:
