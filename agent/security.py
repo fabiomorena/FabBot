@@ -186,8 +186,8 @@ async def _llm_guard(text: str) -> bool:
         return is_safe
 
     except Exception as e:
-        logger.error(f"LLM-Guard Fehler (fail-open): {e}")
-        return True
+        logger.error(f"LLM-Guard Fehler (fail-closed): {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
