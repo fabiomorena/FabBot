@@ -5,9 +5,13 @@ ChromaDB (lokal, persistent) + OpenAI text-embedding-3-small.
 
 Indexierte Quellen:
   - personal_profile.yaml  (virtuell, via get_profile_context_full)
-  - claude.md              (virtuell, via load_claude_md)
   - ~/Documents/Wissen/*.md        (alle /clip Notizen)
   - ~/Documents/Wissen/Sessions/   (Session Summaries)
+
+Nicht indexiert:
+  - claude.md → wird bereits vollständig in jeden chat_agent System-Prompt
+    injiziert (direkte Injektion). ChromaDB-Indexierung wäre redundant
+    und würde claude.md doppelt in den Prompt laden.
 
 Öffentliche API:
   await index_all(force=False)   – Delta-Indexierung aller Quellen (mtime/hash-Check)
@@ -18,7 +22,7 @@ Indexierte Quellen:
 Design:
   - Fail-safe: chromadb nicht installiert → alle Funktionen geben None/[] zurück
   - Delta (Dateien): nur geänderte Dateien werden re-embedded (mtime-Tracking via JSON)
-  - Delta (virtuell): Profil + claude.md via SHA256-Hash – kein Re-Embed wenn unverändert
+  - Delta (virtuell): Profil via SHA256-Hash – kein Re-Embed wenn unverändert
   - httpx.AsyncClient: ein Client pro _embed_texts()-Aufruf, außerhalb der Batch-Schleife
   - Semaphore: verhindert parallele ChromaDB-Writes (nur gültig im gleichen asyncio Event Loop / Prozess)
   - Timeout im search(): 5s (wird von chat_agent gesetzt)
@@ -46,17 +50,14 @@ _COLLECTION_NAME = "fabbot_knowledge"
 _EMBED_MODEL = "text-embedding-3-small"
 _MAX_CHUNK_CHARS = 1500
 _MIN_CHUNK_CHARS = 50
-_MAX_DISTANCE = 0.7          # cosine – darunter = relevant
-_EMBED_BATCH_SIZE = 100      # OpenAI: max 2048 Inputs, wir bleiben konservativ
+_MAX_DISTANCE = 0.7
+_EMBED_BATCH_SIZE = 100
 
 _WISSEN_DIR = Path.home() / "Documents" / "Wissen"
 _SESSIONS_DIR = _WISSEN_DIR / "Sessions"
 
 # Semaphore – verhindert parallele ChromaDB-Writes.
-# Nur gültig im gleichen asyncio Event Loop / Prozess.
-# Bei multiprocessing oder ASGI-Workern würde jeder Prozess
-# eine eigene Semaphore-Instanz haben → kein Schutz mehr.
-# FabBot läuft als Single-Process-Telegram-Bot → korrekt.
+# Nur gültig im gleichen asyncio Event Loop / Prozess (Single-Process-Bot).
 _write_semaphore: asyncio.Semaphore | None = None
 
 # ChromaDB Collection – lazy singleton
@@ -82,7 +83,6 @@ def _get_collection():
     """
     Gibt die ChromaDB-Collection zurück (lazy singleton).
     Gibt None zurück wenn chromadb nicht installiert ist oder Setup fehlschlägt.
-    Alle Aufrufer prüfen auf None.
     """
     global _collection
     if _collection is not None:
@@ -112,12 +112,10 @@ def _get_collection():
 
 
 # ---------------------------------------------------------------------------
-# mtime-Tracking für Delta-Indexierung (Dateien)
-# Hash-Tracking für virtuelle Quellen (Profil, claude.md)
+# mtime / Hash-Tracking für Delta-Indexierung
 # ---------------------------------------------------------------------------
 
 def _load_meta() -> dict[str, str | float]:
-    """Lädt gespeicherte mtime/hash-Werte."""
     try:
         if _META_PATH.exists():
             return json.loads(_META_PATH.read_text(encoding="utf-8"))
@@ -127,7 +125,6 @@ def _load_meta() -> dict[str, str | float]:
 
 
 def _save_meta(meta: dict[str, str | float]) -> None:
-    """Speichert mtime/hash-Werte."""
     try:
         _META_PATH.parent.mkdir(parents=True, exist_ok=True)
         _META_PATH.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -136,7 +133,7 @@ def _save_meta(meta: dict[str, str | float]) -> None:
 
 
 def _content_hash(text: str) -> str:
-    """SHA256-Hash eines Textes – für virtuelle Quellen (Profil, claude.md)."""
+    """SHA256-Hash eines Textes – für virtuelle Quellen (Profil)."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -147,15 +144,14 @@ def _content_hash(text: str) -> str:
 def _chunk_text(text: str) -> list[str]:
     """
     Teilt Text in Chunks auf.
-    Splittet zuerst an Markdown-Headings (##, ###), dann an Absätzen.
-    Chunks unter _MIN_CHUNK_CHARS werden verworfen.
+    Splittet zuerst an Markdown-Headings, dann an Absätzen.
     """
     if not text or not text.strip():
         return []
 
     sections = re.split(r"\n(?=#{1,3} )", text.strip())
-
     chunks: list[str] = []
+
     for section in sections:
         section = section.strip()
         if not section:
@@ -181,26 +177,19 @@ def _chunk_text(text: str) -> list[str]:
 
 
 def _make_chunk_id(source_id: str, chunk_index: int) -> str:
-    """Stabile, eindeutige ID aus Quell-ID + Chunk-Index."""
     raw = f"{source_id}::{chunk_index}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 # ---------------------------------------------------------------------------
 # OpenAI Embeddings
-# Phase 78 Fix 2: Ein httpx.AsyncClient außerhalb der Batch-Schleife –
-# ermöglicht HTTP/2-Connection-Reuse bei mehreren Batches.
+# Ein httpx.AsyncClient außerhalb der Batch-Schleife (HTTP/2-Connection-Reuse)
 # ---------------------------------------------------------------------------
 
 async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     """
     Erstellt Embeddings via OpenAI text-embedding-3-small.
-    Verarbeitet in Batches von _EMBED_BATCH_SIZE.
-
-    Phase 78: Ein einziger AsyncClient für alle Batches –
-    HTTP/2-Connection-Reuse, weniger TCP-Overhead bei großem Index.
-
-    Gibt None bei Fehler zurück (Aufrufer prüft auf None).
+    Ein einziger AsyncClient für alle Batches – HTTP/2-Connection-Reuse.
     """
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
@@ -213,7 +202,6 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
         import httpx
         all_embeddings: list[list[float]] = []
 
-        # Ein Client für alle Batches – HTTP/2-Connection-Reuse
         async with httpx.AsyncClient(timeout=60) as client:
             for i in range(0, len(texts), _EMBED_BATCH_SIZE):
                 batch = texts[i: i + _EMBED_BATCH_SIZE]
@@ -246,11 +234,6 @@ async def _upsert_chunks(
     source_label: str,
     collection,
 ) -> int:
-    """
-    Embeddet Chunks und speichert sie in ChromaDB.
-    Löscht zuerst alle alten Chunks dieser Quelle (via source_id).
-    Gibt Anzahl indexierter Chunks zurück, 0 bei Fehler.
-    """
     if not chunks:
         return 0
 
@@ -271,7 +254,6 @@ async def _upsert_chunks(
 
     sem = _get_semaphore()
     async with sem:
-        # Alte Chunks dieser Quelle löschen
         try:
             existing = await asyncio.to_thread(
                 collection.get,
@@ -283,7 +265,6 @@ async def _upsert_chunks(
         except Exception as e:
             logger.debug(f"Retrieval: Alte Chunks löschen fehlgeschlagen für '{source_label}': {e}")
 
-        # Neue Chunks upserten
         await asyncio.to_thread(
             collection.upsert,
             ids=ids,
@@ -296,11 +277,7 @@ async def _upsert_chunks(
 
 
 async def index_file(path: Path, force: bool = False) -> bool:
-    """
-    Indexiert eine einzelne Markdown-Datei (Delta: nur bei geänderter mtime).
-    force=True überspringt den mtime-Check.
-    Gibt True zurück wenn indexiert wurde, False wenn übersprungen oder Fehler.
-    """
+    """Indexiert eine einzelne Markdown-Datei (Delta: nur bei geänderter mtime)."""
     collection = _get_collection()
     if collection is None:
         return False
@@ -352,12 +329,8 @@ async def _index_virtual(
     force: bool = False,
 ) -> bool:
     """
-    Indexiert virtuellen Inhalt ohne echte Datei (Profil, claude.md).
-
-    Phase 78 Fix 3: SHA256-Hash-Check statt dauerhaftem Re-Embed.
-    Nur wenn sich der Inhalt seit dem letzten Durchlauf geändert hat
-    werden neue Embeddings erstellt – konsistent mit dem Delta-Design
-    der Datei-Indexierung. Spart OpenAI API-Calls bei unverändertem Inhalt.
+    Indexiert virtuellen Inhalt ohne echte Datei.
+    SHA256-Hash-Check: nur re-embedden wenn Inhalt geändert.
     """
     collection = _get_collection()
     if collection is None:
@@ -386,8 +359,38 @@ async def _index_virtual(
         return False
 
 
+async def _remove_claude_md_from_index() -> None:
+    """
+    Phase 79: Entfernt veraltete claude.md-Chunks aus ChromaDB.
+    Einmalige Bereinigung beim nächsten index_all()-Aufruf.
+    """
+    collection = _get_collection()
+    if collection is None:
+        return
+    try:
+        existing = await asyncio.to_thread(
+            collection.get,
+            where={"source": "__claude_md__"},
+            include=[],
+        )
+        if existing and existing.get("ids"):
+            sem = _get_semaphore()
+            async with sem:
+                await asyncio.to_thread(collection.delete, ids=existing["ids"])
+            # Hash-Eintrag aus Meta entfernen
+            meta = _load_meta()
+            meta.pop("__hash____claude_md__", None)
+            _save_meta(meta)
+            logger.info(
+                f"Retrieval: {len(existing['ids'])} veraltete claude.md-Chunks "
+                f"aus ChromaDB entfernt (Phase 79)"
+            )
+    except Exception as e:
+        logger.debug(f"Retrieval: claude.md-Cleanup fehlgeschlagen (ignoriert): {e}")
+
+
 async def remove_file(path: Path) -> None:
-    """Entfernt eine Datei aus dem Index (z.B. nach Löschen)."""
+    """Entfernt eine Datei aus dem Index."""
     collection = _get_collection()
     if collection is None:
         return
@@ -413,15 +416,21 @@ async def remove_file(path: Path) -> None:
 async def index_all(force: bool = False) -> None:
     """
     Vollständige Delta-Indexierung aller Quellen.
-    Läuft als Background-Task beim Bot-Start.
-    force=True re-indexiert alle Quellen unabhängig von mtime/Hash.
 
-    Phase 78:
-    - Profil + claude.md: Hash-Check statt dauerhaftem Re-Embed
-    - Dateien: mtime-Check (unverändert)
+    Phase 79: claude.md wird nicht mehr indexiert – direkte Injektion
+    in chat_agent System-Prompt übernimmt das vollständig.
+    Veraltete claude.md-Chunks werden beim ersten Aufruf bereinigt.
+
+    Quellen:
+      1. personal_profile.yaml (virtuell, Hash-Check)
+      2. ~/Documents/Wissen/*.md (mtime-Check)
+      3. ~/Documents/Wissen/Sessions/*.md (mtime-Check)
     """
     logger.info("Retrieval: Starte Index-Durchlauf...")
     total_updated = 0
+
+    # Einmalige Bereinigung veralteter claude.md-Chunks
+    await _remove_claude_md_from_index()
 
     # 1. personal_profile.yaml (virtuell – Hash-Check)
     try:
@@ -436,27 +445,14 @@ async def index_all(force: bool = False) -> None:
     except Exception as e:
         logger.warning(f"Retrieval: Profil-Indexierung fehlgeschlagen: {e}")
 
-    # 2. claude.md (virtuell – Hash-Check)
-    try:
-        from agent.claude_md import load_claude_md
-        claude_text = await asyncio.to_thread(load_claude_md)
-        if claude_text:
-            ok = await _index_virtual(
-                claude_text, "__claude_md__", "claude_md", "Bot-Instruktionen", force=force
-            )
-            if ok:
-                total_updated += 1
-    except Exception as e:
-        logger.warning(f"Retrieval: claude.md-Indexierung fehlgeschlagen: {e}")
-
-    # 3. ~/Documents/Wissen/*.md (Knowledge Notes – mtime-Check)
+    # 2. ~/Documents/Wissen/*.md (Knowledge Notes – mtime-Check)
     if _WISSEN_DIR.exists():
         for path in sorted(_WISSEN_DIR.glob("*.md")):
             ok = await index_file(path, force=force)
             if ok:
                 total_updated += 1
 
-    # 4. ~/Documents/Wissen/Sessions/*.md (Session Summaries – mtime-Check)
+    # 3. ~/Documents/Wissen/Sessions/*.md (Session Summaries – mtime-Check)
     if _SESSIONS_DIR.exists():
         for path in sorted(_SESSIONS_DIR.glob("????-??-??.md")):
             ok = await index_file(path, force=force)
@@ -478,15 +474,7 @@ async def index_all(force: bool = False) -> None:
 async def search(query: str, n_results: int = 3) -> list[dict]:
     """
     Semantische Suche in der Wissensbasis.
-
-    Gibt list[dict] zurück:
-      [{"document": str, "label": str, "type": str, "distance": float}]
-
-    Gibt [] zurück wenn:
-      - chromadb nicht installiert
-      - Collection leer
-      - Keine Ergebnisse unter _MAX_DISTANCE
-      - Embedding-Fehler
+    Gibt [] zurück bei Fehler, leerer Collection oder unter Threshold.
     """
     collection = _get_collection()
     if collection is None:
