@@ -83,6 +83,8 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | watchdog.py TELEGRAM_CHAT_ID – User-ID ≠ Chat-ID Fix |
 | ✅ | watchdog.py python-dotenv – Quote-sicherer .env Parser |
 | ✅ | start_service() HTTP-Polling – aktiv statt blindem sleep(3) |
+| ✅ | agent_graph Type-Annotation + get_graph() Guard – RuntimeError statt AttributeError |
+| ✅ | Rate-Limit-Stores thread-safe – threading.Lock für Read-Modify-Write |
 ---
 
 ## Architecture
@@ -238,6 +240,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 83** ✅ whatsapp-web.js Microservice – Node.js ersetzt Playwright, Session via ~/.fabbot/wa_ready, QR-Code via Telegram, Markdown-Fix vor Download
 - **Phase 84** ✅ Security & Code Quality – auth fail-closed, handle_message_text aufgeteilt, contextlib.suppress, on_document resize-fix, TELEGRAM_CHAT_ID
 - **Phase 86** ✅ Watchdog Fixes (Chat-ID, python-dotenv, _ALERT_DELAY_MINUTES) + start_service() Polling
+- **Phase 87** ✅ agent_graph Type-Annotation, get_graph() Guard, threading.Lock Rate-Limit
 ---
 
 ## License

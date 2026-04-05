@@ -2,6 +2,7 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.graph.state import CompiledStateGraph
 import asyncio
 
 from agent.state import AgentState, AgentName
@@ -20,7 +21,10 @@ from agent.agents.whatsapp_agent import whatsapp_agent
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-agent_graph = None
+# Phase 87: Explizite Type-Annotationen statt implizitem None.
+# Verhindert unklaren AttributeError: 'NoneType' has no attribute 'ainvoke'
+# wenn Code agent_graph direkt vor init_graph() nutzt.
+agent_graph: CompiledStateGraph | None = None
 _db_conn = None
 _init_lock = asyncio.Lock()
 
@@ -170,6 +174,25 @@ def _build_graph() -> StateGraph:
         graph.add_edge(agent, "supervisor")
 
     return graph
+
+
+# Phase 87: get_graph() als öffentliche Guard-Funktion.
+# bot.py importiert get_graph() statt agent_graph direkt –
+# klarer RuntimeError statt AttributeError: 'NoneType' bei Race Conditions.
+def get_graph() -> CompiledStateGraph:
+    """
+    Gibt den initialisierten CompiledStateGraph zurück.
+
+    Wirft RuntimeError wenn init_graph() noch nicht abgeschlossen ist.
+    Verhindert AttributeError: 'NoneType' has no attribute 'ainvoke'
+    bei Race Conditions beim Bot-Start.
+    """
+    if agent_graph is None:
+        raise RuntimeError(
+            "LangGraph nicht initialisiert – init_graph() muss zuerst aufgerufen werden. "
+            "Sicherstellen dass _post_init() in bot.py vollständig abgeschlossen ist."
+        )
+    return agent_graph
 
 
 async def init_graph() -> None:

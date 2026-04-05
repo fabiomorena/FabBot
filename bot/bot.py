@@ -96,9 +96,9 @@ def _extract_content(msg) -> str:
 async def _update_memory(chat_id: int, result_text: str) -> None:
     """Schreibt das HITL-Ergebnis als AIMessage in den LangGraph State."""
     try:
-        from agent.supervisor import agent_graph
+        from agent.supervisor import get_graph
         config = {"configurable": {"thread_id": str(chat_id)}}
-        await agent_graph.aupdate_state(
+        await get_graph().aupdate_state(
             config,
             {"messages": [AIMessage(content=f"__MEMORY__:{result_text}")]},
         )
@@ -109,11 +109,11 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
 async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None:
     """Schreibt Bildanalyse als sichtbare HumanMessage+AIMessage in den State."""
     try:
-        from agent.supervisor import agent_graph
+        from agent.supervisor import get_graph
         from langchain_core.messages import HumanMessage as HM
         config     = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
-        await agent_graph.aupdate_state(
+        await get_graph().aupdate_state(
             config,
             {"messages": [HM(content=human_text), AIMessage(content=result)]},
             as_node="supervisor",
@@ -125,12 +125,12 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
 
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
     """Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf."""
-    from agent.supervisor import agent_graph
+    from agent.supervisor import get_graph
 
     last_exception = None
     for attempt in range(_RETRY_MAX_ATTEMPTS):
         try:
-            return await agent_graph.ainvoke(state, config=config)
+            return await get_graph().ainvoke(state, config=config)
         except APIStatusError as e:
             if e.status_code == 529:
                 delay = _RETRY_BASE_DELAY * (2 ** attempt)
