@@ -219,8 +219,10 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 74** ✅ Security & Prompt-Fix – fail-closed LLM-Guard, sanitize_input_async im try/except, dynamischer chat_agent-Prompt
 - **Phase 75** ✅ Natural Language Passthrough – LLM-Rückfragen in terminal/web/file/calendar/reminder direkt durchgeben statt Parse-Fehler
 - **Phase 76** ✅ Morning Briefing News-Fix – Haiku formatiert Tavily-Ergebnisse, filtert Artefakte (!Image, Bild-Labels)
-- **Phase 77** ✅ Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval (Profil, claude.md, Notizen, Sessions), /reindex Command
+- **Phase 77** ✅ Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval (Profil, Notizen, Sessions), /reindex Command
 - **Phase 77b** ✅ Supervisor Routing Fix – Fragen über Notizen/Sessions korrekt zu chat_agent geroutet
+- **Phase 78** ✅ retrieval.py Code Quality – Semaphore-Kommentar, httpx Client außerhalb Batch-Loop, SHA256-Hash für virtuelle Quellen
+- **Phase 79** ✅ claude.md aus ChromaDB entfernt – direkte Prompt-Injektion übernimmt vollständig, keine Doppel-Injektion
 
 ---
 
