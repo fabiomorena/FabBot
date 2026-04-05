@@ -47,9 +47,11 @@ Verfuegbare Agenten:
   JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
   NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
+  NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen ('was steht in...', 'was habe ich notiert...')
 - chat_agent: NUR fuer rein konversationelle Nachrichten OHNE Faktenbezug zur Welt:
   - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
   - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete)
+  - Fragen ueber gespeicherte Notizen, Sessions oder Wissen ("was steht in meinen Sessions", "was habe ich ueber X notiert", "was weisst du ueber mein Projekt")
   - Smalltalk ohne Faktenbezug ("danke", "ok", "cool")
   - Hoeflichkeiten und kurze Reaktionen
   - ALLE Folgefragen zu einem Foto oder Bild
@@ -61,6 +63,7 @@ Regeln:
 - Im Zweifel zwischen web_agent und chat_agent: IMMER web_agent
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
+- Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent (nicht memory_agent)
 
 WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes):
 computer_agent
