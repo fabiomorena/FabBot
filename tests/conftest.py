@@ -10,7 +10,16 @@ Betroffene Singletons:
 - _current_afplay    (bot/tts.py)
 - _profile_cache     (agent/profile.py)
 - _pending           (bot/confirm.py)
+
+Phase 87 Fix: TELEGRAM_ALLOWED_USER_IDS muss vor dem Import von bot.auth
+gesetzt sein, da _load_allowed_ids() auf Modul-Ebene ausgeführt wird.
+setdefault() überschreibt keine echte .env-Werte (lokal/CI-Secrets).
 """
+
+import os
+
+# Muss VOR allen anderen Imports stehen – bot.auth lädt ALLOWED_IDS beim Import.
+os.environ.setdefault("TELEGRAM_ALLOWED_USER_IDS", "123456789")
 
 import copy
 import pytest
