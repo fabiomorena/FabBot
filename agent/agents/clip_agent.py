@@ -1,4 +1,5 @@
 import re
+import socket
 import ipaddress
 import httpx
 from datetime import date
@@ -76,13 +77,25 @@ def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
             if host.lower().endswith(suffix):
                 return True, f"Lokaler Hostname nicht erlaubt: {host}"
 
+        # Phase 88: DNS-Rebinding-Schutz
+        # Hostnamen werden aufgelöst und die resultierende IP geprüft.
+        # Verhindert evil.com → 127.0.0.1 via eigenem DNS-Server (identisch zu web.py).
+        try:
+            resolved_ip = socket.gethostbyname(host)
+            ip = ipaddress.ip_address(resolved_ip)
+            if any([
+                ip.is_loopback, ip.is_private, ip.is_link_local,
+                ip.is_multicast, ip.is_reserved, ip.is_unspecified,
+            ]):
+                return True, f"DNS-Rebinding blockiert: {host} → {resolved_ip}"
+        except (socket.gaierror, OSError):
+            pass
+
     return False, ""
 
 
 def _is_safe_output_path(path: Path) -> bool:
-    """Prüft ob der Ausgabepfad innerhalb von KNOWLEDGE_DIR liegt.
-    Verhindert Path-Traversal durch LLM-generierten Slug.
-    """
+    """Prüft ob der Ausgabepfad innerhalb von KNOWLEDGE_DIR liegt."""
     try:
         path.resolve().relative_to(KNOWLEDGE_DIR.resolve())
         return True
@@ -106,7 +119,7 @@ async def _fetch_url(url: str) -> str:
 
     text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
     text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)  # HTML-Kommentare entfernen
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:MAX_FETCH_SIZE]
@@ -137,8 +150,6 @@ async def clip_agent(url: str, chat_id: int) -> dict:
     llm = get_llm()
     today = date.today().strftime("%d.%m.%Y")
 
-    # Seiteninhalt wird in <document>-Tags isoliert – verhindert indirekte Prompt-Injection.
-    # Anweisungen innerhalb des Dokuments werden vom LLM ignoriert.
     response = await llm.ainvoke([
         SystemMessage(content=SUMMARIZE_PROMPT),
         HumanMessage(content=(
@@ -162,7 +173,6 @@ async def clip_agent(url: str, chat_id: int) -> dict:
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     file_path = KNOWLEDGE_DIR / filename
 
-    # Path-Traversal-Schutz: Zielpfad muss innerhalb KNOWLEDGE_DIR liegen
     if not _is_safe_output_path(file_path):
         log_action("clip_agent", "write", f"path-traversal blocked: {file_path}", chat_id, status="blocked")
         return {"ok": False, "error": "Ungültiger Zielpfad – Schreiben verweigert."}
@@ -180,7 +190,6 @@ async def clip_agent(url: str, chat_id: int) -> dict:
 
 
 def clip_agent_write(path: Path, content: str, chat_id: int) -> str:
-    # Re-Validierung direkt vor dem Schreiben (TOCTOU-Schutz)
     if not _is_safe_output_path(path):
         log_action("clip_agent", "write", f"toctou-blocked: {path}", chat_id, status="blocked")
         return "Blockiert (Re-Validierung): Ungültiger Zielpfad."

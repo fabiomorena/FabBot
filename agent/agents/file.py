@@ -8,6 +8,11 @@ from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
 
+# Phase 88: Maximale Verzeichnistiefe ab Allowlist-Basis
+# Verhindert beliebig tiefe LLM-generierte Verzeichnisbäume via mkdir(parents=True)
+MAX_PATH_DEPTH = 5
+
+
 def _build_allowed_paths() -> list[Path]:
     paths = [
         Path.home() / "Downloads",
@@ -38,6 +43,7 @@ def _build_allowed_paths() -> list[Path]:
             continue
         paths.append(extra_path)
     return paths
+
 
 ALLOWED_BASE_PATHS = _build_allowed_paths()
 
@@ -86,6 +92,22 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
     if ".." in path.parts:
         return False, "Path-Traversal nicht erlaubt."
 
+    # Phase 88: Symlink-Schutz
+    # Wenn der Pfad ein Symlink ist, muss das aufgelöste Ziel ebenfalls in der Allowlist liegen.
+    # Verhindert: ~/Downloads/evil_link -> ~/.ssh/id_rsa (Symlink in erlaubtem Ordner)
+    # resolve() folgt Symlinks – deshalb muss das _Ziel_ geprüft werden, nicht nur der Pfad.
+    if path.is_symlink():
+        symlink_target_allowed = False
+        for base in ALLOWED_BASE_PATHS:
+            try:
+                resolved.relative_to(base.resolve())
+                symlink_target_allowed = True
+                break
+            except ValueError:
+                continue
+        if not symlink_target_allowed:
+            return False, f"Symlink-Ziel liegt außerhalb der erlaubten Pfade: {resolved}"
+
     for blocked in EXPLICITLY_BLOCKED_PATHS:
         try:
             resolved.relative_to(blocked.resolve())
@@ -95,7 +117,15 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
 
     for base in ALLOWED_BASE_PATHS:
         try:
-            resolved.relative_to(base.resolve())
+            relative = resolved.relative_to(base.resolve())
+            # Phase 88: Tiefenbegrenzung
+            # Verhindert LLM-generierte Pfade wie ~/Documents/a/b/c/d/e/f/g/file.txt
+            # die mkdir(parents=True) mit beliebig vielen Ebenen auslösen könnten.
+            if len(relative.parts) > MAX_PATH_DEPTH:
+                return False, (
+                    f"Pfad zu tief verschachtelt (max. {MAX_PATH_DEPTH} Ebenen ab Basis, "
+                    f"gefunden: {len(relative.parts)})."
+                )
             return True, str(resolved)
         except ValueError:
             continue
@@ -103,10 +133,11 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
     return False, f"Pfad nicht erlaubt: {resolved}"
 
 
-def file_agent(state: AgentState) -> AgentState:
+async def file_agent(state: AgentState) -> AgentState:
+    """Phase 88: async – verhindert Event-Loop-Blockierung durch sync llm.invoke()."""
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -115,8 +146,7 @@ def file_agent(state: AgentState) -> AgentState:
     if content == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom File-Agent nicht unterstuetzt.")]}
 
-    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt JSON geliefert.
-    # Alle validen Routing-Antworten dieses Agents beginnen mit '{'.
+    # Phase 75: Natürliche Sprache abfangen
     if not content.strip().startswith("{"):
         return {"messages": [AIMessage(content=content.strip())]}
 
@@ -191,7 +221,9 @@ def _read_file(path: Path, state: AgentState) -> AgentState:
 
 
 def file_agent_write(path: Path, content: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung aufgerufen. Re-validiert vor Ausfuehrung (TOCTOU-Schutz)."""
+    """Wird nach Benutzerbestaetigung aufgerufen. Re-validiert vor Ausfuehrung (TOCTOU-Schutz).
+    Phase 88: Symlink- und Tiefencheck greifen über is_path_allowed().
+    """
     allowed, reason = is_path_allowed(path)
     if not allowed:
         log_action("file_agent", "write", f"toctou-blocked: {reason}", chat_id, status="blocked")

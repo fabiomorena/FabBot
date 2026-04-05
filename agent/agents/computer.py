@@ -12,13 +12,8 @@ from agent.protocol import Proto
 SCREENSHOT_PATH = Path.home() / ".fabbot" / "screenshot.png"
 SCREENSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Maximale Zeichenanzahl die getippt werden darf
 TYPEWRITE_MAX_CHARS = 500
-
-# Erlaubte Zeichen fuer typewrite – blockiert Steuerzeichen
 TYPEWRITE_ALLOWED_PATTERN = re.compile(r'^[\x20-\x7E\s]+$')
-
-# Erlaubte App-Namen – nur Buchstaben, Zahlen, Leerzeichen, Bindestriche, Punkte
 APP_NAME_PATTERN = re.compile(r'^[A-Za-z0-9\s\-\.]+$')
 APP_NAME_MAX_LENGTH = 64
 
@@ -70,7 +65,6 @@ def _screenshot_to_telegram_bytes() -> bytes | None:
 
 
 def _validate_typewrite_text(text: str) -> tuple[bool, str]:
-    """Validiert Text fuer typewrite – blockiert Steuerzeichen und zu langen Text."""
     if not text:
         return False, "Leerer Text."
     if len(text) > TYPEWRITE_MAX_CHARS:
@@ -81,7 +75,6 @@ def _validate_typewrite_text(text: str) -> tuple[bool, str]:
 
 
 def _validate_app_name(app: str) -> tuple[bool, str]:
-    """Validiert App-Namen – nur sichere Zeichen erlaubt."""
     if not app or not app.strip():
         return False, "Leerer App-Name."
     app = app.strip()
@@ -93,9 +86,10 @@ def _validate_app_name(app: str) -> tuple[bool, str]:
 
 
 async def computer_agent(state: AgentState) -> AgentState:
+    """Phase 88: ainvoke statt invoke – verhindert Event-Loop-Blockierung."""
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -120,7 +114,8 @@ async def computer_agent(state: AgentState) -> AgentState:
         if not img_b64:
             return {"messages": [AIMessage(content="Fehler beim Erstellen des Screenshots.")]}
 
-        analysis_response = llm.invoke([
+        # Phase 88: ainvoke statt invoke
+        analysis_response = await llm.ainvoke([
             HumanMessage(content=[
                 {
                     "type": "image",

@@ -85,7 +85,14 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | start_service() HTTP-Polling – aktiv statt blindem sleep(3) |
 | ✅ | agent_graph Type-Annotation + get_graph() Guard – RuntimeError statt AttributeError |
 | ✅ | Rate-Limit-Stores thread-safe – threading.Lock für Read-Modify-Write |
+| ✅ | Symlink-Schutz – file_agent blockiert Symlinks die aus der Allowlist herauszeigen |
+| ✅ | DNS-Rebinding-Schutz – web_agent + clip_agent lösen Hostnamen auf und prüfen die IP |
+| ✅ | Async Agents – alle Agents nutzen ainvoke, kein Event-Loop-Block mehr |
+| ✅ | MAX_PATH_DEPTH=5 – begrenzt LLM-generierte Verzeichnistiefe in file_agent |
+| ✅ | Query-Sanitization – web_agent begrenzt LLM-transformierte Suchanfragen auf 200 Zeichen |
 ---
+
+
 
 ## Architecture
 
@@ -241,7 +248,10 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 84** ✅ Security & Code Quality – auth fail-closed, handle_message_text aufgeteilt, contextlib.suppress, on_document resize-fix, TELEGRAM_CHAT_ID
 - **Phase 86** ✅ Watchdog Fixes (Chat-ID, python-dotenv, _ALERT_DELAY_MINUTES) + start_service() Polling
 - **Phase 87** ✅ agent_graph Type-Annotation, get_graph() Guard, threading.Lock Rate-Limit
+- **Phase 88** ✅ Security & Async Hardening – Symlink-Bypass, DNS-Rebinding, ainvoke in allen Agents, Pfadtiefe, Query-Sanitization
 ---
+
+
 
 ## License
 

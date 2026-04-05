@@ -175,12 +175,15 @@ def execute_command(command: str) -> str:
         return f"Fehler: {e}"
 
 
-def terminal_agent(state: AgentState) -> AgentState:
-    """Generiert einen Shell-Befehl via LLM und gibt ihn zur HITL-Bestaetigung weiter."""
+async def terminal_agent(state: AgentState) -> AgentState:
+    """Phase 88: async – verhindert Event-Loop-Blockierung durch sync llm.invoke()."""
     llm = get_llm()
-    filtered = [m for m in state["messages"] if not (hasattr(m, "content") and isinstance(m.content, str) and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__")))]
+    filtered = [m for m in state["messages"] if not (
+        hasattr(m, "content") and isinstance(m.content, str)
+        and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
+    )]
     messages = [SystemMessage(content=PROMPT)] + filtered
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -191,9 +194,7 @@ def terminal_agent(state: AgentState) -> AgentState:
     if command == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom Terminal-Agent nicht unterstuetzt.")]}
 
-    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt Befehl geliefert.
-    # Heuristik: erstes Token muss in ALLOWED_COMMANDS sein (alle validen Befehle starten so).
-    # Rückfragen/Hinweise beginnen mit normalen Wörtern die nicht in ALLOWED_COMMANDS sind.
+    # Phase 75: Natürliche Sprache abfangen
     try:
         _first = os.path.basename(shlex.split(command)[0]) if command.split() else ""
     except ValueError:
