@@ -16,6 +16,8 @@ Pipeline:
 
 Design-Prinzipien:
   - Idempotent: existierende Datei → skip, kein Überschreiben
+  - TOCTOU-sicher: asyncio.Lock schützt exists()-Check + Write als atomare Einheit
+    (Double-Checked Locking: fast path außerhalb, sicherer Check+Write innerhalb)
   - Fail-safe: alle Fehler werden geloggt, nie weitergereicht
   - Path-Safety: TOCTOU-Check vor Schreiben
   - Threshold: <MIN_HUMAN_MESSAGES → kein Summary
@@ -51,19 +53,20 @@ try:
 except Exception:
     MIN_HUMAN_MESSAGES = 10
 
-# Letzte N Messages aus LangGraph State lesen
 _MESSAGE_WINDOW = 80
-
-# Max Files die chat_agent lädt
 MAX_SESSIONS_LOAD = 7
 
-# HITL-Prefixes die rausgefiltert werden
 _HITL_PREFIXES = (
     "__CONFIRM_",
     "__SCREENSHOT__",
     "__MEMORY__",
     "__VISION_RESULT__",
 )
+
+# Phase 80: Lock für TOCTOU-sicheres exists()-Check + Write.
+# Double-Checked Locking: schneller Check außerhalb, atomarer Check+Write innerhalb.
+# Nur gültig im gleichen asyncio Event Loop / Prozess (Single-Process-Bot).
+_summary_write_lock = asyncio.Lock()
 
 _SUMMARY_PROMPT = """Du bist ein Session-Zusammenfasser für FabBot.
 Analysiere die folgende Konversation und erstelle eine kompakte Zusammenfassung auf Deutsch.
@@ -92,7 +95,6 @@ Regeln:
 # ---------------------------------------------------------------------------
 
 def _is_safe_session_path(path: Path) -> bool:
-    """Path-Traversal-Schutz: Zielpfad muss innerhalb SESSIONS_DIR liegen."""
     try:
         path.resolve().relative_to(SESSIONS_DIR.resolve())
         return True
@@ -101,12 +103,10 @@ def _is_safe_session_path(path: Path) -> bool:
 
 
 def _session_path(target_date: date) -> Path:
-    """Gibt den Dateipfad für ein gegebenes Datum zurück."""
     return SESSIONS_DIR / f"{target_date.isoformat()}.md"
 
 
 async def _get_messages_from_state(chat_id: int) -> list:
-    """Liest Messages aus dem LangGraph State für einen Chat."""
     try:
         from agent.supervisor import agent_graph
         if agent_graph is None:
@@ -123,13 +123,11 @@ async def _get_messages_from_state(chat_id: int) -> list:
 
 
 def _filter_messages(messages: list) -> list:
-    """Entfernt HITL-Messages und gibt lesbare Human/AI-Messages zurück."""
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
         if isinstance(content, str) and content.startswith(_HITL_PREFIXES):
             continue
-        # Nur HumanMessage und AIMessage
         msg_type = getattr(msg, "type", "")
         if msg_type not in ("human", "ai"):
             continue
@@ -138,12 +136,10 @@ def _filter_messages(messages: list) -> list:
 
 
 def _count_human_messages(messages: list) -> int:
-    """Zählt HumanMessages in einer gefilterten Message-Liste."""
     return sum(1 for m in messages if getattr(m, "type", "") == "human")
 
 
 def _format_for_summary(messages: list) -> str:
-    """Formatiert Messages als lesbaren Dialog-Text für Sonnet."""
     lines = []
     for msg in messages[-_MESSAGE_WINDOW:]:
         role = "User" if getattr(msg, "type", "") == "human" else "FabBot"
@@ -160,7 +156,6 @@ def _format_for_summary(messages: list) -> str:
 
 
 async def _generate_summary(dialog_text: str) -> str | None:
-    """Generiert die Zusammenfassung via Sonnet."""
     try:
         from agent.llm import get_llm
         from langchain_core.messages import HumanMessage, SystemMessage
@@ -189,7 +184,6 @@ async def _generate_summary(dialog_text: str) -> str | None:
 
 
 def _write_summary_file(path: Path, summary: str, target_date: date) -> bool:
-    """Schreibt die Zusammenfassung als Markdown-Datei."""
     if not _is_safe_session_path(path):
         logger.error(f"SessionSummary: Path-Traversal blockiert: {path}")
         return False
@@ -221,17 +215,17 @@ async def summarize_session(
     """
     Erstellt eine Session-Zusammenfassung für chat_id.
 
-    - target_date: Default = heute
-    - Idempotent: existierende Datei → False (skip)
-    - Threshold: < MIN_HUMAN_MESSAGES → False (skip)
-    - Fail-safe: Exception → False, kein Crash
+    Phase 80: TOCTOU-Fix via Double-Checked Locking.
+    - Schneller exists()-Check außerhalb des Locks (fast path, kein Overhead)
+    - LLM-Call außerhalb des Locks (langsam, soll Lock nicht halten)
+    - Atomarer exists()-Check + Write innerhalb des Locks (TOCTOU-sicher)
     """
     target_date = target_date or date.today()
     path = _session_path(target_date)
 
-    # Idempotenz-Check
+    # Fast path: existierende Datei schnell abfangen (ohne Lock-Overhead)
     if path.exists():
-        logger.debug(f"SessionSummary: {path.name} existiert bereits – skip")
+        logger.debug(f"SessionSummary: {path.name} existiert bereits – skip (fast path)")
         return False
 
     messages = await _get_messages_from_state(chat_id)
@@ -254,21 +248,22 @@ async def summarize_session(
         logger.debug("SessionSummary: Dialog leer nach Filter – skip")
         return False
 
+    # LLM-Call außerhalb des Locks – dauert mehrere Sekunden
     summary = await _generate_summary(dialog_text)
     if not summary:
         return False
 
-    return _write_summary_file(path, summary, target_date)
+    # Phase 80: TOCTOU-sicherer Write – atomarer Check + Write innerhalb des Locks.
+    # Verhindert dass zwei gleichzeitige Aufrufe beide schreiben wenn der
+    # fast-path-Check gleichzeitig False zurückgibt.
+    async with _summary_write_lock:
+        if path.exists():
+            logger.debug(f"SessionSummary: {path.name} wurde zwischenzeitlich erstellt – skip")
+            return False
+        return _write_summary_file(path, summary, target_date)
 
 
 def load_session_summaries(n: int = 5) -> str:
-    """
-    Lädt die letzten n Session-Zusammenfassungen aus SESSIONS_DIR.
-
-    Sync-Funktion – nur Dateileserei, kein I/O overhead.
-    Gibt leeren String zurück wenn keine Files vorhanden.
-    Robust gegen korrupte/unleserliche Dateien.
-    """
     if not SESSIONS_DIR.exists():
         return ""
     try:
@@ -277,7 +272,7 @@ def load_session_summaries(n: int = 5) -> str:
             return ""
         selected = files[:min(n, MAX_SESSIONS_LOAD)]
         parts = []
-        for f in reversed(selected):  # chronologisch: älteste zuerst
+        for f in reversed(selected):
             try:
                 content = f.read_text(encoding="utf-8").strip()
                 if content:
@@ -295,11 +290,6 @@ def load_session_summaries(n: int = 5) -> str:
 # ---------------------------------------------------------------------------
 
 async def run_session_summary_scheduler(bot, chat_id: int) -> None:
-    """
-    Läuft als Background-Task und erstellt täglich eine Session-Zusammenfassung.
-    Zeit konfigurierbar via SESSION_SUMMARY_TIME (default: 23:30).
-    Fail-safe: Fehler werden geloggt, Scheduler läuft weiter.
-    """
     logger.info(
         f"Session Summary Scheduler gestartet – täglich um {SESSION_SUMMARY_TIME} Uhr"
     )
@@ -328,5 +318,4 @@ async def run_session_summary_scheduler(bot, chat_id: int) -> None:
         except Exception as e:
             logger.error(f"Session Summary Scheduler Fehler: {e}")
 
-        # Kurze Pause gegen Doppel-Trigger
         await asyncio.sleep(60)

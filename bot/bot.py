@@ -438,6 +438,15 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
         return
 
+    # Phase 80: Größen-Limit vor dem Download – verhindert dass große Dateien
+    # überhaupt heruntergeladen werden (Telegram liefert file_size im Document-Objekt).
+    if doc.file_size and doc.file_size > _IMAGE_MAX_BYTES:
+        await update.message.reply_text(
+            f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB). "
+            f"Bitte verkleinere das Bild und sende es erneut."
+        )
+        return
+
     caption = update.message.caption or ""
     if caption:
         is_safe, result = await sanitize_input_async(caption, user_id)
@@ -638,7 +647,16 @@ async def _post_init(app: Application) -> None:
     logger.info("SqliteSaver-Checkpointer initialisiert.")
     allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
     if allowed_ids:
-        chat_id = int(allowed_ids.split(",")[0].strip())
+        # Phase 80: ValueError-Guard – ungültige/leere IDs führen zu klarem Fehlerlog
+        # statt ungehandeltem Exception-Crash in _post_init.
+        try:
+            chat_id = int(allowed_ids.split(",")[0].strip())
+        except (ValueError, IndexError) as e:
+            logger.critical(
+                f"TELEGRAM_ALLOWED_USER_IDS ist ungültig: '{allowed_ids}' – "
+                f"Scheduler werden nicht gestartet. Fehler: {e}"
+            )
+            return
 
         from bot.briefing import run_briefing_scheduler
         task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
