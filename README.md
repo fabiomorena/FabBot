@@ -69,6 +69,10 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Fail-Closed LLM-Guard – Guard-Fehler blockiert statt durchzulassen |
 | ✅ | Security Input-Handling – sanitize_input_async immer im try/except (text, photo, document) |
 | ✅ | Dynamischer Chat-Prompt – claude.md + Session-Summaries + Profil pro Aufruf aktualisiert |
+| ✅ | Natural Language Passthrough – LLM-Rückfragen in Agents direkt durchgeben statt Parse-Fehler |
+| ✅ | Morning Briefing News – Haiku formatiert Tavily-Ergebnisse zu sauberen Bullets (keine Artefakte) |
+| ✅ | Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval aus Notizen/Sessions/Profil |
+| ✅ | /reindex – manuelle Neu-Indexierung der Wissensbasis |
 
 ---
 
@@ -95,8 +99,9 @@ FabBot/
 │   ├── audit.py             # Tamper-evident audit log
 │   ├── profile.py           # Personal context loader
 │   ├── profile_learner.py   # Auto-learning pipeline
+│   ├── retrieval.py         # Second Brain – ChromaDB + OpenAI Embeddings
 │   └── agents/
-│       ├── chat_agent.py    # Dynamic prompt, claude.md + sessions + profile per call
+│       ├── chat_agent.py    # Dynamic prompt, claude.md + sessions + profile + retrieval per call
 │       ├── memory_agent.py  # Explicit profile updates
 │       ├── vision_agent.py  # Photo analysis via Claude Sonnet Vision
 │       ├── computer.py      # Desktop control
@@ -121,13 +126,15 @@ FabBot/
 ```
 
 **Stack:**
-- Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-5-20250929`)
+- Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-20250514`)
 - Claude Haiku – supervisor routing + LLM-Guard (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`, default: `claude-haiku-4-5-20251001`)
 - LangGraph – multi-agent state machine with AsyncSqliteSaver
 - python-telegram-bot – Telegram interface
 - Whisper – local voice transcription
 - OpenAI TTS – primary TTS (nova, konfigurierbar via OPENAI_TTS_VOICE)
+- OpenAI Embeddings – text-embedding-3-small für Second Brain Retrieval
 - edge-tts – TTS fallback (de-DE-KatjaNeural)
+- ChromaDB – lokale Vektordatenbank für Second Brain (~/.fabbot/chroma/)
 - aiosqlite – async SQLite for persistent memory
 - Tavily + Brave Search – web search
 - rumps – macOS menubar app
@@ -140,7 +147,7 @@ FabBot/
 
 ### Prerequisites
 
-- Python 3.11+, Anthropic API key, Telegram bot token, ffmpeg
+- Python 3.11+, Anthropic API key, OpenAI API key, Telegram bot token, ffmpeg
 
 ### Installation
 
@@ -150,6 +157,7 @@ cd FabBot
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.lock
+pip install chromadb
 brew install ffmpeg
 ```
 
@@ -209,6 +217,10 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 72** ✅ Supervisor-Routing – web_agent als Fallback für alle Faktenfragen, chat_agent nur noch für rein konversationelle Nachrichten
 - **Phase 73** ✅ Session Summary Writer – tägliche Zusammenfassung, Cross-Session-Kontext
 - **Phase 74** ✅ Security & Prompt-Fix – fail-closed LLM-Guard, sanitize_input_async im try/except, dynamischer chat_agent-Prompt
+- **Phase 75** ✅ Natural Language Passthrough – LLM-Rückfragen in terminal/web/file/calendar/reminder direkt durchgeben statt Parse-Fehler
+- **Phase 76** ✅ Morning Briefing News-Fix – Haiku formatiert Tavily-Ergebnisse, filtert Artefakte (!Image, Bild-Labels)
+- **Phase 77** ✅ Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval (Profil, claude.md, Notizen, Sessions), /reindex Command
+- **Phase 77b** ✅ Supervisor Routing Fix – Fragen über Notizen/Sessions korrekt zu chat_agent geroutet
 
 ---
 
