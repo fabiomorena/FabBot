@@ -21,17 +21,11 @@ from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
-from bot.session_summary import summarize_session, run_session_summary_scheduler, SESSIONS_DIR
 from agent.agents.vision_agent import analyze_image_direct
 
 logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
-
-# Dedup-Set: verhindert Doppelverarbeitung desselben Telegram-Updates (block=False + Polling)
-_processed_message_ids: set[int] = set()
-_DEDUP_MAX_SIZE = 200
-
 
 _IMAGE_MAX_PX = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5MB
@@ -364,21 +358,6 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("❌ Fehler beim Speichern der Notiz.")
 
 
-
-@restricted
-async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Erstellt manuell eine Session-Zusammenfassung fuer heute."""
-    chat_id = update.effective_chat.id
-    thinking = await update.message.reply_text("Erstelle Session-Zusammenfassung...")
-    success = await summarize_session(chat_id)
-    if success:
-        await thinking.edit_text("✅ Session-Zusammenfassung gespeichert.")
-    else:
-        await thinking.edit_text(
-            "ℹ️ Keine Zusammenfassung erstellt.\n"
-            "(Moegliche Gruende: Datei existiert bereits, oder zu wenige Nachrichten heute.)"
-        )
-
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet eingehende Fotos – Bildanalyse via Claude Vision."""
@@ -509,15 +488,6 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-
-    # Dedup-Guard: selbes Telegram-Update nicht zweimal verarbeiten (tritt auf bei block=False + Polling)
-    msg_id = update.message.message_id
-    if msg_id in _processed_message_ids:
-        logger.warning(f"Dedup: Message-ID {msg_id} bereits verarbeitet – ignoriert.")
-        return
-    _processed_message_ids.add(msg_id)
-    if len(_processed_message_ids) > _DEDUP_MAX_SIZE:
-        _processed_message_ids.discard(next(iter(_processed_message_ids)))
 
     is_safe, result = await sanitize_input_async(text, user_id)
     if not is_safe:
@@ -718,7 +688,6 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("clip", cmd_clip, block=False))
     app.add_handler(CommandHandler("search", cmd_search, block=False))
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
-    app.add_handler(CommandHandler("summary", cmd_summary, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
