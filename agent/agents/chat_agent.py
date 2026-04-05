@@ -42,66 +42,57 @@ WICHTIGE VERHALTENSREGELN:
 
 def _build_chat_prompt() -> str:
     """
-    Baut den Chat-Prompt dynamisch aus vier Quellen – alle ueberleben den Context Trim:
-    1. _CHAT_PROMPT_BASE        – Basis-Instruktionen
-    2. claude.md                – persistente Bot-Instruktionen (load_claude_md() gecacht)
-    3. Session-Summaries        – Cross-Session-Kontext der letzten Tage (Phase 73)
-    4. personal_profile.yaml    – persoenlicher Kontext des Users
-
-    Dynamisch statt Singleton: neue Bot-Instruktionen via append_to_claude_md()
-    wirken beim naechsten Call sofort – kein Bot-Neustart noetig.
-    Fail-safe: Bei jedem Fehler wird der Basis-Prompt zurueckgegeben.
+    Baut den Chat-Prompt dynamisch pro Aufruf:
+    Reihenfolge: Base → Bot-Instruktionen (claude.md) → Letzte Sessions → Profil.
+    Jeder Block hat eigenes try/except – ein Fehler bricht nicht den ganzen Prompt.
+    Imports innerhalb der Funktion damit unittest.mock.patch() greift.
     """
+    parts = [_CHAT_PROMPT_BASE]
+
+    # Block 1: Bot-Instruktionen aus claude.md
     try:
         from agent.claude_md import load_claude_md
-        from agent.profile import get_profile_context_full
-
-        parts = [_CHAT_PROMPT_BASE]
-
-        # claude.md – persistente Bot-Instruktionen (gecacht, reload nach append)
-        claude_ctx = load_claude_md()
-        if claude_ctx:
+        claude_md = load_claude_md()
+        if claude_md:
             parts.append(
-                "\n=== Persistente Bot-Instruktionen (claude.md) ===\n"
-                + claude_ctx
-                + "\n=== Ende Bot-Instruktionen ==="
+                "\n## Bot-Instruktionen\n" + claude_md
             )
+    except Exception as e:
+        logger.debug(f"claude.md konnte nicht geladen werden (ignoriert): {e}")
 
-        # Session-Summaries – Cross-Session-Kontext (Phase 73)
-        # Sync-Leserei, kein Overhead – liefert komprimierte Tages-Zusammenfassungen
-        try:
-            from bot.session_summary import load_session_summaries
-            session_ctx = load_session_summaries(n=5)
-            if session_ctx:
-                parts.append(
-                    "\n=== Letzte Sessions (Kurzzusammenfassungen) ===\n"
-                    + session_ctx
-                    + "\n=== Ende Sessions ==="
-                )
-        except Exception:
-            pass  # fail-safe: Session-Summaries sind optional
+    # Block 2: Letzte Session-Summaries
+    try:
+        from bot.session_summary import load_session_summaries
+        sessions = load_session_summaries(n=5)
+        if sessions:
+            parts.append(
+                "\n## Letzte Sessions\n" + sessions
+            )
+    except Exception as e:
+        logger.debug(f"Session-Summaries konnten nicht geladen werden (ignoriert): {e}")
 
-        # personal_profile.yaml – Kontext ueber den User (gecacht)
-        profile_ctx = get_profile_context_full()
-        if profile_ctx:
+    # Block 3: Persoenliches Profil
+    try:
+        from agent.profile import get_profile_context_full
+        ctx = get_profile_context_full()
+        if ctx:
             parts.append(
                 "\nDer folgende Kontext ist deine primaere Wissensquelle ueber den User. "
-                "Nutze ihn bevorzugt gegenueber dem Gespraechsverlauf:\n\n"
-                + profile_ctx
+                "Nutze ihn bevorzugt gegenueber dem Gespraechsverlauf:\n\n" + ctx
             )
+    except Exception as e:
+        logger.debug(f"Profil konnte nicht geladen werden (ignoriert): {e}")
 
-        return "\n\n".join(parts)
-
-    except Exception:
-        pass
-    return _CHAT_PROMPT_BASE
+    return "\n".join(parts)
 
 
 _HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__", "__VISION_RESULT__")
 
 
 def _clean_messages_for_chat(messages: list) -> list:
-    """Ersetzt HITL-Nachrichten durch lesbare Platzhalter fuer den chat_agent."""
+    """Ersetzt HITL-Nachrichten durch lesbare Platzhalter fuer den chat_agent.
+    Der chat_agent soll wissen dass eine Aktion stattfand, aber nicht den rohen Prefix sehen.
+    """
     cleaned = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
@@ -119,6 +110,7 @@ def _clean_messages_for_chat(messages: list) -> list:
                 elif content.startswith("__SCREENSHOT__:"):
                     cleaned.append(AIMessage(content="[Screenshot erstellt]"))
                 elif content.startswith("__VISION_RESULT__:"):
+                    # Safety net – Vision-Ergebnis als lesbarer Platzhalter statt [Aktion ausgefuehrt].
                     vision_text = content[len("__VISION_RESULT__:"):]
                     cleaned.append(AIMessage(content=f"[Bildanalyse: {vision_text[:300]}]"))
                 else:
@@ -129,7 +121,7 @@ def _clean_messages_for_chat(messages: list) -> list:
 
 
 def _get_last_human_message(messages: list) -> str:
-    """Extrahiert den Text der letzten HumanMessage fuer den Auto-Learn-Hook."""
+    """Extrahiert den Text der letzten HumanMessage für den Auto-Learn-Hook."""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             content = msg.content
@@ -140,7 +132,9 @@ def _get_last_human_message(messages: list) -> str:
 
 
 def _get_context_window_size() -> int:
-    """Liest CHAT_CONTEXT_WINDOW aus .env. Default: 40. Bereich: 10–200."""
+    """Liest CHAT_CONTEXT_WINDOW aus .env. Default: 40.
+    Begrenzt auf sinnvollen Bereich 10–200.
+    """
     try:
         raw = os.getenv("CHAT_CONTEXT_WINDOW", "40")
         val = int(raw)
@@ -149,6 +143,7 @@ def _get_context_window_size() -> int:
         return 40
 
 
+# Kurze Bestaetigungen die nie eine Wiederholung ausloesen sollen
 _SHORT_CONFIRMATIONS = frozenset({
     "genau", "ok", "okay", "alles klar", "danke", "danke schoen", "danke schon",
     "gut", "super", "verstanden", "ja", "stimmt", "cool", "perfekt", "top",
@@ -157,21 +152,26 @@ _SHORT_CONFIRMATIONS = frozenset({
 
 
 def _is_short_confirmation(text: str) -> bool:
+    """Gibt True zurueck wenn die Nachricht eine kurze Bestaetigung ist."""
     return text.strip().lower().rstrip("!.") in _SHORT_CONFIRMATIONS
 
 
 async def chat_agent(state: AgentState) -> AgentState:
     """Antwortet direkt aus dem Gesprächsverlauf ohne externe Tools.
-
-    Phase 63: _build_chat_prompt() wird dynamisch aufgerufen statt als Singleton.
-    Phase 73: Session-Summaries fuer Cross-Session-Kontext integriert.
+    HITL-Nachrichten werden durch lesbare Platzhalter ersetzt.
+    Context wird auf CHAT_CONTEXT_WINDOW Messages getrimmt (default 40) –
+    verhindert unbegrenztes Wachstum des LLM-Calls bei langer Nutzungsdauer.
+    SQLite bleibt vollständig – nur der LLM-Call wird begrenzt.
+    Prompt wird dynamisch pro Aufruf gebaut (claude.md + Sessions + Profil).
+    Nach der Antwort: Auto-Learn-Hook als non-blocking Background-Task.
     """
     llm = get_llm()
     clean_messages = _clean_messages_for_chat(state["messages"])
+    # Trim: nur die letzten N Messages übergeben – SQLite bleibt vollständig
     context_window = _get_context_window_size()
     trimmed_messages = clean_messages[-context_window:]
 
-    # Dynamisch – neue claude.md Eintraege und Session-Summaries wirken sofort
+    # Prompt dynamisch pro Aufruf – holt aktuelles claude.md, Sessions und Profil
     prompt = _build_chat_prompt()
     messages = [SystemMessage(content=prompt)] + trimmed_messages
 
@@ -182,7 +182,8 @@ async def chat_agent(state: AgentState) -> AgentState:
 
     result = content.strip()
 
-    # Dedup-Sicherheitsnetz
+    # Dedup-Sicherheitsnetz: verhindert exakte Wiederholung der letzten AI-Antwort.
+    # Greift wenn der Prompt-Fix nicht ausreicht (z.B. bei sehr aehnlichem Kontext).
     prev_ai_messages = [m for m in trimmed_messages if isinstance(m, AIMessage)]
     if prev_ai_messages:
         last_ai_content = prev_ai_messages[-1].content
@@ -191,10 +192,12 @@ async def chat_agent(state: AgentState) -> AgentState:
                 b.get("text", "") if isinstance(b, dict) else str(b) for b in last_ai_content
             )
         if result == last_ai_content.strip():
-            logger.warning("chat_agent: Dedup-Sicherheitsnetz – Wiederholung verhindert.")
+            logger.warning("chat_agent: Dedup-Sicherheitsnetz hat angeschlagen – Wiederholung verhindert.")
             result = "Noch etwas, womit ich helfen kann?"
 
-    # Auto-Learn Hook
+    # Auto-Learn: letzte HumanMessage als Background-Task analysieren
+    # Non-blocking – Antwort an User wird nicht verzögert
+    # Fail-safe – Fehler im Learner beeinflussen den Bot nicht
     try:
         human_text = _get_last_human_message(state["messages"])
         if human_text:
