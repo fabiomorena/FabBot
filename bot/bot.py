@@ -22,6 +22,7 @@ from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
+from bot.whatsapp import init_whatsapp_session, send_whatsapp_message, is_session_ready
 
 logger = logging.getLogger(__name__)
 
@@ -205,18 +206,56 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
         log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
 
+
+async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    parts = response_msg[len(Proto.CONFIRM_WHATSAPP):].split("::", 1)
+    whatsapp_name = parts[0] if len(parts) > 0 else ""
+    message_text  = parts[1] if len(parts) > 1 else ""
+    confirmed = await request_confirmation(
+        bot, chat_id, "whatsapp_agent",
+        f"WhatsApp an {whatsapp_name}:\n{message_text}"
+    )
+    if confirmed:
+        success, detail = await send_whatsapp_message(whatsapp_name, message_text)
+        await bot.send_message(chat_id=chat_id, text=detail)
+        await _update_memory(chat_id, f"WhatsApp gesendet an {whatsapp_name}: {message_text}")
+        log_action("whatsapp_agent", "send", f"to={whatsapp_name} len={len(message_text)}", chat_id,
+                   status="executed" if success else "error")
+    else:
+        log_action("whatsapp_agent", "send", f"user rejected: {whatsapp_name}", chat_id, status="rejected")
+
 _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
     (Proto.SCREENSHOT,           _handle_screenshot),
     (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
     (Proto.CONFIRM_TERMINAL,     _handle_confirm_terminal),
     (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
     (Proto.CONFIRM_FILE_WRITE,   _handle_confirm_file_write),
+    (Proto.CONFIRM_WHATSAPP,      _handle_confirm_whatsapp),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Command Handlers
 # ---------------------------------------------------------------------------
+
+
+@restricted
+async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Einmaliges WhatsApp Web Setup via QR-Code."""
+    chat_id = update.effective_chat.id
+    if is_session_ready():
+        await update.message.reply_text(
+            "WhatsApp Session bereits vorhanden.\n"
+            "Falls du dich neu einloggen möchtest, lösche:\n"
+            "~/.fabbot/whatsapp_session/session.json"
+        )
+        return
+    await update.message.reply_text(
+        "Browser wird geöffnet – bitte QR-Code in WhatsApp scannen.\n"
+        "Du hast 2 Minuten Zeit."
+    )
+    success, detail = await init_whatsapp_session()
+    await update.message.reply_text(detail)
 
 @restricted
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -232,6 +271,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/reindex – Wissensbasis neu indexieren\n"
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
         "/stop – Laufende Sprachausgabe stoppen\n"
+        "/wa_setup – WhatsApp Web einrichten\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -748,6 +788,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("search", cmd_search, block=False))
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
     app.add_handler(CommandHandler("reindex", cmd_reindex, block=False))
+    app.add_handler(CommandHandler("wa_setup", cmd_wa_setup, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))

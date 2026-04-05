@@ -11,6 +11,7 @@ class Proto:
     CONFIRM_FILE_WRITE    = "__CONFIRM_FILE_WRITE__:"
     CONFIRM_CREATE_EVENT  = "__CONFIRM_CREATE_EVENT__:"
     CONFIRM_COMPUTER      = "__CONFIRM_COMPUTER__:"
+    CONFIRM_WHATSAPP      = "__CONFIRM_WHATSAPP__:"
 
     # Screenshot-Antwort
     SCREENSHOT            = "__SCREENSHOT__:"
@@ -20,6 +21,10 @@ class Proto:
 
     # Vision-Ergebnis – intern, wird an chat_agent weitergeleitet
     VISION_RESULT         = "__VISION_RESULT__:"
+
+    @staticmethod
+    def is_confirm_whatsapp(msg: str) -> bool:
+        return msg.startswith(Proto.CONFIRM_WHATSAPP)
 
     @staticmethod
     def is_confirm_terminal(msg: str) -> bool:
@@ -52,4 +57,5 @@ class Proto:
             Proto.is_confirm_file_write(msg),
             Proto.is_confirm_create_event(msg),
             Proto.is_confirm_computer(msg),
+            Proto.is_confirm_whatsapp(msg),
         ])

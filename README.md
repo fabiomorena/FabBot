@@ -73,6 +73,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Morning Briefing News – Haiku formatiert Tavily-Ergebnisse zu sauberen Bullets (keine Artefakte) |
 | ✅ | Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval aus Notizen/Sessions/Profil |
 | ✅ | /reindex – manuelle Neu-Indexierung der Wissensbasis |
+| ✅ | WhatsApp Agent – Nachrichten senden via Playwright (Whitelist-gesichert, HITL)
 | ✅ | Stability Fixes – session_summary TOCTOU (Lock), _post_init ValueError-Guard, on_document Größen-Limit |
 
 ---
@@ -224,7 +225,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 77b** ✅ Supervisor Routing Fix – Fragen über Notizen/Sessions korrekt zu chat_agent geroutet
 - **Phase 78** ✅ retrieval.py Code Quality – Semaphore-Kommentar, httpx Client außerhalb Batch-Loop, SHA256-Hash für virtuelle Quellen
 - **Phase 79** ✅ claude.md aus ChromaDB entfernt – direkte Prompt-Injektion übernimmt vollständig, keine Doppel-Injektion
-- **Phase 80** ✅ Stability Fixes – session_summary TOCTOU (Double-Checked Locking), _post_init ValueError-Guard, on_document Größen-Limit vor Download
+- **Phase 80** ✅ Stability Fixes
+- **Phase 81** ✅ WhatsApp Agent – Playwright, Session-persistent, Whitelist, HITL – session_summary TOCTOU (Double-Checked Locking), _post_init ValueError-Guard, on_document Größen-Limit vor Download
 
 ---
 

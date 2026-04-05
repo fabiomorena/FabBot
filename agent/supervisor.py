@@ -15,6 +15,7 @@ from agent.agents.chat_agent import chat_agent
 from agent.agents.reminder_agent import reminder_agent
 from agent.agents.memory_agent import memory_agent
 from agent.agents.vision_agent import vision_agent
+from agent.agents.whatsapp_agent import whatsapp_agent
 
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +57,9 @@ Verfuegbare Agenten:
   - Hoeflichkeiten und kurze Reaktionen
   - ALLE Folgefragen zu einem Foto oder Bild
   - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
+- whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte:
+  JA: "schick Steffi dass...", "WhatsApp an Amalia: ...", "sende Fabio eine Nachricht"
+  NEIN: Fragen über WhatsApp, allgemeine Kommunikation
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
@@ -113,7 +117,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
     valid = {
         "computer_agent", "terminal_agent", "file_agent",
         "web_agent", "calendar_agent", "reminder_agent",
-        "memory_agent", "chat_agent", "vision_agent", "FINISH"
+        "memory_agent", "chat_agent", "vision_agent", "whatsapp_agent", "FINISH"
     }
     if next_agent not in valid:
         next_agent = "chat_agent"
@@ -138,6 +142,7 @@ def _build_graph() -> StateGraph:
     graph.add_node("reminder_agent", reminder_agent)
     graph.add_node("memory_agent", memory_agent)
     graph.add_node("vision_agent", vision_agent)
+    graph.add_node("whatsapp_agent", whatsapp_agent)
 
     graph.set_entry_point("supervisor")
 
@@ -154,13 +159,14 @@ def _build_graph() -> StateGraph:
             "memory_agent": "memory_agent",
             "chat_agent": "chat_agent",
             "vision_agent": "vision_agent",
+            "whatsapp_agent": "whatsapp_agent",
             "FINISH": END,
         },
     )
 
     for agent in ["computer_agent", "terminal_agent", "file_agent",
                   "web_agent", "calendar_agent", "reminder_agent",
-                  "memory_agent", "chat_agent", "vision_agent"]:
+                  "memory_agent", "chat_agent", "vision_agent", "whatsapp_agent"]:
         graph.add_edge(agent, "supervisor")
 
     return graph
