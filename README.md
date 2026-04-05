@@ -73,6 +73,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Morning Briefing News – Haiku formatiert Tavily-Ergebnisse zu sauberen Bullets (keine Artefakte) |
 | ✅ | Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval aus Notizen/Sessions/Profil |
 | ✅ | /reindex – manuelle Neu-Indexierung der Wissensbasis |
+| ✅ | Stability Fixes – session_summary TOCTOU (Lock), _post_init ValueError-Guard, on_document Größen-Limit |
 
 ---
 
@@ -121,7 +122,7 @@ FabBot/
     ├── briefing.py          # Morning briefing scheduler (07:30)
     ├── reminders.py         # Reminder storage + proactive delivery
     ├── health_check.py      # Daily health check scheduler (06:00)
-    ├── session_summary.py   # Daily session summary (23:30)
+    ├── session_summary.py   # Daily session summary (23:30), TOCTOU-sicher
     └── party_report.py      # Weekend Party Report (Mittwoch 20:00)
 ```
 
@@ -223,6 +224,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 77b** ✅ Supervisor Routing Fix – Fragen über Notizen/Sessions korrekt zu chat_agent geroutet
 - **Phase 78** ✅ retrieval.py Code Quality – Semaphore-Kommentar, httpx Client außerhalb Batch-Loop, SHA256-Hash für virtuelle Quellen
 - **Phase 79** ✅ claude.md aus ChromaDB entfernt – direkte Prompt-Injektion übernimmt vollständig, keine Doppel-Injektion
+- **Phase 80** ✅ Stability Fixes – session_summary TOCTOU (Double-Checked Locking), _post_init ValueError-Guard, on_document Größen-Limit vor Download
 
 ---
 
