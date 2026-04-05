@@ -10,15 +10,17 @@ Indexierte Quellen:
   - ~/Documents/Wissen/Sessions/   (Session Summaries)
 
 Öffentliche API:
-  await index_all(force=False)   – Delta-Indexierung aller Quellen (mtime-Check)
+  await index_all(force=False)   – Delta-Indexierung aller Quellen (mtime/hash-Check)
   await index_file(path)         – Einzelne Datei indexieren/aktualisieren
   await remove_file(path)        – Datei aus Index entfernen
   await search(query, n=3)       – Semantische Suche → list[dict]
 
 Design:
   - Fail-safe: chromadb nicht installiert → alle Funktionen geben None/[] zurück
-  - Delta: nur geänderte Dateien werden re-embedded (mtime-Tracking via JSON)
-  - Semaphore: verhindert parallele ChromaDB-Writes
+  - Delta (Dateien): nur geänderte Dateien werden re-embedded (mtime-Tracking via JSON)
+  - Delta (virtuell): Profil + claude.md via SHA256-Hash – kein Re-Embed wenn unverändert
+  - httpx.AsyncClient: ein Client pro _embed_texts()-Aufruf, außerhalb der Batch-Schleife
+  - Semaphore: verhindert parallele ChromaDB-Writes (nur gültig im gleichen asyncio Event Loop / Prozess)
   - Timeout im search(): 5s (wird von chat_agent gesetzt)
   - Mindest-Ähnlichkeit: cosine distance < 0.7 (sonst nicht relevant genug)
   - Chunk-Größe: max. 1500 Zeichen, min. 50 Zeichen
@@ -50,7 +52,11 @@ _EMBED_BATCH_SIZE = 100      # OpenAI: max 2048 Inputs, wir bleiben konservativ
 _WISSEN_DIR = Path.home() / "Documents" / "Wissen"
 _SESSIONS_DIR = _WISSEN_DIR / "Sessions"
 
-# Semaphore – verhindert parallele ChromaDB-Writes
+# Semaphore – verhindert parallele ChromaDB-Writes.
+# Nur gültig im gleichen asyncio Event Loop / Prozess.
+# Bei multiprocessing oder ASGI-Workern würde jeder Prozess
+# eine eigene Semaphore-Instanz haben → kein Schutz mehr.
+# FabBot läuft als Single-Process-Telegram-Bot → korrekt.
 _write_semaphore: asyncio.Semaphore | None = None
 
 # ChromaDB Collection – lazy singleton
@@ -58,7 +64,10 @@ _collection = None
 
 
 def _get_semaphore() -> asyncio.Semaphore:
-    """Gibt den Write-Semaphore zurück (lazy, event-loop-sicher)."""
+    """
+    Gibt den Write-Semaphore zurück (lazy, event-loop-sicher).
+    Nur gültig im gleichen asyncio Event Loop / Prozess (Single-Process-Bot).
+    """
     global _write_semaphore
     if _write_semaphore is None:
         _write_semaphore = asyncio.Semaphore(1)
@@ -103,11 +112,12 @@ def _get_collection():
 
 
 # ---------------------------------------------------------------------------
-# mtime-Tracking für Delta-Indexierung
+# mtime-Tracking für Delta-Indexierung (Dateien)
+# Hash-Tracking für virtuelle Quellen (Profil, claude.md)
 # ---------------------------------------------------------------------------
 
-def _load_meta() -> dict[str, float]:
-    """Lädt gespeicherte mtime-Werte."""
+def _load_meta() -> dict[str, str | float]:
+    """Lädt gespeicherte mtime/hash-Werte."""
     try:
         if _META_PATH.exists():
             return json.loads(_META_PATH.read_text(encoding="utf-8"))
@@ -116,13 +126,18 @@ def _load_meta() -> dict[str, float]:
     return {}
 
 
-def _save_meta(meta: dict[str, float]) -> None:
-    """Speichert mtime-Werte."""
+def _save_meta(meta: dict[str, str | float]) -> None:
+    """Speichert mtime/hash-Werte."""
     try:
         _META_PATH.parent.mkdir(parents=True, exist_ok=True)
         _META_PATH.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
         logger.warning(f"Meta-Speicherung fehlgeschlagen: {e}")
+
+
+def _content_hash(text: str) -> str:
+    """SHA256-Hash eines Textes – für virtuelle Quellen (Profil, claude.md)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +153,6 @@ def _chunk_text(text: str) -> list[str]:
     if not text or not text.strip():
         return []
 
-    # An H1-H3 Headings splitten (Zeilen die mit # beginnen)
     sections = re.split(r"\n(?=#{1,3} )", text.strip())
 
     chunks: list[str] = []
@@ -150,7 +164,6 @@ def _chunk_text(text: str) -> list[str]:
             if len(section) >= _MIN_CHUNK_CHARS:
                 chunks.append(section)
         else:
-            # Zu groß → an Absätzen weiter splitten
             paragraphs = [p.strip() for p in section.split("\n\n") if p.strip()]
             current = ""
             for p in paragraphs:
@@ -175,12 +188,18 @@ def _make_chunk_id(source_id: str, chunk_index: int) -> str:
 
 # ---------------------------------------------------------------------------
 # OpenAI Embeddings
+# Phase 78 Fix 2: Ein httpx.AsyncClient außerhalb der Batch-Schleife –
+# ermöglicht HTTP/2-Connection-Reuse bei mehreren Batches.
 # ---------------------------------------------------------------------------
 
 async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     """
     Erstellt Embeddings via OpenAI text-embedding-3-small.
     Verarbeitet in Batches von _EMBED_BATCH_SIZE.
+
+    Phase 78: Ein einziger AsyncClient für alle Batches –
+    HTTP/2-Connection-Reuse, weniger TCP-Overhead bei großem Index.
+
     Gibt None bei Fehler zurück (Aufrufer prüft auf None).
     """
     api_key = os.getenv("OPENAI_API_KEY", "")
@@ -193,9 +212,11 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     try:
         import httpx
         all_embeddings: list[list[float]] = []
-        for i in range(0, len(texts), _EMBED_BATCH_SIZE):
-            batch = texts[i: i + _EMBED_BATCH_SIZE]
-            async with httpx.AsyncClient(timeout=60) as client:
+
+        # Ein Client für alle Batches – HTTP/2-Connection-Reuse
+        async with httpx.AsyncClient(timeout=60) as client:
+            for i in range(0, len(texts), _EMBED_BATCH_SIZE):
+                batch = texts[i: i + _EMBED_BATCH_SIZE]
                 resp = await client.post(
                     "https://api.openai.com/v1/embeddings",
                     headers={
@@ -207,6 +228,7 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
                 resp.raise_for_status()
                 data = resp.json()
                 all_embeddings.extend(d["embedding"] for d in data["data"])
+
         return all_embeddings
     except Exception as e:
         logger.error(f"OpenAI Embedding Fehler: {e}")
@@ -296,7 +318,6 @@ async def index_file(path: Path, force: bool = False) -> bool:
         if not text:
             return False
 
-        # Source-Type aus Pfad ableiten
         sessions_str = str(_SESSIONS_DIR.resolve())
         wissen_str = str(_WISSEN_DIR.resolve())
 
@@ -328,10 +349,15 @@ async def _index_virtual(
     virtual_id: str,
     source_type: str,
     label: str,
+    force: bool = False,
 ) -> bool:
     """
     Indexiert virtuellen Inhalt ohne echte Datei (Profil, claude.md).
-    Wird bei jedem index_all() neu indexiert (kein mtime-Check nötig).
+
+    Phase 78 Fix 3: SHA256-Hash-Check statt dauerhaftem Re-Embed.
+    Nur wenn sich der Inhalt seit dem letzten Durchlauf geändert hat
+    werden neue Embeddings erstellt – konsistent mit dem Delta-Design
+    der Datei-Indexierung. Spart OpenAI API-Calls bei unverändertem Inhalt.
     """
     collection = _get_collection()
     if collection is None:
@@ -340,8 +366,19 @@ async def _index_virtual(
         return False
 
     try:
+        current_hash = _content_hash(content)
+        meta_key = f"__hash__{virtual_id}"
+        meta = _load_meta()
+
+        if not force and meta.get(meta_key) == current_hash:
+            logger.debug(f"Retrieval: '{label}' unverändert (Hash-Check) – skip")
+            return False
+
         chunks = _chunk_text(content)
         count = await _upsert_chunks(chunks, virtual_id, source_type, label, collection)
+
+        meta[meta_key] = current_hash
+        _save_meta(meta)
         logger.info(f"Retrieval: '{label}' indexiert ({count} Chunks)")
         return True
     except Exception as e:
@@ -377,41 +414,49 @@ async def index_all(force: bool = False) -> None:
     """
     Vollständige Delta-Indexierung aller Quellen.
     Läuft als Background-Task beim Bot-Start.
-    force=True re-indexiert alle Dateien unabhängig von mtime.
+    force=True re-indexiert alle Quellen unabhängig von mtime/Hash.
+
+    Phase 78:
+    - Profil + claude.md: Hash-Check statt dauerhaftem Re-Embed
+    - Dateien: mtime-Check (unverändert)
     """
     logger.info("Retrieval: Starte Index-Durchlauf...")
     total_updated = 0
 
-    # 1. personal_profile.yaml (virtuell – immer neu generieren)
+    # 1. personal_profile.yaml (virtuell – Hash-Check)
     try:
         from agent.profile import get_profile_context_full
         profile_text = await asyncio.to_thread(get_profile_context_full)
         if profile_text:
-            ok = await _index_virtual(profile_text, "__profile__", "profile", "Persönliches Profil")
+            ok = await _index_virtual(
+                profile_text, "__profile__", "profile", "Persönliches Profil", force=force
+            )
             if ok:
                 total_updated += 1
     except Exception as e:
         logger.warning(f"Retrieval: Profil-Indexierung fehlgeschlagen: {e}")
 
-    # 2. claude.md (virtuell – immer neu laden)
+    # 2. claude.md (virtuell – Hash-Check)
     try:
         from agent.claude_md import load_claude_md
         claude_text = await asyncio.to_thread(load_claude_md)
         if claude_text:
-            ok = await _index_virtual(claude_text, "__claude_md__", "claude_md", "Bot-Instruktionen")
+            ok = await _index_virtual(
+                claude_text, "__claude_md__", "claude_md", "Bot-Instruktionen", force=force
+            )
             if ok:
                 total_updated += 1
     except Exception as e:
         logger.warning(f"Retrieval: claude.md-Indexierung fehlgeschlagen: {e}")
 
-    # 3. ~/Documents/Wissen/*.md (Knowledge Notes)
+    # 3. ~/Documents/Wissen/*.md (Knowledge Notes – mtime-Check)
     if _WISSEN_DIR.exists():
         for path in sorted(_WISSEN_DIR.glob("*.md")):
             ok = await index_file(path, force=force)
             if ok:
                 total_updated += 1
 
-    # 4. ~/Documents/Wissen/Sessions/*.md (Session Summaries)
+    # 4. ~/Documents/Wissen/Sessions/*.md (Session Summaries – mtime-Check)
     if _SESSIONS_DIR.exists():
         for path in sorted(_SESSIONS_DIR.glob("????-??-??.md")):
             ok = await index_file(path, force=force)
@@ -474,7 +519,7 @@ async def search(query: str, n_results: int = 3) -> list[dict]:
             results["distances"][0],
         ):
             if dist > _MAX_DISTANCE:
-                continue  # Nicht relevant genug
+                continue
             output.append({
                 "document": doc,
                 "label": meta.get("label", "Unbekannt"),
