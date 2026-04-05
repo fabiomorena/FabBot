@@ -9,7 +9,6 @@ from agent.llm import get_llm
 from agent.protocol import Proto
 
 def _build_allowed_paths() -> list[Path]:
-    """Erlaubte Basispfade – portabel via Path.home() + optionale externe Pfade via .env."""
     paths = [
         Path.home() / "Downloads",
         Path.home() / "Documents",
@@ -17,14 +16,12 @@ def _build_allowed_paths() -> list[Path]:
         Path.home() / "Projects",
         Path.home() / "PythonProject",
     ]
-    # Optionale externe Pfade via .env: FABBOT_EXTRA_PATHS=/Volumes/SSD/foo:/Volumes/SSD/bar
     extra = os.getenv("FABBOT_EXTRA_PATHS", "")
     for ep in extra.split(":") if extra else []:
         ep = ep.strip()
         if not ep:
             continue
         extra_path = Path(ep)
-        # Validation: Pfad muss existieren und darf nicht in blocked paths liegen
         if not extra_path.exists():
             import logging
             logging.getLogger(__name__).warning(f"FABBOT_EXTRA_PATHS: Pfad existiert nicht – ignoriert: {ep}")
@@ -117,6 +114,11 @@ def file_agent(state: AgentState) -> AgentState:
 
     if content == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom File-Agent nicht unterstuetzt.")]}
+
+    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt JSON geliefert.
+    # Alle validen Routing-Antworten dieses Agents beginnen mit '{'.
+    if not content.strip().startswith("{"):
+        return {"messages": [AIMessage(content=content.strip())]}
 
     try:
         parsed = json.loads(content)

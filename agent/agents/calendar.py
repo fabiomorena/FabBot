@@ -144,7 +144,6 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
 
 async def calendar_agent(state: AgentState) -> AgentState:
     llm = get_llm()
-    # Nur letzte HumanMessage – History verwirrt den LLM bei create vs list
     human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
     last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
     messages = [SystemMessage(content=_build_prompt())] + last_msg
@@ -156,6 +155,11 @@ async def calendar_agent(state: AgentState) -> AgentState:
 
     if not content or content == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom Kalender-Agent nicht unterstuetzt.")]}
+
+    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt JSON geliefert.
+    # Alle validen Routing-Antworten dieses Agents beginnen mit '{'.
+    if not content.strip().startswith("{"):
+        return {"messages": [AIMessage(content=content.strip())]}
 
     try:
         parsed = json.loads(content)

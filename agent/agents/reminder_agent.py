@@ -73,7 +73,6 @@ async def reminder_agent(state: AgentState) -> AgentState:
         hasattr(m, "content") and isinstance(m.content, str) and
         m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
     )]
-    # Nur letzte HumanMessage – verhindert Zeitberechnung auf Basis alter Messages
     human_msgs = [m for m in filtered if hasattr(m, 'type') and m.type == 'human']
     last_msg = [human_msgs[-1]] if human_msgs else filtered[-1:]
     messages = [SystemMessage(content=_build_prompt())] + last_msg
@@ -85,6 +84,11 @@ async def reminder_agent(state: AgentState) -> AgentState:
 
     if content == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Erinnerung konnte ich nicht verstehen. Bitte formuliere es anders, z.B. 'Erinnere mich morgen um 9 Uhr ans Meeting'.")]}
+
+    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt JSON geliefert.
+    # Alle validen Routing-Antworten dieses Agents beginnen mit '{'.
+    if not content.strip().startswith("{"):
+        return {"messages": [AIMessage(content=content.strip())]}
 
     try:
         parsed = json.loads(content)

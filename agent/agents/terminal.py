@@ -13,8 +13,6 @@ ALLOWED_COMMANDS = {
     "find", "wc", "sort", "uniq", "uptime", "sw_vers",
     "diskutil", "system_profiler",
 }
-# echo bewusst entfernt: kein legitimer Use Case für den Bot,
-# aber Risiko für Environment-Variable-Exposure (echo $HOME etc.)
 
 FORBIDDEN_ARGS = {
     "--exec", "-exec", "--delete", "-delete",
@@ -105,7 +103,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
             return False, f"system_profiler Datatype nicht erlaubt. Erlaubt: {allowed}"
 
     if base_cmd == "df":
-        # Pfad-Argumente werden in sanitize_command() entfernt
         return True, command
     if base_cmd == "find":
         if args:
@@ -134,7 +131,7 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
 
 def sanitize_command(command: str) -> str:
     """
-    Bereinigt einen bereits validierten Befehl vor der Ausführung.
+    Bereinigt einen bereits validierten Befehl vor der Ausfuehrung.
     Trennung von Validierung (is_command_allowed) und Transformation.
     Aktuell: df – Pfad-Argumente entfernen, nur Flags behalten.
     """
@@ -166,7 +163,7 @@ def execute_command(command: str) -> str:
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
-            cwd=str(pathlib.Path.home()),  # sicheres Arbeitsverzeichnis – kein Bot-Source-Exposure
+            cwd=str(pathlib.Path.home()),
         )
         output = result.stdout.strip() or result.stderr.strip() or "(kein Output)"
         if len(output) > TERMINAL_MAX_OUTPUT:
@@ -181,7 +178,6 @@ def execute_command(command: str) -> str:
 def terminal_agent(state: AgentState) -> AgentState:
     """Generiert einen Shell-Befehl via LLM und gibt ihn zur HITL-Bestaetigung weiter."""
     llm = get_llm()
-    # __MEMORY__-Messages filtern damit der LLM keine alten Ergebnisse nachahmt
     filtered = [m for m in state["messages"] if not (hasattr(m, "content") and isinstance(m.content, str) and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__")))]
     messages = [SystemMessage(content=PROMPT)] + filtered
     response = llm.invoke(messages)
@@ -189,12 +185,21 @@ def terminal_agent(state: AgentState) -> AgentState:
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     command = content.strip().strip("`")
-    # Defensiv: HITL-Prefix abstreifen falls LLM ihn aus der History nachahmt
     if command.startswith("__CONFIRM_TERMINAL__:"):
         command = command[len("__CONFIRM_TERMINAL__:"):]
 
     if command == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Aktion wird vom Terminal-Agent nicht unterstuetzt.")]}
+
+    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt Befehl geliefert.
+    # Heuristik: erstes Token muss in ALLOWED_COMMANDS sein (alle validen Befehle starten so).
+    # Rückfragen/Hinweise beginnen mit normalen Wörtern die nicht in ALLOWED_COMMANDS sind.
+    try:
+        _first = os.path.basename(shlex.split(command)[0]) if command.split() else ""
+    except ValueError:
+        _first = ""
+    if _first not in ALLOWED_COMMANDS:
+        return {"messages": [AIMessage(content=command)]}
 
     allowed, reason = is_command_allowed(command)
     if not allowed:

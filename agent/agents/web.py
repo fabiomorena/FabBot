@@ -7,7 +7,6 @@ import httpx
 from datetime import date
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
-
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
@@ -45,7 +44,6 @@ Wenn nicht unterstuetzt: UNSUPPORTED
 
 
 def _build_summarize_prompt() -> str:
-    """Gibt den Summarize-Prompt mit aktuellem Datum zurueck."""
     today = date.today().strftime("%d.%m.%Y")
     year = date.today().year
     return f"""Du bist ein hilfreicher Assistent. Heutiges Datum: {today}.
@@ -201,8 +199,6 @@ def _format_search_results(results: list[dict], source: str) -> str:
 async def web_agent(state: AgentState) -> AgentState:
     llm = get_llm()
 
-    # Nur letzte HumanMessage für JSON-Routing – verhindert dass LLM
-    # aus der History Natural Language statt JSON zurückgibt
     human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
     last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
     routing_messages = [SystemMessage(content=_build_prompt())] + last_msg
@@ -215,6 +211,11 @@ async def web_agent(state: AgentState) -> AgentState:
 
     if content == "UNSUPPORTED":
         return {"messages": [AIMessage(content="Diese Anfrage wird vom Web-Agent nicht unterstuetzt.")]}
+
+    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt JSON geliefert.
+    # Alle validen Routing-Antworten dieses Agents beginnen mit '{'.
+    if not content.strip().startswith("{"):
+        return {"messages": [AIMessage(content=content.strip())]}
 
     try:
         parsed = json.loads(content)
