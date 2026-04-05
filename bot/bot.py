@@ -22,7 +22,8 @@ from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
-from bot.whatsapp import init_whatsapp_session, send_whatsapp_message, is_session_ready
+from bot.whatsapp import (init_whatsapp_session, send_whatsapp_message, is_session_ready,
+                          add_whatsapp_contact, remove_whatsapp_contact, list_whatsapp_contacts_formatted)
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,67 @@ _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
 # ---------------------------------------------------------------------------
 
 
+
+@restricted
+async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /wa_contact add <Name> <WhatsApp-Name>   – Kontakt hinzufügen/aktualisieren
+    /wa_contact remove <Name>                – Kontakt entfernen
+    /wa_contact list                         – Alle Kontakte anzeigen
+
+    Beispiele:
+      /wa_contact add Steffi "Steffi 🌞"
+      /wa_contact add Amalia Amalia
+      /wa_contact remove Steffi
+      /wa_contact list
+    """
+    if not ctx.args:
+        await update.message.reply_text(
+            "Verwendung:\n"
+            "/wa_contact add <Name> <WhatsApp-Name>\n"
+            "/wa_contact remove <Name>\n"
+            "/wa_contact list\n\n"
+            "Beispiel:\n"
+            '/wa_contact add Steffi "Steffi 🌞"'
+        )
+        return
+
+    subcmd = ctx.args[0].lower()
+
+    if subcmd == "list":
+        result = list_whatsapp_contacts_formatted()
+        await update.message.reply_text(result, parse_mode="Markdown")
+        return
+
+    elif subcmd == "add":
+        if len(ctx.args) < 3:
+            await update.message.reply_text(
+                "Verwendung: /wa_contact add <Name> <WhatsApp-Name>\n"
+                "Beispiel: /wa_contact add Steffi \"Steffi 🌞\""
+            )
+            return
+        name = ctx.args[1]
+        # WhatsApp-Name kann Leerzeichen enthalten (z.B. "Fabio Morena (du)")
+        whatsapp_name = " ".join(ctx.args[2:])
+        success, detail = await add_whatsapp_contact(name, whatsapp_name)
+        await update.message.reply_text(detail)
+        return
+
+    elif subcmd == "remove":
+        if len(ctx.args) < 2:
+            await update.message.reply_text("Verwendung: /wa_contact remove <Name>")
+            return
+        name = ctx.args[1]
+        success, detail = await remove_whatsapp_contact(name)
+        await update.message.reply_text(detail)
+        return
+
+    else:
+        await update.message.reply_text(
+            f"Unbekannter Unterbefehl: {subcmd}\n"
+            "Verfügbar: add, remove, list"
+        )
+
 @restricted
 async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Einmaliges WhatsApp Web Setup via QR-Code."""
@@ -272,6 +334,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
         "/stop – Laufende Sprachausgabe stoppen\n"
         "/wa_setup – WhatsApp Web einrichten\n"
+        "/wa_contact add/remove/list – WhatsApp-Kontakte verwalten\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -789,6 +852,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("remember", cmd_remember, block=False))
     app.add_handler(CommandHandler("reindex", cmd_reindex, block=False))
     app.add_handler(CommandHandler("wa_setup", cmd_wa_setup, block=False))
+    app.add_handler(CommandHandler("wa_contact", cmd_wa_contact, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
