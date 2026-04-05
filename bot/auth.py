@@ -8,19 +8,24 @@ logger = logging.getLogger(__name__)
 
 
 def _load_allowed_ids() -> frozenset[int]:
-    """Laedt erlaubte User-IDs aus Env-Var beim Start."""
+    """Laedt erlaubte User-IDs aus Env-Var beim Start.
+
+    Phase 84 Fix: Fail-Closed – leere / fehlende Env-Var wirft RuntimeError
+    statt frozenset() zurückzugeben. Ein leeres frozenset() wäre zwar
+    funktional "blockiert", würde aber den Fehler still verschlucken;
+    RuntimeError stoppt den Bot-Start sauber mit einer klaren Fehlermeldung.
+    """
     raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
     if not raw.strip():
-        logger.critical(
+        raise RuntimeError(
             "TELEGRAM_ALLOWED_USER_IDS ist nicht gesetzt oder leer – "
-            "niemand kann den Bot benutzen!"
+            "Bot-Start abgebrochen. Bitte mindestens eine User-ID in .env eintragen."
         )
-        return frozenset()
     ids = frozenset(int(uid.strip()) for uid in raw.split(",") if uid.strip())
     if not ids:
         raise RuntimeError(
-            "TELEGRAM_ALLOWED_USER_IDS ist leer – Bot-Start abgebrochen. "
-            "Bitte mindestens eine User-ID in .env eintragen."
+            "TELEGRAM_ALLOWED_USER_IDS enthält keine gültige User-ID – "
+            "Bot-Start abgebrochen. Bitte mindestens eine gültige Integer-ID eintragen."
         )
     logger.info(f"Bot-Zugriff erlaubt fuer {len(ids)} User-ID(s).")
     return ids

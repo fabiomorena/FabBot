@@ -75,7 +75,11 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | /reindex – manuelle Neu-Indexierung der Wissensbasis |
 | ✅ | WhatsApp Agent – Nachrichten senden via whatsapp-web.js Node.js Service (Whitelist-gesichert, HITL, QR via Telegram)
 | ✅ | Stability Fixes – session_summary TOCTOU (Lock), _post_init ValueError-Guard, on_document Größen-Limit |
-
+| ✅ | Auth Fail-Closed – ALLOWED_IDS leer → RuntimeError statt frozenset() |
+| ✅ | handle_message_text aufgeteilt – _sanitize_and_validate, _invoke_and_extract, _dispatch_response |
+| ✅ | _delete_thinking() – contextlib.suppress statt repetitiver try/except-Blöcke |
+| ✅ | on_document Resize-Fix – _resize_image() konsistent wie on_photo |
+| ✅ | TELEGRAM_CHAT_ID Env-Var – semantisch korrekte Chat-ID für Scheduler |
 ---
 
 ## Architecture
@@ -229,7 +233,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 81** ✅ WhatsApp Agent – Playwright, Session-persistent, Whitelist, HITL – session_summary TOCTOU (Double-Checked Locking), _post_init ValueError-Guard, on_document Größen-Limit
 - **Phase 82** ✅ /wa_contact Command – add/remove/list WhatsApp-Kontakte, verschlüsselte YAML
 - **Phase 83** ✅ whatsapp-web.js Microservice – Node.js ersetzt Playwright, Session via ~/.fabbot/wa_ready, QR-Code via Telegram, Markdown-Fix vor Download
-
+- **Phase 84** ✅ Security & Code Quality – auth fail-closed, handle_message_text aufgeteilt, contextlib.suppress, on_document resize-fix, TELEGRAM_CHAT_ID
 ---
 
 ## License

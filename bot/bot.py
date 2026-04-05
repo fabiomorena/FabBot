@@ -1,3 +1,17 @@
+"""
+bot/bot.py – Telegram Handler für FabBot.
+
+Phase 84 Änderungen:
+- _delete_thinking(): kontextlib.suppress statt repetitiver try/except-Blöcke
+- _sanitize_and_validate(): extrahiert aus handle_message_text
+- _invoke_and_extract(): extrahiert aus handle_message_text
+- _dispatch_response(): extrahiert aus handle_message_text
+- handle_message_text: God-Function aufgeteilt (~80→~35 Zeilen)
+- on_photo/on_document/on_voice: finally + _delete_thinking statt Duplikate
+- on_document: _resize_image() integriert (war in on_photo vorhanden, hier fehlte es)
+- _post_init: eigene TELEGRAM_CHAT_ID Env-Var statt User-ID als Chat-ID
+"""
+import contextlib
 import logging
 import os
 import asyncio
@@ -33,7 +47,7 @@ logger = logging.getLogger(__name__)
 _TTS_MAX_HITL_OUTPUT = 300
 
 _IMAGE_MAX_PX    = 1920
-_IMAGE_MAX_BYTES = 5_000_000  # 5MB
+_IMAGE_MAX_BYTES = 5_000_000  # 5 MB
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -51,9 +65,7 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
         save_kwargs = {"optimize": True}
         if fmt == "JPEG":
             save_kwargs["quality"] = 90
-        if fmt == "PNG" and img.mode == "RGBA":
-            pass
-        elif img.mode in ("RGBA", "P") and fmt == "JPEG":
+        if img.mode in ("RGBA", "P") and fmt == "JPEG":
             img = img.convert("RGB")
         img.save(output, format=fmt, **save_kwargs)
         result = output.getvalue()
@@ -135,11 +147,84 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Phase 84: Shared Helpers
+# ---------------------------------------------------------------------------
+
+async def _delete_thinking(thinking) -> None:
+    """
+    Löscht die 'Denke nach…' / 'Analysiere…' Meldung.
+    Fehler werden via contextlib.suppress unterdrückt – kein try/except-Boilerplate
+    mehr in jedem einzelnen Exception-Zweig nötig.
+    """
+    with contextlib.suppress(Exception):
+        await thinking.delete()
+
+
+async def _sanitize_and_validate(
+    text: str, user_id: int, update: Update
+) -> tuple[bool, str]:
+    """
+    Sanitiert und validiert den Input-Text.
+    Gibt (True, clean_text) zurück wenn sicher, sonst (False, reason).
+    Sendet bei Ablehnung direkt eine Fehlermeldung an den User.
+    """
+    is_safe, result = await sanitize_input_async(text, user_id)
+    if not is_safe:
+        log_blocked(result, text, user_id)
+        await update.message.reply_text(f"Eingabe abgelehnt: {result}")
+    return is_safe, result
+
+
+async def _invoke_and_extract(state: dict, config: dict) -> str:
+    """
+    Führt den LangGraph-Graph aus und extrahiert die letzte AI-Antwort.
+    Enthält das Dedup-Sicherheitsnetz gegen doppelte Antworten.
+    """
+    result_state = await _invoke_with_retry(state, config)
+
+    input_count  = len(state["messages"])
+    new_messages = result_state["messages"][input_count:]
+    ai_messages  = [m for m in new_messages if isinstance(m, AIMessage)]
+    if not ai_messages:
+        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
+
+    response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
+
+    # Dedup-Sicherheitsnetz
+    if len(ai_messages) >= 2:
+        prev_content = _extract_content(ai_messages[-2])
+        if response_msg == prev_content and response_msg:
+            logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung abgefangen.")
+            response_msg = "Noch etwas?"
+
+    return response_msg
+
+
+async def _dispatch_response(
+    response_msg: str, bot: Bot, chat_id: int, update: Update
+) -> None:
+    """
+    Dispatcht eine Agent-Antwort:
+    - HITL-Prefix erkannt → entsprechenden Handler aufrufen
+    - Sonst → Text senden + TTS parallel
+    """
+    for prefix, handler in _RESPONSE_DISPATCH:
+        if response_msg.startswith(prefix):
+            await handler(response_msg=response_msg, bot=bot, chat_id=chat_id)
+            return
+
+    await asyncio.gather(
+        update.message.reply_text(response_msg or "Keine Antwort vom Agent."),
+        speak_and_send(response_msg, bot, chat_id) if response_msg else asyncio.sleep(0),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Private HITL-Handler
 # ---------------------------------------------------------------------------
 
 async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    analysis        = response_msg[len(Proto.SCREENSHOT):]
+    analysis         = response_msg[len(Proto.SCREENSHOT):]
     screenshot_bytes = _screenshot_to_telegram_bytes()
     if screenshot_bytes:
         await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
@@ -300,71 +385,66 @@ async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Phase 83: WhatsApp Setup via Node.js whatsapp-web.js Service.
-
-    Flow:
-    1. Service-Status prüfen
-    2. Wenn bereit → Meldung
-    3. Wenn QR-Code verfügbar → als Bild senden
-    4. Wenn Service nicht erreichbar → Hinweis
     """
-    chat_id = update.effective_chat.id
+    chat_id  = update.effective_chat.id
     thinking = await update.message.reply_text("Prüfe WhatsApp Status...")
 
-    status = await get_service_status()
+    try:
+        status = await get_service_status()
 
-    # Service nicht erreichbar
-    if not status.get("ok"):
+        if not status.get("ok"):
+            await thinking.edit_text(
+                "❌ WhatsApp Service nicht erreichbar.\n\n"
+                "Stelle sicher dass der Service läuft:\n"
+                "```\ncd whatsapp_service\nnpm install\n```\n"
+                "Der Bot startet ihn beim nächsten Neustart automatisch."
+            )
+            return
+
+        if status.get("ready"):
+            await thinking.edit_text("✅ WhatsApp bereits verbunden – keine Anmeldung nötig.")
+            return
+
+        if status.get("qr_available"):
+            qr_string = await get_qr_code()
+            if qr_string:
+                try:
+                    import qrcode as qrcode_lib
+                    import io
+                    qr_img = qrcode_lib.make(qr_string)
+                    buf    = io.BytesIO()
+                    qr_img.save(buf, format="PNG")
+                    buf.seek(0)
+                    await thinking.delete()
+                    await ctx.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=buf.getvalue(),
+                        caption=(
+                            "📱 WhatsApp QR-Code scannen:\n\n"
+                            "1. WhatsApp öffnen\n"
+                            "2. Einstellungen → Verknüpfte Geräte\n"
+                            "3. Gerät hinzufügen → QR scannen\n\n"
+                            "QR-Code läuft nach ca. 60s ab – /wa_setup nochmal für neuen Code."
+                        ),
+                    )
+                    return
+                except ImportError:
+                    await thinking.edit_text(
+                        "QR-Code verfügbar, aber 'qrcode[pil]' fehlt.\n"
+                        "Installiere: `.venv/bin/pip install qrcode[pil]`"
+                    )
+                    return
+            await thinking.edit_text("QR-Code konnte nicht abgerufen werden – bitte nochmal versuchen.")
+            return
+
         await thinking.edit_text(
-            "❌ WhatsApp Service nicht erreichbar.\n\n"
-            "Stelle sicher dass der Service läuft:\n"
-            "```\ncd whatsapp_service\nnpm install\n```\n"
-            "Der Bot startet ihn beim nächsten Neustart automatisch."
+            "⏳ WhatsApp Service läuft, QR-Code wird generiert...\n"
+            "Bitte 15–20 Sekunden warten und /wa_setup nochmal ausführen."
         )
-        return
-
-    # Bereits verbunden
-    if status.get("ready"):
-        await thinking.edit_text("✅ WhatsApp bereits verbunden – keine Anmeldung nötig.")
-        return
-
-    # QR-Code verfügbar → als Bild senden
-    if status.get("qr_available"):
-        qr_string = await get_qr_code()
-        if qr_string:
-            try:
-                import qrcode as qrcode_lib
-                import io
-                qr_img = qrcode_lib.make(qr_string)
-                buf    = io.BytesIO()
-                qr_img.save(buf, format="PNG")
-                buf.seek(0)
-                await thinking.delete()
-                await ctx.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=buf.getvalue(),
-                    caption=(
-                        "📱 WhatsApp QR-Code scannen:\n\n"
-                        "1. WhatsApp öffnen\n"
-                        "2. Einstellungen → Verknüpfte Geräte\n"
-                        "3. Gerät hinzufügen → QR scannen\n\n"
-                        "QR-Code läuft nach ca. 60s ab – /wa_setup nochmal für neuen Code."
-                    ),
-                )
-                return
-            except ImportError:
-                await thinking.edit_text(
-                    "QR-Code verfügbar, aber 'qrcode[pil]' fehlt.\n"
-                    "Installiere: `.venv/bin/pip install qrcode[pil]`"
-                )
-                return
-        await thinking.edit_text("QR-Code konnte nicht abgerufen werden – bitte nochmal versuchen.")
-        return
-
-    # Service läuft aber QR noch nicht bereit
-    await thinking.edit_text(
-        "⏳ WhatsApp Service läuft, QR-Code wird generiert...\n"
-        "Bitte 15–20 Sekunden warten und /wa_setup nochmal ausführen."
-    )
+    except Exception as e:
+        logger.error(f"cmd_wa_setup Fehler: {e}", exc_info=True)
+        with contextlib.suppress(Exception):
+            await thinking.edit_text(f"Fehler: {e}")
 
 
 @restricted
@@ -534,6 +614,10 @@ async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.edit_text(f"❌ Fehler bei Re-Indexierung: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Media Handlers
+# ---------------------------------------------------------------------------
+
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
@@ -549,33 +633,34 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         caption = result
 
     thinking = await update.message.reply_text("Analysiere Bild...")
-
     try:
         import base64
-        photo    = update.message.photo[-1]
-        tg_file  = await ctx.bot.get_file(photo.file_id)
+        photo     = update.message.photo[-1]
+        tg_file   = await ctx.bot.get_file(photo.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
-        img_b64  = base64.standard_b64encode(resized).decode("utf-8")
+        img_b64   = base64.standard_b64encode(resized).decode("utf-8")
 
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
 
-        await thinking.delete()
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
         await _update_vision_memory(chat_id, caption, vision_result)
 
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
         await update.message.reply_text("Fehler bei der Bildanalyse.")
+    finally:
+        await _delete_thinking(thinking)
 
 
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Phase 84: _resize_image() jetzt konsistent wie in on_photo aufgerufen.
+    Vorher fehlte der Resize-Schritt hier – große PNGs konnten die Analyse
+    unnötig verlangsamen oder an API-Limits stoßen.
+    """
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     doc     = update.message.document
@@ -601,28 +686,28 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         caption = result
 
     thinking = await update.message.reply_text("Analysiere Bild...")
-
     try:
         import base64
         tg_file   = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         logger.info(f"on_document: {len(img_bytes)} bytes, mime={doc.mime_type}, file_id={doc.file_id[:20]}")
-        img_b64      = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
-        media_type   = doc.mime_type or "image/jpeg"
+
+        # Phase 84: Resize wie in on_photo – konsistente Bildbehandlung
+        resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
+        img_b64 = base64.standard_b64encode(resized).decode("utf-8")
+
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
         logger.info(f"VISION RESULT: {vision_result[:100]}")
-        await thinking.delete()
+
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
         await _update_vision_memory(chat_id, caption, vision_result)
 
     except Exception as e:
         logger.error(f"on_document Fehler: {e}", exc_info=True)
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
         await update.message.reply_text("Fehler bei der Bildanalyse.")
+    finally:
+        await _delete_thinking(thinking)
 
 
 @restricted
@@ -634,150 +719,111 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Transkribiere...")
     try:
-        voice     = update.message.voice
-        tg_file   = await ctx.bot.get_file(voice.file_id)
+        voice       = update.message.voice
+        tg_file     = await ctx.bot.get_file(voice.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
-        text      = await transcribe_audio(bytes(audio_bytes))
+        text        = await transcribe_audio(bytes(audio_bytes))
 
         if not text:
-            await thinking.edit_text("Transkription fehlgeschlagen. Bitte nochmal versuchen.")
+            await update.message.reply_text("Transkription fehlgeschlagen. Bitte nochmal versuchen.")
             return
 
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+        # thinking wurde zu Transkript umgeschrieben – nicht mehr löschen
+        thinking = None
         await handle_message_text(update, ctx.bot, text)
 
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error in voice handler: {e}")
-        try:
-            await thinking.edit_text("Netzwerkfehler – bitte nochmal versuchen.")
-        except Exception:
-            pass
+        await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
     except Exception as e:
         logger.error(f"Voice handler error: {e}", exc_info=True)
-        try:
-            await thinking.edit_text("Fehler bei der Verarbeitung der Sprachnachricht.")
-        except Exception:
-            pass
+        await update.message.reply_text("Fehler bei der Verarbeitung der Sprachnachricht.")
+    finally:
+        if thinking is not None:
+            await _delete_thinking(thinking)
 
 
 # ---------------------------------------------------------------------------
-# Core message handler
+# Core message handler – Phase 84: aufgeteilt in Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
+    """
+    Kernhandler für Textnachrichten.
+
+    Phase 84: Aufgeteilt in _sanitize_and_validate, _invoke_and_extract,
+    _dispatch_response. thinking.delete() via _delete_thinking() (kein
+    try/except-Boilerplate mehr in jedem Exception-Zweig).
+    """
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    is_safe, result = await sanitize_input_async(text, user_id)
+    is_safe, clean_text = await _sanitize_and_validate(text, user_id, update)
     if not is_safe:
-        log_blocked(result, text, user_id)
-        await update.message.reply_text(f"Eingabe abgelehnt: {result}")
         return
 
-    clean_text = result
-    thinking   = await update.message.reply_text("Denke nach...")
-
+    thinking = await update.message.reply_text("Denke nach...")
     try:
         state = {
-            "messages":       [HumanMessage(content=clean_text)],
+            "messages":         [HumanMessage(content=clean_text)],
             "telegram_chat_id": chat_id,
-            "next_agent":     None,
+            "next_agent":       None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
-        result_state = await _invoke_with_retry(state, config)
+        response_msg = await _invoke_and_extract(state, config)
 
-        input_count  = len(state["messages"])
-        new_messages = result_state["messages"][input_count:]
-        ai_messages  = [m for m in new_messages if isinstance(m, AIMessage)]
-        if not ai_messages:
-            ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
-        response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
-
-        if len(ai_messages) >= 2:
-            prev_content = _extract_content(ai_messages[-2])
-            if response_msg == prev_content and response_msg:
-                logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung abgefangen.")
-                response_msg = "Noch etwas?"
-
-        for prefix, handler in _RESPONSE_DISPATCH:
-            if response_msg.startswith(prefix):
-                await thinking.delete()
-                await handler(response_msg=response_msg, bot=bot, chat_id=chat_id)
-                return
-
-        await thinking.delete()
-
-        await asyncio.gather(
-            update.message.reply_text(response_msg or "Keine Antwort vom Agent."),
-            speak_and_send(response_msg, bot, chat_id) if response_msg else asyncio.sleep(0),
-        )
+        await _delete_thinking(thinking)
+        await _dispatch_response(response_msg, bot, chat_id, update)
 
     except RateLimitError:
         logger.warning(f"Anthropic rate limit hit for user={user_id}")
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
+        await _delete_thinking(thinking)
         await update.message.reply_text("Zu viele Anfragen – bitte kurz warten und nochmal versuchen.")
 
     except APIStatusError as e:
         if e.status_code == 529:
             logger.error(f"Anthropic 529 Overloaded – alle {_RETRY_MAX_ATTEMPTS} Versuche fehlgeschlagen")
-            try:
-                await thinking.delete()
-            except Exception:
-                pass
+            await _delete_thinking(thinking)
             await update.message.reply_text(
                 "Anthropic ist gerade überlastet – bitte in 1-2 Minuten nochmal versuchen."
             )
         else:
             logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
-            try:
-                await thinking.delete()
-            except Exception:
-                pass
-            await update.message.reply_text(f"API Fehler ({e.status_code}) – bitte Administrator informieren.")
+            await _delete_thinking(thinking)
+            await update.message.reply_text(
+                f"API Fehler ({e.status_code}) – bitte Administrator informieren."
+            )
 
     except APIConnectionError as e:
         logger.warning(f"Anthropic connection error: {e}")
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
+        await _delete_thinking(thinking)
         await update.message.reply_text("Verbindungsfehler zur KI – bitte nochmal versuchen.")
 
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error: {e}")
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
+        await _delete_thinking(thinking)
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
 
     except RetryAfter as e:
         logger.warning(f"Telegram rate limit, retry after {e.retry_after}s")
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
+        await _delete_thinking(thinking)
         await update.message.reply_text(f"Telegram meldet: bitte {e.retry_after}s warten.")
 
     except asyncio.TimeoutError:
         logger.warning(f"LLM timeout for user={user_id}")
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
-        await update.message.reply_text("Timeout – die Anfrage hat zu lange gedauert. Bitte nochmal versuchen.")
+        await _delete_thinking(thinking)
+        await update.message.reply_text(
+            "Timeout – die Anfrage hat zu lange gedauert. Bitte nochmal versuchen."
+        )
 
     except Exception as e:
         logger.error(f"Unexpected agent error: {e}", exc_info=True)
-        try:
-            await thinking.delete()
-        except Exception:
-            pass
-        await update.message.reply_text("Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut.")
+        await _delete_thinking(thinking)
+        await update.message.reply_text(
+            "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -785,83 +831,100 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _post_init(app: Application) -> None:
-    """Initialisiert alle Background-Tasks nachdem der Event Loop gestartet ist."""
+    """
+    Initialisiert alle Background-Tasks nachdem der Event Loop gestartet ist.
+
+    Phase 84: Eigene TELEGRAM_CHAT_ID Env-Var für Scheduler.
+    Semantisch korrekt: User-ID ≠ Chat-ID (in Direktchats zufällig identisch,
+    in Gruppen aber nicht). Fallback auf erste ALLOWED_ID für Abwärtskompatibilität.
+    """
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
 
-    allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
-    if allowed_ids:
-        try:
-            chat_id = int(allowed_ids.split(",")[0].strip())
-        except (ValueError, IndexError) as e:
-            logger.critical(
-                f"TELEGRAM_ALLOWED_USER_IDS ist ungültig: '{allowed_ids}' – "
-                f"Scheduler werden nicht gestartet. Fehler: {e}"
+    # Phase 84: TELEGRAM_CHAT_ID bevorzugen, Fallback auf erste ALLOWED_ID
+    chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if not chat_id_str:
+        fallback_raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+        chat_id_str  = fallback_raw.split(",")[0].strip() if fallback_raw else ""
+
+    if not chat_id_str:
+        logger.critical(
+            "Weder TELEGRAM_CHAT_ID noch TELEGRAM_ALLOWED_USER_IDS gesetzt – "
+            "Scheduler werden nicht gestartet."
+        )
+        return
+
+    try:
+        chat_id = int(chat_id_str)
+    except ValueError as e:
+        logger.critical(
+            f"Chat-ID '{chat_id_str}' ist ungültig – "
+            f"Scheduler werden nicht gestartet. Fehler: {e}"
+        )
+        return
+
+    # Phase 83: WhatsApp Service starten (fail-safe)
+    try:
+        wa_started = await start_service()
+        if wa_started:
+            logger.info("WhatsApp Service gestartet.")
+        else:
+            logger.info(
+                "WhatsApp Service nicht verfügbar "
+                "(Node.js fehlt, Service nicht installiert oder node_modules fehlen)."
             )
-            return
+    except Exception as e:
+        logger.warning(f"WhatsApp Service Start übersprungen: {e}")
 
-        # Phase 83: WhatsApp Service starten (fail-safe)
-        try:
-            wa_started = await start_service()
-            if wa_started:
-                logger.info("WhatsApp Service gestartet.")
-            else:
-                logger.info(
-                    "WhatsApp Service nicht verfügbar "
-                    "(Node.js fehlt, Service nicht installiert oder node_modules fehlen)."
-                )
-        except Exception as e:
-            logger.warning(f"WhatsApp Service Start übersprungen: {e}")
+    from bot.briefing import run_briefing_scheduler
+    task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+    _scheduler_tasks.append(task_briefing)
+    task_briefing.add_done_callback(
+        lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
+    logger.info("Morning Briefing Scheduler gestartet.")
 
-        from bot.briefing import run_briefing_scheduler
-        task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
-        _scheduler_tasks.append(task_briefing)
-        task_briefing.add_done_callback(
-            lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
+    from bot.reminders import run_reminder_scheduler
+    task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+    _scheduler_tasks.append(task_reminders)
+    task_reminders.add_done_callback(
+        lambda t: logger.error(f"Reminder Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
+    logger.info("Reminder Scheduler gestartet.")
+
+    from bot.health_check import run_health_check_scheduler
+    task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+    _scheduler_tasks.append(task_health)
+    task_health.add_done_callback(
+        lambda t: logger.error(f"Health Check Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
+    logger.info("Health Check Scheduler gestartet.")
+
+    from bot.party_report import run_party_report_scheduler
+    task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
+    _scheduler_tasks.append(task_party)
+    task_party.add_done_callback(
+        lambda t: logger.error(f"Party Report Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
+    logger.info("Party Report Scheduler gestartet.")
+
+    try:
+        from agent.retrieval import index_all
+        task_retrieval = asyncio.create_task(index_all())
+        task_retrieval.add_done_callback(
+            lambda t: logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
-        logger.info("Morning Briefing Scheduler gestartet.")
-
-        from bot.reminders import run_reminder_scheduler
-        task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
-        _scheduler_tasks.append(task_reminders)
-        task_reminders.add_done_callback(
-            lambda t: logger.error(f"Reminder Scheduler unerwartet beendet: {t.exception()}")
-            if not t.cancelled() and t.exception() else None
-        )
-        logger.info("Reminder Scheduler gestartet.")
-
-        from bot.health_check import run_health_check_scheduler
-        task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
-        _scheduler_tasks.append(task_health)
-        task_health.add_done_callback(
-            lambda t: logger.error(f"Health Check Scheduler unerwartet beendet: {t.exception()}")
-            if not t.cancelled() and t.exception() else None
-        )
-        logger.info("Health Check Scheduler gestartet.")
-
-        from bot.party_report import run_party_report_scheduler
-        task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
-        _scheduler_tasks.append(task_party)
-        task_party.add_done_callback(
-            lambda t: logger.error(f"Party Report Scheduler unerwartet beendet: {t.exception()}")
-            if not t.cancelled() and t.exception() else None
-        )
-        logger.info("Party Report Scheduler gestartet.")
-
-        try:
-            from agent.retrieval import index_all
-            task_retrieval = asyncio.create_task(index_all())
-            task_retrieval.add_done_callback(
-                lambda t: logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
-                if not t.cancelled() and t.exception() else None
-            )
-            logger.info("Retrieval Index-Aufbau gestartet (Background).")
-        except ImportError:
-            logger.info("chromadb nicht installiert – Retrieval deaktiviert.")
-        except Exception as e:
-            logger.warning(f"Retrieval Index-Aufbau fehlgeschlagen (ignoriert): {e}")
+        logger.info("Retrieval Index-Aufbau gestartet (Background).")
+    except ImportError:
+        logger.info("chromadb nicht installiert – Retrieval deaktiviert.")
+    except Exception as e:
+        logger.warning(f"Retrieval Index-Aufbau fehlgeschlagen (ignoriert): {e}")
 
 
 async def _post_shutdown(app: Application) -> None:
