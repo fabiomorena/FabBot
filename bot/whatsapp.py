@@ -1,15 +1,11 @@
 """
-WhatsApp Web Service Client für FabBot – Phase 83.
+WhatsApp Web Service Client für FabBot – Phase 83/86.
 
-Ersetzt Playwright durch einen HTTP-Client der mit dem
-Node.js whatsapp-web.js Microservice kommuniziert (localhost:8767).
+Phase 86 Fix #2: start_service() nutzt aktives HTTP-Polling statt
+blindem asyncio.sleep(3). Erkennt einen erfolgreichen Start sobald
+der Express-Server antwortet (typisch 0.5–2s, nicht immer 3s).
 
-Session-Status: Datei ~/.fabbot/wa_ready
-  – wird vom Node.js Service erstellt wenn verbunden
-  – wird vom Node.js Service gelöscht bei Disconnect / Shutdown
-  – Python prüft via is_session_ready() synchron (kein HTTP-Call nötig)
-
-Öffentliche API (abwärtskompatibel zu Phase 81):
+Öffentliche API (abwärtskompatibel):
   is_session_ready()                               → bool (sync)
   load_whatsapp_contacts()                         → list[dict]
   find_contact(name)                               → dict | None
@@ -43,13 +39,16 @@ _STATUS_FILE     = Path.home() / ".fabbot" / "wa_ready"
 _NODE_SERVICE    = Path(__file__).parent.parent / "whatsapp_service" / "server.js"
 _HTTP_TIMEOUT    = 10
 
+# Phase 86: Polling-Konfiguration für start_service()
+_STARTUP_POLL_INTERVAL = 0.5   # Sekunden zwischen Versuchen
+_STARTUP_POLL_ATTEMPTS = 20    # max 10 Sekunden warten (20 × 0.5s)
+
 _service_process: subprocess.Popen | None = None
 
 
 # ── Token Management ──────────────────────────────────────────────────────
 
 def _get_or_create_token() -> str:
-    """Erstellt oder liest den Service-Token (wird vom Node.js Service via ENV erhalten)."""
     if _TOKEN_PATH.exists():
         return _TOKEN_PATH.read_text(encoding="utf-8").strip()
     token = secrets.token_urlsafe(32)
@@ -72,8 +71,11 @@ def _auth_headers() -> dict:
 async def start_service() -> bool:
     """
     Startet den Node.js WhatsApp Service als Subprocess.
-    Gibt True zurück wenn gestartet oder bereits läuft.
-    Gibt False zurück wenn Node.js nicht gefunden oder Service-Datei fehlt.
+
+    Phase 86 Fix #2: Aktives HTTP-Polling statt blindem asyncio.sleep(3).
+    Prüft alle 0.5s ob der Express-Server antwortet (max 10s).
+    Erkennt einen schnellen Start auf schnellen Systemen früher
+    und schlägt auf langsamen Systemen nicht fälschlicherweise fehl.
     """
     global _service_process
 
@@ -86,11 +88,11 @@ async def start_service() -> bool:
         logger.info(f"WhatsApp Service nicht gefunden: {_NODE_SERVICE} – bitte npm install ausführen.")
         return False
 
-    # node_modules prüfen
     node_modules = _NODE_SERVICE.parent / "node_modules"
     if not node_modules.exists():
         logger.warning(
-            f"whatsapp_service/node_modules fehlt – bitte 'cd whatsapp_service && npm install' ausführen."
+            "whatsapp_service/node_modules fehlt – "
+            "bitte 'cd whatsapp_service && npm install' ausführen."
         )
         return False
 
@@ -107,21 +109,49 @@ async def start_service() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        # Kurz warten damit Express hochfährt
-        await asyncio.sleep(3)
-
-        if _service_process.poll() is not None:
-            logger.error(
-                "WhatsApp Service sofort beendet – Check whatsapp_service/node_modules."
-            )
-            return False
-
-        logger.info(f"WhatsApp Service gestartet (PID {_service_process.pid}, Port {_SERVICE_PORT})")
-        return True
-
     except Exception as e:
         logger.error(f"WhatsApp Service Start fehlgeschlagen: {e}")
         return False
+
+    # Phase 86: Aktives Polling statt blindem sleep(3)
+    # Sobald Express antwortet → sofort fertig, kein unnötiges Warten
+    for attempt in range(_STARTUP_POLL_ATTEMPTS):
+        await asyncio.sleep(_STARTUP_POLL_INTERVAL)
+
+        # Prozess sofort beendet → Fehler
+        if _service_process.poll() is not None:
+            logger.error(
+                "WhatsApp Service sofort beendet – "
+                "Check whatsapp_service/node_modules."
+            )
+            return False
+
+        # HTTP-Check: antwortet der Express-Server schon?
+        try:
+            status = await get_service_status()
+            if status.get("ok"):
+                elapsed = (attempt + 1) * _STARTUP_POLL_INTERVAL
+                logger.info(
+                    f"WhatsApp Service gestartet "
+                    f"(PID {_service_process.pid}, Port {_SERVICE_PORT}, "
+                    f"nach {elapsed:.1f}s)"
+                )
+                return True
+        except Exception:
+            pass  # noch nicht bereit – weiter pollen
+
+    # Nach max. Wartezeit: Prozess läuft noch → als gestartet betrachten
+    # (QR-Generierung kann länger dauern als der HTTP-Server-Start)
+    if _service_process.poll() is None:
+        elapsed = _STARTUP_POLL_ATTEMPTS * _STARTUP_POLL_INTERVAL
+        logger.info(
+            f"WhatsApp Service gestartet (PID {_service_process.pid}) – "
+            f"/status nach {elapsed:.0f}s noch nicht bereit (QR wird generiert)"
+        )
+        return True
+
+    logger.error("WhatsApp Service hat sich nach dem Start beendet.")
+    return False
 
 
 def stop_service() -> None:
@@ -139,7 +169,6 @@ def is_session_ready() -> bool:
     """
     Synchrone Prüfung ob WhatsApp verbunden ist.
     Liest die Status-Datei die der Node.js Service schreibt/löscht.
-    Kein HTTP-Call – sofort und thread-safe.
     """
     return _STATUS_FILE.exists()
 
@@ -147,11 +176,7 @@ def is_session_ready() -> bool:
 # ── Service API ───────────────────────────────────────────────────────────
 
 async def get_service_status() -> dict:
-    """
-    Holt Status vom Node.js Service via HTTP.
-    Gibt {ok, ready, qr_available, error} zurück.
-    Bei Verbindungsfehler: {ok: False, ready: False, qr_available: False, error: str}
-    """
+    """Holt Status vom Node.js Service via HTTP."""
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.get(f"{_SERVICE_URL}/status", headers=_auth_headers())
@@ -161,10 +186,7 @@ async def get_service_status() -> dict:
 
 
 async def get_qr_code() -> str | None:
-    """
-    Holt den aktuellen QR-Code-String vom Node.js Service.
-    Gibt None zurück wenn kein QR-Code verfügbar oder Service nicht erreichbar.
-    """
+    """Holt den aktuellen QR-Code-String vom Node.js Service."""
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.get(f"{_SERVICE_URL}/qr", headers=_auth_headers())
@@ -190,10 +212,7 @@ def load_whatsapp_contacts() -> list[dict]:
 
 
 def find_contact(name: str) -> dict | None:
-    """
-    Sucht einen Kontakt in whatsapp_contacts (case-insensitive Name-Match).
-    Gibt dict mit 'name' + 'whatsapp_name' zurück, oder None.
-    """
+    """Sucht einen Kontakt (case-insensitive). Gibt dict oder None zurück."""
     contacts = load_whatsapp_contacts()
     name_lower = name.strip().lower()
     for c in contacts:
@@ -207,17 +226,8 @@ def find_contact(name: str) -> dict | None:
 # ── Nachricht senden ──────────────────────────────────────────────────────
 
 async def send_whatsapp_message(whatsapp_name: str, text: str) -> tuple[bool, str]:
-    """
-    Sendet eine WhatsApp-Nachricht via Node.js Service.
-
-    whatsapp_name : exakter WhatsApp-Anzeigename (inkl. Emojis)
-    text          : Nachrichtentext
-
-    Gibt (success, detail_message) zurück.
-    """
-    # Service-Status prüfen (nutzt Status-Datei für schnellen Check)
+    """Sendet eine WhatsApp-Nachricht via Node.js Service."""
     if not is_session_ready():
-        # Nochmal via HTTP prüfen (Service könnte gerade starten)
         status = await get_service_status()
         if not status.get("ready"):
             return False, (
@@ -245,7 +255,7 @@ async def send_whatsapp_message(whatsapp_name: str, text: str) -> tuple[bool, st
         return False, f"Fehler beim Senden: {e}"
 
 
-# ── Kontakt-Management CRUD (verschlüsselte YAML) ────────────────────────
+# ── Kontakt-Management CRUD ───────────────────────────────────────────────
 
 async def add_whatsapp_contact(name: str, whatsapp_name: str) -> tuple[bool, str]:
     name          = name.strip()
@@ -264,7 +274,7 @@ async def add_whatsapp_contact(name: str, whatsapp_name: str) -> tuple[bool, str
                 return True, f"Kontakt aktualisiert: {name}"
         profile["whatsapp_contacts"].append({"name": name, "whatsapp_name": whatsapp_name})
         await write_profile(profile)
-        return True, f"Kontakt hinzugefuegt: {name} -> {whatsapp_name}"
+        return True, f"Kontakt hinzugefügt: {name} → {whatsapp_name}"
     except Exception as e:
         return False, f"Fehler beim Speichern: {e}"
 
@@ -275,8 +285,8 @@ async def remove_whatsapp_contact(name: str) -> tuple[bool, str]:
         return False, "Kein Name angegeben."
     try:
         from agent.profile import load_profile, write_profile
-        profile   = load_profile()
-        contacts  = profile.get("whatsapp_contacts", [])
+        profile  = load_profile()
+        contacts = profile.get("whatsapp_contacts", [])
         if not isinstance(contacts, list):
             return False, "Keine Kontakte vorhanden."
         original_len = len(contacts)
@@ -299,5 +309,5 @@ def list_whatsapp_contacts_formatted() -> str:
     lines = [f"WhatsApp-Kontakte ({len(contacts)}):"]
     for c in contacts:
         if isinstance(c, dict):
-            lines.append(f"- {c.get('name','?')} -> {c.get('whatsapp_name','?')}")
+            lines.append(f"- {c.get('name','?')} → {c.get('whatsapp_name','?')}")
     return "\n".join(lines)

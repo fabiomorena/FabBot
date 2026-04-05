@@ -29,25 +29,49 @@ import httpx
 # Konfiguration – via Umgebungsvariablen oder .env
 # ---------------------------------------------------------------------------
 
+# Phase 86 Fix #5: python-dotenv statt eigenem Parser.
+# Vorher: key, _, value = line.partition("=") ohne Quote-Stripping →
+# TOKEN="abc" wurde als '"abc"' eingelesen (mit Anführungszeichen).
+# python-dotenv behandelt Quotes, Kommentare und = in Werten korrekt.
 def _load_env() -> None:
-    """Lädt .env Datei falls vorhanden."""
+    """Lädt .env Datei – bevorzugt python-dotenv, Fallback auf einfachen Parser."""
     env_path = Path(__file__).parent / ".env"
     if not env_path.exists():
         return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        if key.strip() not in os.environ:
-            os.environ[key.strip()] = value.strip()
+    try:
+        from dotenv import dotenv_values
+        for key, value in dotenv_values(env_path).items():
+            if key not in os.environ and value is not None:
+                os.environ[key] = value
+    except ImportError:
+        # Fallback: einfacher Parser – partition trennt nur beim ersten =
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key   = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key not in os.environ:
+                os.environ[key] = value
 
 _load_env()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",")[0].strip()
+
+# Phase 86 Fix #1: TELEGRAM_CHAT_ID bevorzugen (semantisch korrekt).
+# User-ID ≠ Chat-ID – in Direktchats zufällig identisch, in Gruppen nicht.
+# Fallback auf erste ALLOWED_ID für Abwärtskompatibilität.
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+if not CHAT_ID:
+    CHAT_ID = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",")[0].strip()
+
 STATE_PATH = Path.home() / ".fabbot" / "watchdog_state.json"
 LOG_PREFIX = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Watchdog:"
+
+# Phase 86 Fix #6: Benannte Konstante statt Magic Number.
+# Vorher: `if mins_down >= 9:  # nach ~10 Minuten` – Kommentar und Code widersprüchlich.
+_ALERT_DELAY_MINUTES = 10
 
 # ---------------------------------------------------------------------------
 # State Management
@@ -76,14 +100,12 @@ def _save_state(state: dict) -> None:
 def _is_launch_agent_running() -> bool:
     """Prüft ob com.fabbot.agent via launchctl läuft."""
     try:
-        # launchctl list com.fabbot.agent gibt PID im Output
         result = subprocess.run(
             ["launchctl", "list", "com.fabbot.agent"],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode != 0:
             return False
-        # Output enthält "PID" = 12345 wenn laufend
         return '"PID"' in result.stdout
     except Exception:
         return False
@@ -156,16 +178,16 @@ def main() -> None:
             state["down_since"] = now
         state["last_status"] = "down"
 
-        # Erst nach 2 Checks (10 Min) benachrichtigen – verhindert Flapping
         if not state["notified"]:
             down_since = state.get("down_since", now)
             try:
-                down_dt = datetime.fromisoformat(down_since)
+                down_dt   = datetime.fromisoformat(down_since)
                 mins_down = (datetime.now() - down_dt).total_seconds() / 60
             except Exception:
                 mins_down = 0
 
-            if mins_down >= 9:  # nach ~10 Minuten
+            # Phase 86 Fix #6: _ALERT_DELAY_MINUTES statt Magic Number 9
+            if mins_down >= _ALERT_DELAY_MINUTES - 1:
                 sent = _send_telegram(
                     f"🚨 *FabBot ist DOWN!*\n"
                     f"Launch Agent: {'✅' if _is_launch_agent_running() else '❌'}\n"
