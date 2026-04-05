@@ -22,12 +22,17 @@ from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
+from bot.whatsapp import (
+    send_whatsapp_message, is_session_ready,
+    add_whatsapp_contact, remove_whatsapp_contact, list_whatsapp_contacts_formatted,
+    get_service_status, get_qr_code, start_service, stop_service,
+)
 
 logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
 
-_IMAGE_MAX_PX = 1920
+_IMAGE_MAX_PX    = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5MB
 
 
@@ -61,13 +66,12 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
 
 _scheduler_tasks: list = []
 
-# Retry-Konfiguration für 529 Overloaded
 _RETRY_MAX_ATTEMPTS = 3
-_RETRY_BASE_DELAY = 2.0  # Sekunden – wird verdoppelt pro Versuch (2s, 4s, 8s)
+_RETRY_BASE_DELAY   = 2.0
 
 
 def _extract_content(msg) -> str:
-    """Extrahiert Text aus einer LangChain Message – egal ob str oder list."""
+    """Extrahiert Text aus einer LangChain Message."""
     content = msg.content
     if isinstance(content, list):
         return " ".join(
@@ -95,7 +99,7 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
     try:
         from agent.supervisor import agent_graph
         from langchain_core.messages import HumanMessage as HM
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config     = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
         await agent_graph.aupdate_state(
             config,
@@ -108,10 +112,7 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
 
 
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
-    """
-    Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf.
-    Versuche: 3 – Wartezeiten: 2s → 4s → 8s
-    """
+    """Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf."""
     from agent.supervisor import agent_graph
 
     last_exception = None
@@ -138,7 +139,7 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    analysis = response_msg[len(Proto.SCREENSHOT):]
+    analysis        = response_msg[len(Proto.SCREENSHOT):]
     screenshot_bytes = _screenshot_to_telegram_bytes()
     if screenshot_bytes:
         await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
@@ -147,12 +148,12 @@ async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> 
 
 
 async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_COMPUTER):].split(":", 3)
-    action = parts[0] if len(parts) > 0 else ""
-    x = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-    y = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    parts    = response_msg[len(Proto.CONFIRM_COMPUTER):].split(":", 3)
+    action   = parts[0] if len(parts) > 0 else ""
+    x        = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    y        = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
     text_arg = parts[3] if len(parts) > 3 else ""
-    display = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
+    display  = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
     confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
     if confirmed:
         output = computer_agent_execute(action, x, y, text_arg, chat_id)
@@ -163,7 +164,7 @@ async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **
 
 
 async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    command = response_msg[len(Proto.CONFIRM_TERMINAL):]
+    command   = response_msg[len(Proto.CONFIRM_TERMINAL):]
     confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
     if confirmed:
         output = terminal_agent_execute(command, chat_id)
@@ -176,11 +177,11 @@ async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **
 
 
 async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT):].split("::")
-    title = parts[0] if len(parts) > 0 else ""
+    parts      = response_msg[len(Proto.CONFIRM_CREATE_EVENT):].split("::")
+    title      = parts[0] if len(parts) > 0 else ""
     start_time = parts[1] if len(parts) > 1 else ""
-    end_time = parts[2] if len(parts) > 2 else ""
-    confirmed = await request_confirmation(
+    end_time   = parts[2] if len(parts) > 2 else ""
+    confirmed  = await request_confirmation(
         bot, chat_id, "calendar_agent",
         f"Neuer Termin: {title} am {start_time}"
     )
@@ -195,10 +196,10 @@ async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int
 
 
 async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_FILE_WRITE):].split("::", 1)
-    path_str = parts[0]
+    parts        = response_msg[len(Proto.CONFIRM_FILE_WRITE):].split("::", 1)
+    path_str     = parts[0]
     file_content = parts[1] if len(parts) > 1 else ""
-    confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
+    confirmed    = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
     if confirmed:
         output = file_agent_write(Path(path_str), file_content, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
@@ -209,18 +210,163 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
         log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
 
+async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
+    parts         = response_msg[len(Proto.CONFIRM_WHATSAPP):].split("::", 1)
+    whatsapp_name = parts[0] if len(parts) > 0 else ""
+    message_text  = parts[1] if len(parts) > 1 else ""
+    confirmed = await request_confirmation(
+        bot, chat_id, "whatsapp_agent",
+        f"WhatsApp an {whatsapp_name}:\n{message_text}"
+    )
+    if confirmed:
+        success, detail = await send_whatsapp_message(whatsapp_name, message_text)
+        await bot.send_message(chat_id=chat_id, text=detail)
+        await _update_memory(chat_id, f"WhatsApp gesendet an {whatsapp_name}: {message_text}")
+        log_action("whatsapp_agent", "send", f"to={whatsapp_name} len={len(message_text)}", chat_id,
+                   status="executed" if success else "error")
+    else:
+        log_action("whatsapp_agent", "send", f"user rejected: {whatsapp_name}", chat_id, status="rejected")
+
+
 _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
     (Proto.SCREENSHOT,           _handle_screenshot),
     (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
     (Proto.CONFIRM_TERMINAL,     _handle_confirm_terminal),
     (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
     (Proto.CONFIRM_FILE_WRITE,   _handle_confirm_file_write),
+    (Proto.CONFIRM_WHATSAPP,     _handle_confirm_whatsapp),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Command Handlers
 # ---------------------------------------------------------------------------
+
+@restricted
+async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /wa_contact add <Name> <WhatsApp-Name>   – Kontakt hinzufügen/aktualisieren
+    /wa_contact remove <Name>                – Kontakt entfernen
+    /wa_contact list                         – Alle Kontakte anzeigen
+    """
+    if not ctx.args:
+        await update.message.reply_text(
+            "Verwendung:\n"
+            "/wa_contact add <Name> <WhatsApp-Name>\n"
+            "/wa_contact remove <Name>\n"
+            "/wa_contact list\n\n"
+            "Beispiel:\n"
+            '/wa_contact add Steffi "Steffi 🌞"'
+        )
+        return
+
+    subcmd = ctx.args[0].lower()
+
+    if subcmd == "list":
+        result = list_whatsapp_contacts_formatted()
+        await update.message.reply_text(result, parse_mode="Markdown")
+        return
+
+    elif subcmd == "add":
+        if len(ctx.args) < 3:
+            await update.message.reply_text(
+                "Verwendung: /wa_contact add <Name> <WhatsApp-Name>\n"
+                'Beispiel: /wa_contact add Steffi "Steffi 🌞"'
+            )
+            return
+        name          = ctx.args[1]
+        whatsapp_name = " ".join(ctx.args[2:])
+        success, detail = await add_whatsapp_contact(name, whatsapp_name)
+        await update.message.reply_text(detail)
+        return
+
+    elif subcmd == "remove":
+        if len(ctx.args) < 2:
+            await update.message.reply_text("Verwendung: /wa_contact remove <Name>")
+            return
+        name = ctx.args[1]
+        success, detail = await remove_whatsapp_contact(name)
+        await update.message.reply_text(detail)
+        return
+
+    else:
+        await update.message.reply_text(
+            f"Unbekannter Unterbefehl: {subcmd}\n"
+            "Verfügbar: add, remove, list"
+        )
+
+
+@restricted
+async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Phase 83: WhatsApp Setup via Node.js whatsapp-web.js Service.
+
+    Flow:
+    1. Service-Status prüfen
+    2. Wenn bereit → Meldung
+    3. Wenn QR-Code verfügbar → als Bild senden
+    4. Wenn Service nicht erreichbar → Hinweis
+    """
+    chat_id = update.effective_chat.id
+    thinking = await update.message.reply_text("Prüfe WhatsApp Status...")
+
+    status = await get_service_status()
+
+    # Service nicht erreichbar
+    if not status.get("ok"):
+        await thinking.edit_text(
+            "❌ WhatsApp Service nicht erreichbar.\n\n"
+            "Stelle sicher dass der Service läuft:\n"
+            "```\ncd whatsapp_service\nnpm install\n```\n"
+            "Der Bot startet ihn beim nächsten Neustart automatisch."
+        )
+        return
+
+    # Bereits verbunden
+    if status.get("ready"):
+        await thinking.edit_text("✅ WhatsApp bereits verbunden – keine Anmeldung nötig.")
+        return
+
+    # QR-Code verfügbar → als Bild senden
+    if status.get("qr_available"):
+        qr_string = await get_qr_code()
+        if qr_string:
+            try:
+                import qrcode as qrcode_lib
+                import io
+                qr_img = qrcode_lib.make(qr_string)
+                buf    = io.BytesIO()
+                qr_img.save(buf, format="PNG")
+                buf.seek(0)
+                await thinking.delete()
+                await ctx.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=buf.getvalue(),
+                    caption=(
+                        "📱 *WhatsApp QR-Code scannen:*\n\n"
+                        "1. WhatsApp öffnen\n"
+                        "2. Einstellungen → Verknüpfte Geräte\n"
+                        "3. Gerät hinzufügen → QR scannen\n\n"
+                        "_QR-Code läuft nach ~60s ab – /wa\\_setup nochmal für neuen Code._"
+                    ),
+                    parse_mode="Markdown",
+                )
+                return
+            except ImportError:
+                await thinking.edit_text(
+                    "QR-Code verfügbar, aber 'qrcode[pil]' fehlt.\n"
+                    "Installiere: `.venv/bin/pip install qrcode[pil]`"
+                )
+                return
+        await thinking.edit_text("QR-Code konnte nicht abgerufen werden – bitte nochmal versuchen.")
+        return
+
+    # Service läuft aber QR noch nicht bereit
+    await thinking.edit_text(
+        "⏳ WhatsApp Service läuft, QR-Code wird generiert...\n"
+        "Bitte 15–20 Sekunden warten und /wa_setup nochmal ausführen."
+    )
+
 
 @restricted
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -233,8 +379,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/search #Tag – Nach Tag suchen\n"
         "/search – Alle Notizen auflisten\n"
         "/remember <Text> – Persönliche Notiz speichern\n"
+        "/reindex – Wissensbasis neu indexieren\n"
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
         "/stop – Laufende Sprachausgabe stoppen\n"
+        "/wa_setup – WhatsApp Web einrichten\n"
+        "/wa_contact add/remove/list – WhatsApp-Kontakte verwalten\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -243,7 +392,16 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     tts_status = "aktiviert" if is_tts_enabled() else "deaktiviert"
-    await update.message.reply_text(f"Agent laeuft. TTS: {tts_status}")
+    wa_status  = "✅ verbunden" if is_session_ready() else "❌ nicht verbunden"
+    try:
+        from agent.retrieval import _get_collection
+        col              = _get_collection()
+        retrieval_status = f"aktiv ({col.count()} Chunks)" if col else "deaktiviert"
+    except Exception:
+        retrieval_status = "nicht verfügbar"
+    await update.message.reply_text(
+        f"Agent läuft.\nTTS: {tts_status}\nRetrieval: {retrieval_status}\nWhatsApp: {wa_status}"
+    )
 
 
 @restricted
@@ -253,13 +411,12 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Noch keine Aktionen geloggt.")
         return
     lines = log_path.read_text().strip().split("\n")
-    last = lines[-10:] if len(lines) > 10 else lines
+    last  = lines[-10:] if len(lines) > 10 else lines
     await update.message.reply_text("Letzte Aktionen:\n\n" + "\n".join(last))
 
 
 @restricted
 async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Aktiviert oder deaktiviert TTS zur Laufzeit."""
     if not ctx.args or ctx.args[0].lower() not in ("on", "off"):
         status = "aktiviert" if is_tts_enabled() else "deaktiviert"
         await update.message.reply_text(
@@ -275,7 +432,6 @@ async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Stoppt die laufende Sprachausgabe sofort."""
     stopped = stop_speaking()
     if stopped:
         await update.message.reply_text("Sprachausgabe gestoppt.")
@@ -301,8 +457,8 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    url = ctx.args[0]
-    chat_id = update.effective_chat.id
+    url      = ctx.args[0]
+    chat_id  = update.effective_chat.id
     thinking = await update.message.reply_text(f"Lese {url} ...")
 
     result = await clip_agent(url, chat_id)
@@ -324,6 +480,12 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if confirmed:
         output = clip_agent_write(result["path"], result["content"], chat_id)
         await ctx.bot.send_message(chat_id=chat_id, text=output)
+        try:
+            from agent.retrieval import index_file
+            asyncio.create_task(index_file(result["path"]))
+            logger.info(f"Retrieval: Neue Notiz '{result['filename']}' wird indexiert.")
+        except Exception as e:
+            logger.debug(f"Retrieval index_file nach /clip fehlgeschlagen (ignoriert): {e}")
     else:
         log_action("clip_agent", "write", f"user rejected: {result['filename']}", chat_id, status="rejected")
 
@@ -334,7 +496,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
         result = list_knowledge()
     else:
-        query = " ".join(ctx.args)
+        query  = " ".join(ctx.args)
         result = search_knowledge(query)
     await update.message.reply_text(result, parse_mode="Markdown")
     log_action("search", "search_knowledge", " ".join(ctx.args or []), chat_id, status="executed")
@@ -342,7 +504,6 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Speichert eine persönliche Notiz in personal_profile.yaml."""
     text = " ".join(ctx.args) if ctx.args else ""
     if not text:
         await update.message.reply_text(
@@ -359,11 +520,25 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
+async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    thinking = await update.message.reply_text("Indexiere Wissensbasis (force=True)...")
+    try:
+        from agent.retrieval import index_all, _get_collection
+        await index_all(force=True)
+        col   = _get_collection()
+        count = col.count() if col else 0
+        await thinking.edit_text(f"✅ Wissensbasis neu indexiert – {count} Chunks gesamt.")
+    except ImportError:
+        await thinking.edit_text("❌ chromadb nicht installiert – Retrieval nicht verfügbar.")
+    except Exception as e:
+        logger.error(f"cmd_reindex Fehler: {e}")
+        await thinking.edit_text(f"❌ Fehler bei Re-Indexierung: {e}")
+
+
+@restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verarbeitet eingehende Fotos – Bildanalyse via Claude Vision."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-
     caption = update.message.caption or ""
 
     if caption:
@@ -378,11 +553,11 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         import base64
-        photo = update.message.photo[-1]
-        tg_file = await ctx.bot.get_file(photo.file_id)
+        photo    = update.message.photo[-1]
+        tg_file  = await ctx.bot.get_file(photo.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
-        img_b64 = base64.standard_b64encode(resized).decode("utf-8")
+        img_b64  = base64.standard_b64encode(resized).decode("utf-8")
 
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
 
@@ -402,13 +577,19 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verarbeitet Bilder die als Datei gesendet wurden (unkomprimiert)."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    doc = update.message.document
+    doc     = update.message.document
 
     if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
         await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
+        return
+
+    if doc.file_size and doc.file_size > _IMAGE_MAX_BYTES:
+        await update.message.reply_text(
+            f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB). "
+            f"Bitte verkleinere das Bild und sende es erneut."
+        )
         return
 
     caption = update.message.caption or ""
@@ -424,11 +605,11 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         import base64
-        tg_file = await ctx.bot.get_file(doc.file_id)
+        tg_file   = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         logger.info(f"on_document: {len(img_bytes)} bytes, mime={doc.mime_type}, file_id={doc.file_id[:20]}")
-        img_b64 = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
-        media_type = doc.mime_type or "image/jpeg"
+        img_b64      = base64.standard_b64encode(bytes(img_bytes)).decode("utf-8")
+        media_type   = doc.mime_type or "image/jpeg"
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
         logger.info(f"VISION RESULT: {vision_result[:100]}")
         await thinking.delete()
@@ -454,10 +635,10 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Transkribiere...")
     try:
-        voice = update.message.voice
-        tg_file = await ctx.bot.get_file(voice.file_id)
+        voice     = update.message.voice
+        tg_file   = await ctx.bot.get_file(voice.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
-        text = await transcribe_audio(bytes(audio_bytes))
+        text      = await transcribe_audio(bytes(audio_bytes))
 
         if not text:
             await thinking.edit_text("Transkription fehlgeschlagen. Bitte nochmal versuchen.")
@@ -485,7 +666,6 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
-    """Verarbeitet eingehende Textnachrichten durch den Agent-Graph."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -496,32 +676,29 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         return
 
     clean_text = result
-    thinking = await update.message.reply_text("Denke nach...")
+    thinking   = await update.message.reply_text("Denke nach...")
 
     try:
         state = {
-            "messages": [HumanMessage(content=clean_text)],
+            "messages":       [HumanMessage(content=clean_text)],
             "telegram_chat_id": chat_id,
-            "next_agent": None,
+            "next_agent":     None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
 
         result_state = await _invoke_with_retry(state, config)
 
-        # Nur neu hinzugekommene Messages auswerten – verhindert Echo-Bug bei Folgefragen.
-        input_count = len(state["messages"])
+        input_count  = len(state["messages"])
         new_messages = result_state["messages"][input_count:]
-        ai_messages = [m for m in new_messages if isinstance(m, AIMessage)]
+        ai_messages  = [m for m in new_messages if isinstance(m, AIMessage)]
         if not ai_messages:
             ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
         response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
 
-        # Dedup-Sicherheitsnetz auf bot.py-Ebene: verhindert exakte Wiederholung
-        # der vorletzten AI-Antwort im State (zweite Verteidigungslinie nach chat_agent).
         if len(ai_messages) >= 2:
             prev_content = _extract_content(ai_messages[-2])
             if response_msg == prev_content and response_msg:
-                logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung der vorletzten AI-Antwort abgefangen.")
+                logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung abgefangen.")
                 response_msg = "Noch etwas?"
 
         for prefix, handler in _RESPONSE_DISPATCH:
@@ -609,13 +786,35 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _post_init(app: Application) -> None:
-    """Initialisiert AsyncSqliteSaver nachdem der Event Loop gestartet ist."""
+    """Initialisiert alle Background-Tasks nachdem der Event Loop gestartet ist."""
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
+
     allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
     if allowed_ids:
-        chat_id = int(allowed_ids.split(",")[0].strip())
+        try:
+            chat_id = int(allowed_ids.split(",")[0].strip())
+        except (ValueError, IndexError) as e:
+            logger.critical(
+                f"TELEGRAM_ALLOWED_USER_IDS ist ungültig: '{allowed_ids}' – "
+                f"Scheduler werden nicht gestartet. Fehler: {e}"
+            )
+            return
+
+        # Phase 83: WhatsApp Service starten (fail-safe)
+        try:
+            wa_started = await start_service()
+            if wa_started:
+                logger.info("WhatsApp Service gestartet.")
+            else:
+                logger.info(
+                    "WhatsApp Service nicht verfügbar "
+                    "(Node.js fehlt, Service nicht installiert oder node_modules fehlen)."
+                )
+        except Exception as e:
+            logger.warning(f"WhatsApp Service Start übersprungen: {e}")
+
         from bot.briefing import run_briefing_scheduler
         task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_briefing)
@@ -624,6 +823,7 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Morning Briefing Scheduler gestartet.")
+
         from bot.reminders import run_reminder_scheduler
         task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_reminders)
@@ -632,6 +832,7 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Reminder Scheduler gestartet.")
+
         from bot.health_check import run_health_check_scheduler
         task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_health)
@@ -640,6 +841,7 @@ async def _post_init(app: Application) -> None:
             if not t.cancelled() and t.exception() else None
         )
         logger.info("Health Check Scheduler gestartet.")
+
         from bot.party_report import run_party_report_scheduler
         task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
         _scheduler_tasks.append(task_party)
@@ -649,14 +851,34 @@ async def _post_init(app: Application) -> None:
         )
         logger.info("Party Report Scheduler gestartet.")
 
+        try:
+            from agent.retrieval import index_all
+            task_retrieval = asyncio.create_task(index_all())
+            task_retrieval.add_done_callback(
+                lambda t: logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
+                if not t.cancelled() and t.exception() else None
+            )
+            logger.info("Retrieval Index-Aufbau gestartet (Background).")
+        except ImportError:
+            logger.info("chromadb nicht installiert – Retrieval deaktiviert.")
+        except Exception as e:
+            logger.warning(f"Retrieval Index-Aufbau fehlgeschlagen (ignoriert): {e}")
+
 
 async def _post_shutdown(app: Application) -> None:
-    """Schliesst die SQLite-Verbindung sauber beim Shutdown."""
+    """Schliesst alle Ressourcen sauber beim Shutdown."""
     for task in _scheduler_tasks:
         if not task.done():
             task.cancel()
     if _scheduler_tasks:
         logger.info(f"{len(_scheduler_tasks)} Scheduler-Tasks abgebrochen.")
+
+    # Phase 83: WhatsApp Service stoppen
+    try:
+        stop_service()
+    except Exception as e:
+        logger.warning(f"WhatsApp Service Stop fehlgeschlagen (ignoriert): {e}")
+
     from agent.supervisor import close_graph
     await close_graph()
     logger.info("SqliteSaver-Verbindung geschlossen.")
@@ -667,7 +889,6 @@ async def _post_shutdown(app: Application) -> None:
 # ---------------------------------------------------------------------------
 
 def build_bot() -> Application:
-    """Erstellt und konfiguriert die Telegram-Bot-Application."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN nicht gesetzt")
@@ -679,17 +900,20 @@ def build_bot() -> Application:
         .post_shutdown(_post_shutdown)
         .build()
     )
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("auditlog", cmd_auditlog))
-    app.add_handler(CommandHandler("tts", cmd_tts))
-    app.add_handler(CommandHandler("stop", cmd_stop))
-    app.add_handler(CommandHandler("ask", cmd_ask, block=False))
-    app.add_handler(CommandHandler("clip", cmd_clip, block=False))
-    app.add_handler(CommandHandler("search", cmd_search, block=False))
-    app.add_handler(CommandHandler("remember", cmd_remember, block=False))
-    app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
-    app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
+    app.add_handler(CommandHandler("start",      cmd_start))
+    app.add_handler(CommandHandler("status",     cmd_status))
+    app.add_handler(CommandHandler("auditlog",   cmd_auditlog))
+    app.add_handler(CommandHandler("tts",        cmd_tts))
+    app.add_handler(CommandHandler("stop",       cmd_stop))
+    app.add_handler(CommandHandler("ask",        cmd_ask,        block=False))
+    app.add_handler(CommandHandler("clip",       cmd_clip,       block=False))
+    app.add_handler(CommandHandler("search",     cmd_search,     block=False))
+    app.add_handler(CommandHandler("remember",   cmd_remember,   block=False))
+    app.add_handler(CommandHandler("reindex",    cmd_reindex,    block=False))
+    app.add_handler(CommandHandler("wa_setup",   cmd_wa_setup,   block=False))
+    app.add_handler(CommandHandler("wa_contact", cmd_wa_contact, block=False))
+    app.add_handler(MessageHandler(filters.VOICE,          on_voice,    block=False))
+    app.add_handler(MessageHandler(filters.PHOTO,          on_photo,    block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
