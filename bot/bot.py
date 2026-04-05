@@ -264,7 +264,7 @@ async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     if subcmd == "list":
         result = list_whatsapp_contacts_formatted()
-        await update.message.reply_text(result, parse_mode="Markdown")
+        await update.message.reply_text(result)
         return
 
     elif subcmd == "add":
@@ -343,13 +343,12 @@ async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     chat_id=chat_id,
                     photo=buf.getvalue(),
                     caption=(
-                        "📱 *WhatsApp QR-Code scannen:*\n\n"
+                        "📱 WhatsApp QR-Code scannen:\n\n"
                         "1. WhatsApp öffnen\n"
                         "2. Einstellungen → Verknüpfte Geräte\n"
                         "3. Gerät hinzufügen → QR scannen\n\n"
-                        "_QR-Code läuft nach ~60s ab – /wa\\_setup nochmal für neuen Code._"
+                        "QR-Code läuft nach ca. 60s ab – /wa_setup nochmal für neuen Code."
                     ),
-                    parse_mode="Markdown",
                 )
                 return
             except ImportError:
