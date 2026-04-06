@@ -96,6 +96,10 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | English SHORT_CONFIRMATIONS – "thanks", "got it", "sounds good" etc. erkannt |
 | ✅ | memory_agent Top-Level-Imports – yaml + profile imports auf Modulebene |
 | ✅ | claude.md Path – ~/.fabbot/claude.md, Auto-Migration, Lock Race-Fix, Heading-Injection-Validierung |
+| ✅ | profile.py Migration thread-safe – threading.Lock verhindert Doppel-Verschlüsselung beim Start |
+| ✅ | cmd_clip Task-Registry – index_file Task in _background_tasks, kein stilles GC-Killing mehr |
+| ✅ | Proto.MEMORY_VISION_MARKER – Magic String aus supervisor.py extrahiert, Single Source of Truth |
+| ✅ | Proto.is_any_confirm() – CONFIRM_VISION ergänzt (war vergessen) |
 ---
 ---
 
@@ -259,6 +263,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 88** ✅ Security & Async Hardening – Symlink-Bypass, DNS-Rebinding, ainvoke in allen Agents, Pfadtiefe, Query-Sanitization
 - **Phase 89** ✅ Security Fixes – YAML fail-closed, bot_instruction Validation, Task-Registry, English Confirmations
 - **Phase 90** ✅ claude_md Hardening – Path ~/.fabbot/, Migration, Lock Race-Fix, Heading-Injection-Schutz
+- **Phase 91** ✅ Stability & Protocol Fixes – Migration Lock, Task-Registry, MEMORY_VISION_MARKER, is_any_confirm CONFIRM_VISION
 ---
 
 
