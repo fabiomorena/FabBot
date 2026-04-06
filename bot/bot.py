@@ -1,19 +1,12 @@
 """
 bot/bot.py – Telegram Handler für FabBot.
 
-Phase 91: asyncio.create_task(index_file(...)) in cmd_clip ohne Referenz-Haltung gefixt.
-Vorher: Task ohne Referenz → GC konnte ihn vorzeitig abbrechen → Clip-Indexierung
-schlug still fehl. Fix: _background_tasks Set (gleicher Ansatz wie chat_agent, Phase 89).
+Phase 92: setup_audit_logger() in _post_init() aufgerufen.
+Vorher: agent.audit öffnete FileHandler beim Import (Module-Level-Seiteneffekt) →
+Tests nicht isoliert. Jetzt: Initialisierung erst in _post_init nach logging.basicConfig().
 
-Phase 84 Änderungen (bestehend):
-- _delete_thinking(): kontextlib.suppress statt repetitiver try/except-Blöcke
-- _sanitize_and_validate(): extrahiert aus handle_message_text
-- _invoke_and_extract(): extrahiert aus handle_message_text
-- _dispatch_response(): extrahiert aus handle_message_text
-- handle_message_text: God-Function aufgeteilt (~80→~35 Zeilen)
-- on_photo/on_document/on_voice: finally + _delete_thinking statt Duplikate
-- on_document: _resize_image() integriert (war in on_photo vorhanden, hier fehlte es)
-- _post_init: eigene TELEGRAM_CHAT_ID Env-Var statt User-ID als Chat-ID
+Phase 91: asyncio.create_task(index_file(...)) in cmd_clip ohne Referenz-Haltung gefixt.
+Phase 84 Änderungen: handle_message_text aufgeteilt, _delete_thinking mit suppress, etc.
 """
 import contextlib
 import logging
@@ -54,19 +47,16 @@ _IMAGE_MAX_PX    = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5 MB
 
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
-# Gleicher Ansatz wie chat_agent._background_tasks (Phase 89).
-# Verhindert stilles GC-Killing von index_file()-Tasks nach /clip.
 _background_tasks: set[asyncio.Task] = set()
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
-    """Skaliert Bild auf max. 1920px falls nötig. Format bleibt erhalten."""
+    """Skaliert Bild auf max. 1920px falls nötig."""
     try:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(img_bytes))
         if max(img.width, img.height) <= _IMAGE_MAX_PX:
-            logger.debug(f"Bild {img.width}x{img.height} – kein Resize nötig")
             return img_bytes, mime_type
         img.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.LANCZOS)
         output = io.BytesIO()
@@ -92,7 +82,6 @@ _RETRY_BASE_DELAY   = 2.0
 
 
 def _extract_content(msg) -> str:
-    """Extrahiert Text aus einer LangChain Message."""
     content = msg.content
     if isinstance(content, list):
         return " ".join(
@@ -103,7 +92,6 @@ def _extract_content(msg) -> str:
 
 
 async def _update_memory(chat_id: int, result_text: str) -> None:
-    """Schreibt das HITL-Ergebnis als AIMessage in den LangGraph State."""
     try:
         from agent.supervisor import get_graph
         config = {"configurable": {"thread_id": str(chat_id)}}
@@ -116,7 +104,6 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
 
 
 async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None:
-    """Schreibt Bildanalyse als sichtbare HumanMessage+AIMessage in den State."""
     try:
         from agent.supervisor import get_graph
         from langchain_core.messages import HumanMessage as HM
@@ -127,15 +114,12 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
             {"messages": [HM(content=human_text), AIMessage(content=result)]},
             as_node="supervisor",
         )
-        logger.info(f"Vision memory gespeichert: {result[:80]}")
     except Exception as e:
         logger.warning(f"Vision memory update fehlgeschlagen: {e}", exc_info=True)
 
 
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
-    """Ruft agent_graph.ainvoke mit exponentiellem Backoff bei 529-Fehlern auf."""
     from agent.supervisor import get_graph
-
     last_exception = None
     for attempt in range(_RETRY_MAX_ATTEMPTS):
         try:
@@ -160,15 +144,11 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _delete_thinking(thinking) -> None:
-    """Löscht die 'Denke nach…' Meldung. Fehler via contextlib.suppress unterdrückt."""
     with contextlib.suppress(Exception):
         await thinking.delete()
 
 
-async def _sanitize_and_validate(
-    text: str, user_id: int, update: Update
-) -> tuple[bool, str]:
-    """Sanitiert und validiert den Input-Text."""
+async def _sanitize_and_validate(text: str, user_id: int, update: Update) -> tuple[bool, str]:
     is_safe, result = await sanitize_input_async(text, user_id)
     if not is_safe:
         log_blocked(result, text, user_id)
@@ -177,36 +157,26 @@ async def _sanitize_and_validate(
 
 
 async def _invoke_and_extract(state: dict, config: dict) -> str:
-    """Führt den LangGraph-Graph aus und extrahiert die letzte AI-Antwort."""
     result_state = await _invoke_with_retry(state, config)
-
     input_count  = len(state["messages"])
     new_messages = result_state["messages"][input_count:]
     ai_messages  = [m for m in new_messages if isinstance(m, AIMessage)]
     if not ai_messages:
         ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
-
     response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
-
-    # Dedup-Sicherheitsnetz
     if len(ai_messages) >= 2:
         prev_content = _extract_content(ai_messages[-2])
         if response_msg == prev_content and response_msg:
             logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung abgefangen.")
             response_msg = "Noch etwas?"
-
     return response_msg
 
 
-async def _dispatch_response(
-    response_msg: str, bot: Bot, chat_id: int, update: Update
-) -> None:
-    """Dispatcht eine Agent-Antwort: HITL-Prefix oder Text+TTS."""
+async def _dispatch_response(response_msg: str, bot: Bot, chat_id: int, update: Update) -> None:
     for prefix, handler in _RESPONSE_DISPATCH:
         if response_msg.startswith(prefix):
             await handler(response_msg=response_msg, bot=bot, chat_id=chat_id)
             return
-
     await asyncio.gather(
         update.message.reply_text(response_msg or "Keine Antwort vom Agent."),
         speak_and_send(response_msg, bot, chat_id) if response_msg else asyncio.sleep(0),
@@ -339,76 +309,52 @@ _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
 
 @restricted
 async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/wa_contact add/remove/list – WhatsApp-Kontakte verwalten."""
     if not ctx.args:
         await update.message.reply_text(
             "Verwendung:\n"
             "/wa_contact add <Name> <WhatsApp-Name>\n"
             "/wa_contact remove <Name>\n"
             "/wa_contact list\n\n"
-            "Beispiel:\n"
-            '/wa_contact add Steffi "Steffi 🌞"'
+            'Beispiel:\n/wa_contact add Steffi "Steffi 🌞"'
         )
         return
-
     subcmd = ctx.args[0].lower()
-
     if subcmd == "list":
-        result = list_whatsapp_contacts_formatted()
-        await update.message.reply_text(result)
-        return
-
+        await update.message.reply_text(list_whatsapp_contacts_formatted())
     elif subcmd == "add":
         if len(ctx.args) < 3:
-            await update.message.reply_text(
-                "Verwendung: /wa_contact add <Name> <WhatsApp-Name>\n"
-                'Beispiel: /wa_contact add Steffi "Steffi 🌞"'
-            )
+            await update.message.reply_text('Verwendung: /wa_contact add <Name> <WhatsApp-Name>')
             return
-        name          = ctx.args[1]
+        name = ctx.args[1]
         whatsapp_name = " ".join(ctx.args[2:])
         success, detail = await add_whatsapp_contact(name, whatsapp_name)
         await update.message.reply_text(detail)
-        return
-
     elif subcmd == "remove":
         if len(ctx.args) < 2:
             await update.message.reply_text("Verwendung: /wa_contact remove <Name>")
             return
-        name = ctx.args[1]
-        success, detail = await remove_whatsapp_contact(name)
+        success, detail = await remove_whatsapp_contact(ctx.args[1])
         await update.message.reply_text(detail)
-        return
-
     else:
-        await update.message.reply_text(
-            f"Unbekannter Unterbefehl: {subcmd}\n"
-            "Verfügbar: add, remove, list"
-        )
+        await update.message.reply_text(f"Unbekannter Unterbefehl: {subcmd}\nVerfügbar: add, remove, list")
 
 
 @restricted
 async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Phase 83: WhatsApp Setup via Node.js whatsapp-web.js Service."""
     chat_id  = update.effective_chat.id
     thinking = await update.message.reply_text("Prüfe WhatsApp Status...")
-
     try:
         status = await get_service_status()
-
         if not status.get("ok"):
             await thinking.edit_text(
                 "❌ WhatsApp Service nicht erreichbar.\n\n"
                 "Stelle sicher dass der Service läuft:\n"
-                "```\ncd whatsapp_service\nnpm install\n```\n"
-                "Der Bot startet ihn beim nächsten Neustart automatisch."
+                "```\ncd whatsapp_service\nnpm install\n```"
             )
             return
-
         if status.get("ready"):
             await thinking.edit_text("✅ WhatsApp bereits verbunden – keine Anmeldung nötig.")
             return
-
         if status.get("qr_available"):
             qr_string = await get_qr_code()
             if qr_string:
@@ -427,24 +373,16 @@ async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                             "📱 WhatsApp QR-Code scannen:\n\n"
                             "1. WhatsApp öffnen\n"
                             "2. Einstellungen → Verknüpfte Geräte\n"
-                            "3. Gerät hinzufügen → QR scannen\n\n"
-                            "QR-Code läuft nach ca. 60s ab – /wa_setup nochmal für neuen Code."
+                            "3. Gerät hinzufügen → QR scannen"
                         ),
                     )
                     return
                 except ImportError:
-                    await thinking.edit_text(
-                        "QR-Code verfügbar, aber 'qrcode[pil]' fehlt.\n"
-                        "Installiere: `.venv/bin/pip install qrcode[pil]`"
-                    )
+                    await thinking.edit_text("QR-Code verfügbar, aber 'qrcode[pil]' fehlt.")
                     return
-            await thinking.edit_text("QR-Code konnte nicht abgerufen werden – bitte nochmal versuchen.")
+            await thinking.edit_text("QR-Code konnte nicht abgerufen werden.")
             return
-
-        await thinking.edit_text(
-            "⏳ WhatsApp Service läuft, QR-Code wird generiert...\n"
-            "Bitte 15–20 Sekunden warten und /wa_setup nochmal ausführen."
-        )
+        await thinking.edit_text("⏳ WhatsApp Service läuft, QR-Code wird generiert...\nBitte nochmal /wa_setup ausführen.")
     except Exception as e:
         logger.error(f"cmd_wa_setup Fehler: {e}", exc_info=True)
         with contextlib.suppress(Exception):
@@ -459,8 +397,6 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/ask <Frage> – Direkte Anfrage\n"
         "/clip <URL> – URL als Markdown-Notiz speichern\n"
         "/search <Begriff> – Notizen durchsuchen\n"
-        "/search #Tag – Nach Tag suchen\n"
-        "/search – Alle Notizen auflisten\n"
         "/remember <Text> – Persönliche Notiz speichern\n"
         "/reindex – Wissensbasis neu indexieren\n"
         "/tts on|off – Sprachausgabe aktivieren/deaktivieren\n"
@@ -502,21 +438,16 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args or ctx.args[0].lower() not in ("on", "off"):
         status = "aktiviert" if is_tts_enabled() else "deaktiviert"
-        await update.message.reply_text(
-            f"Sprachausgabe ist aktuell {status}.\n"
-            "Verwendung: /tts on oder /tts off"
-        )
+        await update.message.reply_text(f"Sprachausgabe ist aktuell {status}.\nVerwendung: /tts on oder /tts off")
         return
     enabled = ctx.args[0].lower() == "on"
     set_tts_enabled(enabled)
-    status = "aktiviert" if enabled else "deaktiviert"
-    await update.message.reply_text(f"Sprachausgabe {status}.")
+    await update.message.reply_text(f"Sprachausgabe {'aktiviert' if enabled else 'deaktiviert'}.")
 
 
 @restricted
 async def cmd_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    stopped = stop_speaking()
-    if stopped:
+    if stop_speaking():
         await update.message.reply_text("Sprachausgabe gestoppt.")
     else:
         await update.message.reply_text("Keine laufende Sprachausgabe.")
@@ -534,44 +465,27 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
-        await update.message.reply_text(
-            "Verwendung: /clip <URL>\n"
-            "Beispiel: /clip https://example.com/artikel"
-        )
+        await update.message.reply_text("Verwendung: /clip <URL>")
         return
-
     url      = ctx.args[0]
     chat_id  = update.effective_chat.id
     thinking = await update.message.reply_text(f"Lese {url} ...")
-
     result = await clip_agent(url, chat_id)
-
     if not result["ok"]:
         await thinking.edit_text(f"Fehler: {result['error']}")
         return
-
     await thinking.edit_text(
-        f"Vorschau:\n\n{result['preview']}\n\n"
-        f"Speichern als: {result['filename']}"
+        f"Vorschau:\n\n{result['preview']}\n\nSpeichern als: {result['filename']}"
     )
-
-    confirmed = await request_confirmation(
-        ctx.bot, chat_id, "clip_agent",
-        f"Speichern: {result['filename']}"
-    )
-
+    confirmed = await request_confirmation(ctx.bot, chat_id, "clip_agent", f"Speichern: {result['filename']}")
     if confirmed:
         output = clip_agent_write(result["path"], result["content"], chat_id)
         await ctx.bot.send_message(chat_id=chat_id, text=output)
-        # Phase 91: Task-Registry – verhindert GC-Killing des index_file()-Tasks.
-        # Vorher: asyncio.create_task() ohne Referenz → Task konnte still abbrechen.
-        # Gleicher Fix wie chat_agent._background_tasks (Phase 89).
         try:
             from agent.retrieval import index_file
             task = asyncio.create_task(index_file(result["path"]))
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)
-            logger.info(f"Retrieval: Neue Notiz '{result['filename']}' wird indexiert.")
         except Exception as e:
             logger.debug(f"Retrieval index_file nach /clip fehlgeschlagen (ignoriert): {e}")
     else:
@@ -581,11 +495,7 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    if not ctx.args:
-        result = list_knowledge()
-    else:
-        query  = " ".join(ctx.args)
-        result = search_knowledge(query)
+    result = list_knowledge() if not ctx.args else search_knowledge(" ".join(ctx.args))
     await update.message.reply_text(result, parse_mode="Markdown")
     log_action("search", "search_knowledge", " ".join(ctx.args or []), chat_id, status="executed")
 
@@ -594,10 +504,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     text = " ".join(ctx.args) if ctx.args else ""
     if not text:
-        await update.message.reply_text(
-            "Verwendung: /remember <was ich mir merken soll>\n"
-            "Beispiel: /remember ich arbeite gerade auch an Projekt X"
-        )
+        await update.message.reply_text("Verwendung: /remember <was ich mir merken soll>")
         return
     from agent.profile import add_note_to_profile
     success = await add_note_to_profile(text)
@@ -632,7 +539,6 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     caption = update.message.caption or ""
-
     if caption:
         is_safe, result = await sanitize_input_async(caption, user_id)
         if not is_safe:
@@ -640,7 +546,6 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(f"Eingabe abgelehnt: {result}")
             return
         caption = result
-
     thinking = await update.message.reply_text("Analysiere Bild...")
     try:
         import base64
@@ -649,13 +554,10 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
         img_b64   = base64.standard_b64encode(resized).decode("utf-8")
-
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
-
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
         await _update_vision_memory(chat_id, caption, vision_result)
-
     except Exception as e:
         logger.error(f"on_photo Fehler: {e}", exc_info=True)
         await update.message.reply_text("Fehler bei der Bildanalyse.")
@@ -668,18 +570,12 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     doc     = update.message.document
-
     if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
         await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
         return
-
     if doc.file_size and doc.file_size > _IMAGE_MAX_BYTES:
-        await update.message.reply_text(
-            f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB). "
-            f"Bitte verkleinere das Bild und sende es erneut."
-        )
+        await update.message.reply_text(f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB).")
         return
-
     caption = update.message.caption or ""
     if caption:
         is_safe, result = await sanitize_input_async(caption, user_id)
@@ -688,24 +584,17 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(f"Eingabe abgelehnt: {result}")
             return
         caption = result
-
     thinking = await update.message.reply_text("Analysiere Bild...")
     try:
         import base64
         tg_file   = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        logger.info(f"on_document: {len(img_bytes)} bytes, mime={doc.mime_type}, file_id={doc.file_id[:20]}")
-
         resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
-
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
-        logger.info(f"VISION RESULT: {vision_result[:100]}")
-
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
         await _update_vision_memory(chat_id, caption, vision_result)
-
     except Exception as e:
         logger.error(f"on_document Fehler: {e}", exc_info=True)
         await update.message.reply_text("Fehler bei der Bildanalyse.")
@@ -726,15 +615,12 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         tg_file     = await ctx.bot.get_file(voice.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
         text        = await transcribe_audio(bytes(audio_bytes))
-
         if not text:
-            await update.message.reply_text("Transkription fehlgeschlagen. Bitte nochmal versuchen.")
+            await update.message.reply_text("Transkription fehlgeschlagen.")
             return
-
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
         thinking = None
         await handle_message_text(update, ctx.bot, text)
-
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error in voice handler: {e}")
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
@@ -766,59 +652,35 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             "next_agent":       None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
-
         response_msg = await _invoke_and_extract(state, config)
-
         await _delete_thinking(thinking)
         await _dispatch_response(response_msg, bot, chat_id, update)
 
     except RateLimitError:
-        logger.warning(f"Anthropic rate limit hit for user={user_id}")
         await _delete_thinking(thinking)
-        await update.message.reply_text("Zu viele Anfragen – bitte kurz warten und nochmal versuchen.")
-
+        await update.message.reply_text("Zu viele Anfragen – bitte kurz warten.")
     except APIStatusError as e:
+        await _delete_thinking(thinking)
         if e.status_code == 529:
-            logger.error(f"Anthropic 529 Overloaded – alle {_RETRY_MAX_ATTEMPTS} Versuche fehlgeschlagen")
-            await _delete_thinking(thinking)
-            await update.message.reply_text(
-                "Anthropic ist gerade überlastet – bitte in 1-2 Minuten nochmal versuchen."
-            )
+            await update.message.reply_text("Anthropic ist gerade überlastet – bitte in 1-2 Minuten nochmal versuchen.")
         else:
-            logger.error(f"Anthropic API status error: {e.status_code} {e.message}")
-            await _delete_thinking(thinking)
-            await update.message.reply_text(
-                f"API Fehler ({e.status_code}) – bitte Administrator informieren."
-            )
-
-    except APIConnectionError as e:
-        logger.warning(f"Anthropic connection error: {e}")
+            await update.message.reply_text(f"API Fehler ({e.status_code}) – bitte Administrator informieren.")
+    except APIConnectionError:
         await _delete_thinking(thinking)
         await update.message.reply_text("Verbindungsfehler zur KI – bitte nochmal versuchen.")
-
-    except (TimedOut, NetworkError) as e:
-        logger.warning(f"Telegram network error: {e}")
+    except (TimedOut, NetworkError):
         await _delete_thinking(thinking)
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
-
     except RetryAfter as e:
-        logger.warning(f"Telegram rate limit, retry after {e.retry_after}s")
         await _delete_thinking(thinking)
         await update.message.reply_text(f"Telegram meldet: bitte {e.retry_after}s warten.")
-
     except asyncio.TimeoutError:
-        logger.warning(f"LLM timeout for user={user_id}")
         await _delete_thinking(thinking)
-        await update.message.reply_text(
-            "Timeout – die Anfrage hat zu lange gedauert. Bitte nochmal versuchen."
-        )
-
+        await update.message.reply_text("Timeout – bitte nochmal versuchen.")
     except Exception as e:
         logger.error(f"Unexpected agent error: {e}", exc_info=True)
         await _delete_thinking(thinking)
-        await update.message.reply_text(
-            "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut."
-        )
+        await update.message.reply_text("Ein unerwarteter Fehler ist aufgetreten.")
 
 
 # ---------------------------------------------------------------------------
@@ -830,6 +692,13 @@ async def _post_init(app: Application) -> None:
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
 
+    # Phase 92: Audit-Logger erst jetzt initialisieren (nach logging.basicConfig()).
+    # Vorher: FileHandler wurde beim Import von agent.audit geöffnet →
+    # Tests waren nicht isoliert, ~/.fabbot/audit.log wurde in Tests angelegt.
+    from agent.audit import setup_audit_logger
+    setup_audit_logger()
+    logger.info("Audit-Logger initialisiert.")
+
     from agent.telemetry import setup_telemetry
     setup_telemetry()
 
@@ -839,27 +708,18 @@ async def _post_init(app: Application) -> None:
         chat_id_str  = fallback_raw.split(",")[0].strip() if fallback_raw else ""
 
     if not chat_id_str:
-        logger.critical(
-            "Weder TELEGRAM_CHAT_ID noch TELEGRAM_ALLOWED_USER_IDS gesetzt – "
-            "Scheduler werden nicht gestartet."
-        )
+        logger.critical("Weder TELEGRAM_CHAT_ID noch TELEGRAM_ALLOWED_USER_IDS gesetzt – Scheduler nicht gestartet.")
         return
 
     try:
         chat_id = int(chat_id_str)
     except ValueError as e:
-        logger.critical(
-            f"Chat-ID '{chat_id_str}' ist ungültig – "
-            f"Scheduler werden nicht gestartet. Fehler: {e}"
-        )
+        logger.critical(f"Chat-ID '{chat_id_str}' ist ungültig – Scheduler nicht gestartet. Fehler: {e}")
         return
 
     try:
         wa_started = await start_service()
-        if wa_started:
-            logger.info("WhatsApp Service gestartet.")
-        else:
-            logger.info("WhatsApp Service nicht verfügbar.")
+        logger.info("WhatsApp Service gestartet." if wa_started else "WhatsApp Service nicht verfügbar.")
     except Exception as e:
         logger.warning(f"WhatsApp Service Start übersprungen: {e}")
 
@@ -870,34 +730,18 @@ async def _post_init(app: Application) -> None:
         lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
         if not t.cancelled() and t.exception() else None
     )
-    logger.info("Morning Briefing Scheduler gestartet.")
 
     from bot.reminders import run_reminder_scheduler
     task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_reminders)
-    task_reminders.add_done_callback(
-        lambda t: logger.error(f"Reminder Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
-    )
-    logger.info("Reminder Scheduler gestartet.")
 
     from bot.health_check import run_health_check_scheduler
     task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_health)
-    task_health.add_done_callback(
-        lambda t: logger.error(f"Health Check Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
-    )
-    logger.info("Health Check Scheduler gestartet.")
 
     from bot.party_report import run_party_report_scheduler
     task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_party)
-    task_party.add_done_callback(
-        lambda t: logger.error(f"Party Report Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
-    )
-    logger.info("Party Report Scheduler gestartet.")
 
     try:
         from agent.retrieval import index_all
@@ -914,18 +758,13 @@ async def _post_init(app: Application) -> None:
 
 
 async def _post_shutdown(app: Application) -> None:
-    """Schliesst alle Ressourcen sauber beim Shutdown."""
     for task in _scheduler_tasks:
         if not task.done():
             task.cancel()
-    if _scheduler_tasks:
-        logger.info(f"{len(_scheduler_tasks)} Scheduler-Tasks abgebrochen.")
-
     try:
         stop_service()
     except Exception as e:
         logger.warning(f"WhatsApp Service Stop fehlgeschlagen (ignoriert): {e}")
-
     from agent.supervisor import close_graph
     await close_graph()
     logger.info("SqliteSaver-Verbindung geschlossen.")

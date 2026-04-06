@@ -13,6 +13,9 @@ Ablauf:
 Migration:
 - Bestehende plain-YAML-Dateien werden beim ersten Load automatisch verschlüsselt.
 - is_encrypted() erkennt ob eine Datei bereits verschlüsselt ist.
+
+Phase 92: _get_fernet() fängt keyring-Fehler ab und wirft RuntimeError mit
+klarer Meldung statt kryptischer DBusException / NoKeyringError.
 """
 
 import logging
@@ -31,16 +34,37 @@ _fernet: Fernet | None = None
 
 
 def _get_fernet() -> Fernet:
-    """Gibt den Fernet-Instance zurück. Lädt oder generiert den Key aus dem Keychain."""
+    """
+    Gibt den Fernet-Instance zurück. Lädt oder generiert den Key aus dem Keychain.
+
+    Phase 92: Keyring-Fehler werden abgefangen und als RuntimeError mit
+    klarer Meldung weitergegeben. Verhindert kryptische DBusException /
+    NoKeyringError / AttributeError bei fehlender Keychain-Umgebung.
+    """
     global _fernet
     if _fernet is not None:
         return _fernet
 
-    key_str = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+    try:
+        key_str = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+    except Exception as e:
+        raise RuntimeError(
+            f"Keychain nicht verfügbar ({type(e).__name__}: {e}). "
+            "FabBot benötigt macOS Keychain oder einen kompatiblen Secret Store. "
+            "Auf macOS: Keychain Access prüfen. Unter Linux: gnome-keyring oder "
+            "pass als Keyring-Backend konfigurieren."
+        ) from e
 
     if key_str is None:
         key = Fernet.generate_key()
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key.decode())
+        try:
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key.decode())
+        except Exception as e:
+            raise RuntimeError(
+                f"Fernet-Key konnte nicht im Keychain gespeichert werden "
+                f"({type(e).__name__}: {e}). "
+                "Keychain-Schreibzugriff prüfen."
+            ) from e
         logger.info("Neuer Fernet-Key generiert und im Keychain gespeichert (fabbot/profile_key).")
         _fernet = Fernet(key)
     else:

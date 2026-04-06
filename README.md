@@ -40,7 +40,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – /tts on|off or TTS_ENABLED env var |
 | ✅ | TTS Stop – /stop kills running afplay immediately |
 | ✅ | German date format – 18.03.2026, 19:06 Uhr |
-| ✅ | GitHub Actions CI – runs 530 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 748 pytest tests on every push |
 | ✅ | Personal Context Layer – personal_profile.yaml injected into all agents |
 | ✅ | /remember – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -100,6 +100,11 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | cmd_clip Task-Registry – index_file Task in _background_tasks, kein stilles GC-Killing mehr |
 | ✅ | Proto.MEMORY_VISION_MARKER – Magic String aus supervisor.py extrahiert, Single Source of Truth |
 | ✅ | Proto.is_any_confirm() – CONFIRM_VISION ergänzt (war vergessen) |
+| ✅ | crypto.py Keyring-Fehlerbehandlung – RuntimeError mit klarer Meldung statt kryptischer DBusException |
+| ✅ | audit.py setup_audit_logger() – Module-Level FileHandler entfernt, Initialisierung in _post_init() |
+| ✅ | llm.py Model-String-Validierung – _warn_if_unusual() loggt Warning bei Tippfehlern in .env |
+| ✅ | .env.example vervollständigt – TELEGRAM_CHAT_ID, OPENAI_API_KEY, LangSmith-Vars dokumentiert |
+
 ---
 ---
 
@@ -118,14 +123,14 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/test_security_terminal.py  # pytest suite (530 tests)
+├── tests/test_security_terminal.py  # pytest suite (748 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
 │   ├── llm.py               # get_llm() Sonnet + get_fast_llm() Haiku
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
 │   ├── security.py          # Two-stage injection guard, rate limiting, fail-closed
-│   ├── audit.py             # Tamper-evident audit log
+│   ├── audit.py             # Tamper-evident audit log (setup_audit_logger)
 │   ├── profile.py           # Personal context loader
 │   ├── profile_learner.py   # Auto-learning pipeline
 │   ├── retrieval.py         # Second Brain – ChromaDB + OpenAI Embeddings
@@ -201,7 +206,7 @@ cp .env.example .env   # fill in API keys
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-.venv/bin/python -m pytest tests/ -v      # Run tests (530 tests)
+.venv/bin/python -m pytest tests/ -v      # Run tests (748 tests)
 ```
 
 ### Run as Launch Agent
@@ -264,6 +269,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 89** ✅ Security Fixes – YAML fail-closed, bot_instruction Validation, Task-Registry, English Confirmations
 - **Phase 90** ✅ claude_md Hardening – Path ~/.fabbot/, Migration, Lock Race-Fix, Heading-Injection-Schutz
 - **Phase 91** ✅ Stability & Protocol Fixes – Migration Lock, Task-Registry, MEMORY_VISION_MARKER, is_any_confirm CONFIRM_VISION
+- **Phase 92** ✅ Security & Code Quality – crypto.py Keyring-Fehlerbehandlung, audit.py setup_audit_logger(), llm.py Model-String-Warn, .env.example vervollständigt
+
 ---
 
 

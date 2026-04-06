@@ -1,3 +1,14 @@
+"""
+agent/audit.py – Tamper-evident Audit Log für FabBot.
+
+Phase 92: Module-Level-Seiteneffekte entfernt.
+Vorher: FileHandler wurde beim Import geöffnet → jeder Unit-Test der
+agent.audit transitiv importiert legte ~/.fabbot/audit.log an und hielt
+eine offene File-Handle. Tests waren nicht isoliert.
+
+Jetzt: setup_audit_logger() kapselt den Initialisierungscode.
+Aufruf einmalig in bot.py's _post_init(). Idempotent via _audit_initialized Flag.
+"""
 import logging
 import json
 import re
@@ -5,15 +16,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 AUDIT_LOG_PATH = Path.home() / ".fabbot" / "audit.log"
-AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 audit_logger = logging.getLogger("fabbot.audit")
 audit_logger.setLevel(logging.INFO)
-
-_handler = logging.FileHandler(AUDIT_LOG_PATH)
-_handler.setFormatter(logging.Formatter("%(message)s"))
-audit_logger.addHandler(_handler)
 audit_logger.propagate = False
+
+# Phase 92: Kein FileHandler mehr auf Modulebene.
+# setup_audit_logger() wird einmalig aus _post_init() aufgerufen.
+_audit_initialized = False
 
 # Patterns die niemals ins Log duerfen
 _SENSITIVE_PATTERNS = [
@@ -23,6 +33,24 @@ _SENSITIVE_PATTERNS = [
     r"token\s*[=:]\s*\S+",          # Tokens
     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",  # E-Mail Adressen
 ]
+
+
+def setup_audit_logger() -> None:
+    """
+    Initialisiert den Audit-Logger (FileHandler + Verzeichnis).
+
+    Phase 92: Ersetzt den Module-Level-Code. Idempotent via _audit_initialized –
+    mehrfache Aufrufe haben keinen Effekt (kein doppelter Handler).
+    Wird einmalig aus bot.py's _post_init() aufgerufen.
+    """
+    global _audit_initialized
+    if _audit_initialized:
+        return
+    AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(AUDIT_LOG_PATH)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    audit_logger.addHandler(handler)
+    _audit_initialized = True
 
 
 def _sanitize(text: str) -> str:
