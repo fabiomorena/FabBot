@@ -246,6 +246,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 82** ✅ /wa_contact Command – add/remove/list WhatsApp-Kontakte, verschlüsselte YAML
 - **Phase 83** ✅ whatsapp-web.js Microservice – Node.js ersetzt Playwright, Session via ~/.fabbot/wa_ready, QR-Code via Telegram, Markdown-Fix vor Download
 - **Phase 84** ✅ Security & Code Quality – auth fail-closed, handle_message_text aufgeteilt, contextlib.suppress, on_document resize-fix, TELEGRAM_CHAT_ID
+- **Phase 85** ✅ Rate Limiting nach Aktionstyp (destructive: max 10/min) + LangSmith Telemetry opt-in via .env
 - **Phase 86** ✅ Watchdog Fixes (Chat-ID, python-dotenv, _ALERT_DELAY_MINUTES) + start_service() Polling
 - **Phase 87** ✅ agent_graph Type-Annotation, get_graph() Guard, threading.Lock Rate-Limit
 - **Phase 88** ✅ Security & Async Hardening – Symlink-Bypass, DNS-Rebinding, ainvoke in allen Agents, Pfadtiefe, Query-Sanitization
