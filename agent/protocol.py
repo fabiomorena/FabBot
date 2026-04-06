@@ -1,7 +1,11 @@
 """
 Zentrales Protokoll-Modul für FabBot.
-Alle Magic Strings für die interne Agent-Bot-Kommunikation sind hier definiert.
-Niemals Rohstrings verwenden – immer diese Konstanten nutzen.
+
+Phase 91 Fixes:
+- Proto.MEMORY_VISION_MARKER: Magic String "Bildbeschreibung" aus supervisor.py extrahiert.
+  Vorher hardcoded in _filter_hitl_messages() – bei Format-Änderung stille Regression.
+- Proto.is_any_confirm(): CONFIRM_VISION ergänzt (war vergessen).
+  Vorher: Vision-Confirmations wurden von is_any_confirm() nicht erkannt.
 """
 
 
@@ -21,6 +25,12 @@ class Proto:
 
     # Vision-Ergebnis – intern, wird an chat_agent weitergeleitet
     VISION_RESULT         = "__VISION_RESULT__:"
+
+    # Phase 91: Kennzeichnet Vision-Memory-Messages die im State sichtbar bleiben sollen.
+    # Vorher: "Bildbeschreibung" hardcoded in supervisor._filter_hitl_messages() –
+    # Format-Änderung hätte die Filterlogik still gebrochen.
+    # Jetzt: Single Source of Truth in protocol.py.
+    MEMORY_VISION_MARKER = "Bildbeschreibung"
 
     @staticmethod
     def is_confirm_whatsapp(msg: str) -> bool:
@@ -58,4 +68,5 @@ class Proto:
             Proto.is_confirm_create_event(msg),
             Proto.is_confirm_computer(msg),
             Proto.is_confirm_whatsapp(msg),
+            Proto.is_confirm_vision(msg),   # Phase 91: war vergessen
         ])

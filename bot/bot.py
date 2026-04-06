@@ -1,7 +1,11 @@
 """
 bot/bot.py – Telegram Handler für FabBot.
 
-Phase 84 Änderungen:
+Phase 91: asyncio.create_task(index_file(...)) in cmd_clip ohne Referenz-Haltung gefixt.
+Vorher: Task ohne Referenz → GC konnte ihn vorzeitig abbrechen → Clip-Indexierung
+schlug still fehl. Fix: _background_tasks Set (gleicher Ansatz wie chat_agent, Phase 89).
+
+Phase 84 Änderungen (bestehend):
 - _delete_thinking(): kontextlib.suppress statt repetitiver try/except-Blöcke
 - _sanitize_and_validate(): extrahiert aus handle_message_text
 - _invoke_and_extract(): extrahiert aus handle_message_text
@@ -48,6 +52,11 @@ _TTS_MAX_HITL_OUTPUT = 300
 
 _IMAGE_MAX_PX    = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5 MB
+
+# Phase 91: Task-Registry für Background-Tasks in cmd_clip.
+# Gleicher Ansatz wie chat_agent._background_tasks (Phase 89).
+# Verhindert stilles GC-Killing von index_file()-Tasks nach /clip.
+_background_tasks: set[asyncio.Task] = set()
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -151,11 +160,7 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _delete_thinking(thinking) -> None:
-    """
-    Löscht die 'Denke nach…' / 'Analysiere…' Meldung.
-    Fehler werden via contextlib.suppress unterdrückt – kein try/except-Boilerplate
-    mehr in jedem einzelnen Exception-Zweig nötig.
-    """
+    """Löscht die 'Denke nach…' Meldung. Fehler via contextlib.suppress unterdrückt."""
     with contextlib.suppress(Exception):
         await thinking.delete()
 
@@ -163,11 +168,7 @@ async def _delete_thinking(thinking) -> None:
 async def _sanitize_and_validate(
     text: str, user_id: int, update: Update
 ) -> tuple[bool, str]:
-    """
-    Sanitiert und validiert den Input-Text.
-    Gibt (True, clean_text) zurück wenn sicher, sonst (False, reason).
-    Sendet bei Ablehnung direkt eine Fehlermeldung an den User.
-    """
+    """Sanitiert und validiert den Input-Text."""
     is_safe, result = await sanitize_input_async(text, user_id)
     if not is_safe:
         log_blocked(result, text, user_id)
@@ -176,10 +177,7 @@ async def _sanitize_and_validate(
 
 
 async def _invoke_and_extract(state: dict, config: dict) -> str:
-    """
-    Führt den LangGraph-Graph aus und extrahiert die letzte AI-Antwort.
-    Enthält das Dedup-Sicherheitsnetz gegen doppelte Antworten.
-    """
+    """Führt den LangGraph-Graph aus und extrahiert die letzte AI-Antwort."""
     result_state = await _invoke_with_retry(state, config)
 
     input_count  = len(state["messages"])
@@ -203,11 +201,7 @@ async def _invoke_and_extract(state: dict, config: dict) -> str:
 async def _dispatch_response(
     response_msg: str, bot: Bot, chat_id: int, update: Update
 ) -> None:
-    """
-    Dispatcht eine Agent-Antwort:
-    - HITL-Prefix erkannt → entsprechenden Handler aufrufen
-    - Sonst → Text senden + TTS parallel
-    """
+    """Dispatcht eine Agent-Antwort: HITL-Prefix oder Text+TTS."""
     for prefix, handler in _RESPONSE_DISPATCH:
         if response_msg.startswith(prefix):
             await handler(response_msg=response_msg, bot=bot, chat_id=chat_id)
@@ -345,11 +339,7 @@ _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
 
 @restricted
 async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    /wa_contact add <Name> <WhatsApp-Name>   – Kontakt hinzufügen/aktualisieren
-    /wa_contact remove <Name>                – Kontakt entfernen
-    /wa_contact list                         – Alle Kontakte anzeigen
-    """
+    """/wa_contact add/remove/list – WhatsApp-Kontakte verwalten."""
     if not ctx.args:
         await update.message.reply_text(
             "Verwendung:\n"
@@ -399,9 +389,7 @@ async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
 @restricted
 async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Phase 83: WhatsApp Setup via Node.js whatsapp-web.js Service.
-    """
+    """Phase 83: WhatsApp Setup via Node.js whatsapp-web.js Service."""
     chat_id  = update.effective_chat.id
     thinking = await update.message.reply_text("Prüfe WhatsApp Status...")
 
@@ -575,9 +563,14 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if confirmed:
         output = clip_agent_write(result["path"], result["content"], chat_id)
         await ctx.bot.send_message(chat_id=chat_id, text=output)
+        # Phase 91: Task-Registry – verhindert GC-Killing des index_file()-Tasks.
+        # Vorher: asyncio.create_task() ohne Referenz → Task konnte still abbrechen.
+        # Gleicher Fix wie chat_agent._background_tasks (Phase 89).
         try:
             from agent.retrieval import index_file
-            asyncio.create_task(index_file(result["path"]))
+            task = asyncio.create_task(index_file(result["path"]))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
             logger.info(f"Retrieval: Neue Notiz '{result['filename']}' wird indexiert.")
         except Exception as e:
             logger.debug(f"Retrieval index_file nach /clip fehlgeschlagen (ignoriert): {e}")
@@ -672,11 +665,6 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Phase 84: _resize_image() jetzt konsistent wie in on_photo aufgerufen.
-    Vorher fehlte der Resize-Schritt hier – große PNGs konnten die Analyse
-    unnötig verlangsamen oder an API-Limits stoßen.
-    """
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     doc     = update.message.document
@@ -708,7 +696,6 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         img_bytes = await tg_file.download_as_bytearray()
         logger.info(f"on_document: {len(img_bytes)} bytes, mime={doc.mime_type}, file_id={doc.file_id[:20]}")
 
-        # Phase 84: Resize wie in on_photo – konsistente Bildbehandlung
         resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
 
@@ -745,7 +732,6 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
-        # thinking wurde zu Transkript umgeschrieben – nicht mehr löschen
         thinking = None
         await handle_message_text(update, ctx.bot, text)
 
@@ -761,17 +747,10 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Core message handler – Phase 84: aufgeteilt in Hilfsfunktionen
+# Core message handler
 # ---------------------------------------------------------------------------
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
-    """
-    Kernhandler für Textnachrichten.
-
-    Phase 84: Aufgeteilt in _sanitize_and_validate, _invoke_and_extract,
-    _dispatch_response. thinking.delete() via _delete_thinking() (kein
-    try/except-Boilerplate mehr in jedem Exception-Zweig).
-    """
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
@@ -847,22 +826,13 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _post_init(app: Application) -> None:
-    """
-    Initialisiert alle Background-Tasks nachdem der Event Loop gestartet ist.
-
-    Phase 84: Eigene TELEGRAM_CHAT_ID Env-Var für Scheduler.
-    Semantisch korrekt: User-ID ≠ Chat-ID (in Direktchats zufällig identisch,
-    in Gruppen aber nicht). Fallback auf erste ALLOWED_ID für Abwärtskompatibilität.
-    """
     from agent.supervisor import init_graph
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
 
-    # Phase 85: LangSmith Telemetry – kein-op wenn nicht konfiguriert
     from agent.telemetry import setup_telemetry
     setup_telemetry()
 
-    # Phase 84: TELEGRAM_CHAT_ID bevorzugen, Fallback auf erste ALLOWED_ID
     chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if not chat_id_str:
         fallback_raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
@@ -884,16 +854,12 @@ async def _post_init(app: Application) -> None:
         )
         return
 
-    # Phase 83: WhatsApp Service starten (fail-safe)
     try:
         wa_started = await start_service()
         if wa_started:
             logger.info("WhatsApp Service gestartet.")
         else:
-            logger.info(
-                "WhatsApp Service nicht verfügbar "
-                "(Node.js fehlt, Service nicht installiert oder node_modules fehlen)."
-            )
+            logger.info("WhatsApp Service nicht verfügbar.")
     except Exception as e:
         logger.warning(f"WhatsApp Service Start übersprungen: {e}")
 
@@ -955,7 +921,6 @@ async def _post_shutdown(app: Application) -> None:
     if _scheduler_tasks:
         logger.info(f"{len(_scheduler_tasks)} Scheduler-Tasks abgebrochen.")
 
-    # Phase 83: WhatsApp Service stoppen
     try:
         stop_service()
     except Exception as e:

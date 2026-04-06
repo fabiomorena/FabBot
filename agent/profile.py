@@ -1,6 +1,14 @@
 """
 Persönliches Profil für FabBot.
 
+Phase 91 Fix: Migration thread-safe via threading.Lock + _migration_done Flag.
+Vorher: load_profile() hatte bewusst keinen Lock – aber beim ersten Start konnten
+memory_agent und profile_learner gleichzeitig load_profile() aufrufen. Beide erkannten
+das unverschlüsselte File, beide verschlüsselten es, beide schrieben es. Im schlechtesten
+Fall korruptes File. Fix: _migration_lock (threading.Lock) + _migration_done Flag
+machen die Migration idempotent. threading.Lock statt asyncio.Lock weil load_profile()
+synchron ist und nicht awaiten kann.
+
 Lädt personal_profile.yaml aus dem Projektwurzelverzeichnis und stellt
 formatierte Kontext-Strings für die Agents bereit.
 
@@ -27,10 +35,12 @@ Thread-Safety:
 - _profile_write_lock (asyncio.Lock) schützt alle YAML Read-Write-Operationen
   gegen gleichzeitige Updates (TOCTOU-Problem).
 - load_profile() ist read-only und benötigt keinen Lock.
+- _migration_lock (threading.Lock, Phase 91) schützt die einmalige Migrations-Write-Operation.
 """
 
 import asyncio
 import logging
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,18 +50,27 @@ logger = logging.getLogger(__name__)
 _PROFILE_PATH = Path(__file__).parent.parent / "personal_profile.yaml"
 _profile_cache: dict[str, Any] | None = None
 
-# Lock für alle Schreiboperationen auf personal_profile.yaml
-# Verhindert TOCTOU bei gleichzeitigen memory_agent / profile_learner Aufrufen
+# Lock für alle async Schreiboperationen auf personal_profile.yaml
 _profile_write_lock = asyncio.Lock()
+
+# Phase 91: Thread-safe Migration plain YAML → verschlüsselt.
+# threading.Lock (nicht asyncio.Lock) weil load_profile() sync ist.
+# _migration_done verhindert Doppel-Schreiben bei gleichzeitigen Aufrufen.
+_migration_lock = threading.Lock()
+_migration_done: bool = False
 
 
 def load_profile() -> dict[str, Any]:
     """
     Lädt personal_profile.yaml. Cached nach erstem Aufruf.
-    Read-only – kein Lock nötig.
+    Read-only – kein async Lock nötig.
     Gibt leeres Dict zurück bei Fehler oder fehlendem File.
+
+    Phase 91: Migration ist jetzt thread-safe via _migration_lock + _migration_done.
+    Vorher: Zwei gleichzeitige Aufrufe konnten beide schreiben → korruptes File möglich.
+    Jetzt:  Nur der erste Aufrufer schreibt; alle weiteren überspringen die Migration.
     """
-    global _profile_cache
+    global _profile_cache, _migration_done
     if _profile_cache is not None:
         return _profile_cache
     if not _PROFILE_PATH.exists():
@@ -65,13 +84,16 @@ def load_profile() -> dict[str, Any]:
         if is_encrypted(raw):
             yaml_text = decrypt(raw)
         else:
-            # Migration: plain YAML → verschlüsseln und speichern.
-            # Nicht thread-safe – load_profile() hat bewusst keinen Lock.
-            # Sicher für Single-Process-Nutzung (wird genau einmal aufgerufen).
             yaml_text = raw.decode("utf-8")
-            logger.info("Migration: personal_profile.yaml wird verschlüsselt...")
-            _PROFILE_PATH.write_bytes(encrypt(yaml_text))
-            logger.info("Migration abgeschlossen – Profil ist jetzt verschlüsselt.")
+            # Phase 91: Thread-safe Migration.
+            # Mit Lock prüfen ob Migration schon erfolgt ist (Flag).
+            # Nur der erste Caller schreibt – alle weiteren sehen _migration_done=True.
+            with _migration_lock:
+                if not _migration_done:
+                    logger.info("Migration: personal_profile.yaml wird verschlüsselt...")
+                    _PROFILE_PATH.write_bytes(encrypt(yaml_text))
+                    _migration_done = True
+                    logger.info("Migration abgeschlossen – Profil ist jetzt verschlüsselt.")
         loaded = yaml.safe_load(yaml_text)
         _profile_cache = loaded if isinstance(loaded, dict) else {}
         logger.info(f"Persönliches Profil geladen: {_PROFILE_PATH}")
@@ -137,11 +159,8 @@ async def write_profile(profile: dict[str, Any]) -> bool:
         return False
     try:
         import yaml
-        # Lock vor Round-Trip-Check: verhindert TOCTOU zwischen Validierung und Schreiben
         async with _profile_write_lock:
             serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-            # Finale Validierung: Round-Trip prüfen – verhindert stille Typ-Coercion
-            # (z.B. yes → True, 1.0 → 1) die Daten verändern würden
             round_tripped = yaml.safe_load(serialized)
             if round_tripped != profile:
                 logger.error(

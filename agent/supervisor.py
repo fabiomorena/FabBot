@@ -22,8 +22,6 @@ _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Phase 87: Explizite Type-Annotationen statt implizitem None.
-# Verhindert unklaren AttributeError: 'NoneType' has no attribute 'ainvoke'
-# wenn Code agent_graph direkt vor init_graph() nutzt.
 agent_graph: CompiledStateGraph | None = None
 _db_conn = None
 _init_lock = asyncio.Lock()
@@ -87,11 +85,17 @@ FINISH
 
 
 def _filter_hitl_messages(messages: list) -> list:
+    """
+    Phase 91: Proto.MEMORY_VISION_MARKER statt hardcoded "Bildbeschreibung".
+    Vorher: Magic String direkt im Code – Format-Änderung hätte still gebrochen.
+    Jetzt:  Single Source of Truth in protocol.py.
+    """
+    from agent.protocol import Proto
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
         if (isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__"))) or \
-                (isinstance(content, str) and content.startswith("__MEMORY__") and "Bildbeschreibung" not in content):
+                (isinstance(content, str) and content.startswith("__MEMORY__") and Proto.MEMORY_VISION_MARKER not in content):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
             continue
@@ -176,16 +180,10 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-# Phase 87: get_graph() als öffentliche Guard-Funktion.
-# bot.py importiert get_graph() statt agent_graph direkt –
-# klarer RuntimeError statt AttributeError: 'NoneType' bei Race Conditions.
 def get_graph() -> CompiledStateGraph:
     """
     Gibt den initialisierten CompiledStateGraph zurück.
-
     Wirft RuntimeError wenn init_graph() noch nicht abgeschlossen ist.
-    Verhindert AttributeError: 'NoneType' has no attribute 'ainvoke'
-    bei Race Conditions beim Bot-Start.
     """
     if agent_graph is None:
         raise RuntimeError(
