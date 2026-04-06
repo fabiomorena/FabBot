@@ -1,7 +1,13 @@
 """
-Memory Agent fuer FabBot – Phase 45/46/63/64/65.
+Memory Agent fuer FabBot – Phase 45/46/63/64/65/89.
 
-Phase 65 Fixes:
+Phase 89 Fixes:
+- YAML-Review INVALID → fail-closed: kein Schreiben mehr (weder yaml noch add_note_to_profile)
+- bot_instruction: Längenlimit (_INSTRUCTION_MAX_LEN) + Forbidden-Pattern (_INSTRUCTION_FORBIDDEN)
+  verhindert persistente Prompt-Injection via claude.md
+- Lazy Imports (import yaml, agent.profile) → Top-Level (bessere Fehlerdiagnose)
+
+Phase 65 Fixes (bestehend):
 - get_fast_llm() statt get_llm() in _formulate_bot_instruction_from_context()
 - Newline-Sanitizing + Laengenbegrenzung im Ergebnis
 - Rekursiver Trigger in _get_prev_human_message() abgefangen
@@ -15,11 +21,25 @@ import logging
 import re
 from typing import Any
 
+import yaml
+
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm, get_fast_llm
+from agent.profile import load_profile, add_note_to_profile, write_profile
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# bot_instruction Security – Phase 89
+# ---------------------------------------------------------------------------
+
+_INSTRUCTION_MAX_LEN = 200
+_INSTRUCTION_FORBIDDEN = re.compile(
+    r"(ignore|vergiss|system\s*prompt|prompt|instruction|override|jailbreak|"
+    r"anweisung.*ignorier|ignorier.*anweisung)",
+    re.I,
+)
 
 # ---------------------------------------------------------------------------
 # Public Konstante – Single Source of Truth fuer Trigger-Erkennung.
@@ -107,6 +127,22 @@ def _get_prev_human_message(messages: list) -> str:
     return ""
 
 
+def _validate_instruction(text: str) -> tuple[bool, str]:
+    """
+    Phase 89: Validiert eine Bot-Instruktion vor dem Schreiben in claude.md.
+
+    Verhindert persistente Prompt-Injection via bot_instruction-Kategorie.
+    Gibt (True, "") bei Erfolg, (False, reason) bei Ablehnung zurück.
+    """
+    if not text or not text.strip():
+        return False, "Leere Instruktion."
+    if len(text) > _INSTRUCTION_MAX_LEN:
+        return False, f"Instruktion zu lang (max {_INSTRUCTION_MAX_LEN} Zeichen)."
+    if _INSTRUCTION_FORBIDDEN.search(text):
+        return False, "Ungültige Bot-Instruktion erkannt."
+    return True, ""
+
+
 async def _formulate_bot_instruction_from_context(context: str) -> str:
     """
     Formuliert aus einer Aussage des Users eine Bot-Instruktion.
@@ -126,7 +162,7 @@ async def _formulate_bot_instruction_from_context(context: str) -> str:
 
         # Sanitize: Newlines entfernen + Laenge begrenzen
         result = content.strip().replace("\n", " ").replace("\r", "").strip()
-        result = result[:200]
+        result = result[:_INSTRUCTION_MAX_LEN]
 
         logger.info(f"MemoryAgent Phase64: Instruktion formuliert: {result[:80]}")
         return result
@@ -487,11 +523,12 @@ async def memory_agent(state: AgentState) -> AgentState:
     Phase 63: bot_instruction → claude.md
     Phase 64: 'merke dir das' → vorherige Aussage als Bot-Instruktion
     Phase 65: Security & Code Quality Fixes
+    Phase 89: Security Fixes:
+      - YAML-Review INVALID → fail-closed (kein Schreiben, kein add_note_to_profile Fallback)
+      - bot_instruction: Längen- und Forbidden-Pattern-Validierung
+      - Top-Level-Imports (yaml, profile) – kein Lazy Import mehr
     """
     try:
-        import yaml
-        from agent.profile import load_profile, add_note_to_profile, write_profile
-
         # ── Phase 64: "Merke dir das" → vorherige Message als Bot-Instruktion ──
         current_human = _get_current_human_message(state["messages"])
         if _is_merke_dir_das(current_human):
@@ -501,6 +538,13 @@ async def memory_agent(state: AgentState) -> AgentState:
             instruction = await _formulate_bot_instruction_from_context(prev_human)
             if not instruction:
                 return {"messages": [AIMessage(content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")]}
+
+            # Phase 89: Auch formulierte Instruktionen validieren
+            valid, reason = _validate_instruction(instruction)
+            if not valid:
+                logger.warning(f"MemoryAgent Phase89: formulierte Instruktion abgelehnt: {reason}")
+                return {"messages": [AIMessage(content="Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders.")]}
+
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(instruction)
             if success:
@@ -517,11 +561,18 @@ async def memory_agent(state: AgentState) -> AgentState:
         if action == "error" or not data:
             return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
 
-        # ── Phase 63: bot_instruction → claude.md ────────────────────────────
+        # ── Phase 63 + 89: bot_instruction → claude.md mit Validierung ───────
         if action in ("save", "update") and category == "bot_instruction":
             text = data.get("text", "").strip()
             if not text:
                 return {"messages": [AIMessage(content="Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")]}
+
+            # Phase 89: Längen- und Forbidden-Pattern-Check
+            valid, reason = _validate_instruction(text)
+            if not valid:
+                logger.warning(f"MemoryAgent Phase89: bot_instruction abgelehnt – {reason}: {text[:80]}")
+                return {"messages": [AIMessage(content=f"Bot-Instruktion konnte nicht gespeichert werden: {reason}")]}
+
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(text)
             if success:
@@ -544,17 +595,18 @@ async def memory_agent(state: AgentState) -> AgentState:
 
         is_valid = await _review_yaml(original_yaml, new_yaml)
         if not is_valid:
-            fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            await add_note_to_profile(fallback)
-            confirmation = _build_confirmation(action, category, data)
-            return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert – YAML-Review fehlgeschlagen)_")]}
+            # Phase 89: Fail-closed – kein Fallback-Schreiben wenn Review fehlschlägt.
+            # Vorher: add_note_to_profile() wurde trotzdem aufgerufen → Review war wirkungslos.
+            # Jetzt: Kein Schreiben, klare Fehlermeldung. Der User kann es neu versuchen.
+            logger.warning(f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
+            return {"messages": [AIMessage(content="Konnte nicht gespeichert werden – bitte nochmal versuchen.")]}
 
         try:
             yaml.safe_load(new_yaml)
         except yaml.YAMLError as e:
             logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
-            await add_note_to_profile(f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}")
-            return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – als Notiz gespeichert.")]}
+            # Phase 89: Auch hier fail-closed – kein add_note_to_profile
+            return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – bitte nochmal versuchen.")]}
 
         success = await write_profile(updated_profile)
         if not success:

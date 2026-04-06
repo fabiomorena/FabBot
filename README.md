@@ -90,6 +90,11 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Async Agents – alle Agents nutzen ainvoke, kein Event-Loop-Block mehr |
 | ✅ | MAX_PATH_DEPTH=5 – begrenzt LLM-generierte Verzeichnistiefe in file_agent |
 | ✅ | Query-Sanitization – web_agent begrenzt LLM-transformierte Suchanfragen auf 200 Zeichen |
+| ✅ | YAML-Review fail-closed – INVALID blockiert Schreiben komplett (kein add_note Fallback) |
+| ✅ | bot_instruction Validierung – Längenlimit 200 Zeichen + Forbidden-Pattern (Injection-Schutz) |
+| ✅ | asyncio Task-Registry – create_task mit _background_tasks verhindert stilles GC-Killing |
+| ✅ | English SHORT_CONFIRMATIONS – "thanks", "got it", "sounds good" etc. erkannt |
+| ✅ | memory_agent Top-Level-Imports – yaml + profile imports auf Modulebene |
 ---
 
 
@@ -250,6 +255,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 86** ✅ Watchdog Fixes (Chat-ID, python-dotenv, _ALERT_DELAY_MINUTES) + start_service() Polling
 - **Phase 87** ✅ agent_graph Type-Annotation, get_graph() Guard, threading.Lock Rate-Limit
 - **Phase 88** ✅ Security & Async Hardening – Symlink-Bypass, DNS-Rebinding, ainvoke in allen Agents, Pfadtiefe, Query-Sanitization
+- **Phase 89** ✅ Security Fixes – YAML fail-closed, bot_instruction Validation, Task-Registry, English Confirmations
 ---
 
 

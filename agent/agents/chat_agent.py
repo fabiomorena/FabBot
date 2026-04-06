@@ -7,6 +7,11 @@ from agent.llm import get_llm
 
 logger = logging.getLogger(__name__)
 
+# Phase 89: Task-Registry verhindert stilles GC-Killing von Background-Tasks.
+# Python docs Best Practice: create_task() ohne Referenz → GC kann Task abbrechen.
+# https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
+_background_tasks: set[asyncio.Task] = set()
+
 _CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
 Beantworte die Frage des Users. Du hast Zugriff auf:
@@ -138,10 +143,18 @@ def _get_context_window_size() -> int:
         return 40
 
 
+# Phase 89: Deutsch + Englisch – verhindert unnötiges Retrieval bei
+# internationalen Bestätigungen. Name suggeriert Sprachunabhängigkeit,
+# also sollte die Menge das auch einhalten.
 _SHORT_CONFIRMATIONS = frozenset({
+    # Deutsch
     "genau", "ok", "okay", "alles klar", "danke", "danke schoen", "danke schon",
     "gut", "super", "verstanden", "ja", "stimmt", "cool", "perfekt", "top",
     "prima", "toll", "nice", "passt", "klar", "ack", "👍", "ok danke",
+    # Englisch
+    "thanks", "thank you", "got it", "sure", "great", "perfect", "noted",
+    "makes sense", "understood", "sounds good", "good", "awesome", "nice",
+    "yep", "yeah", "yes", "right", "correct",
 })
 
 
@@ -188,11 +201,8 @@ async def chat_agent(state: AgentState) -> AgentState:
     Phase 77: Retrieval-Context wird für echte Fragen in den Prompt injiziert.
     Kurze Bestätigungen überspringen das Retrieval (Latenz-Optimierung).
 
-    HITL-Nachrichten werden durch lesbare Platzhalter ersetzt.
-    Context wird auf CHAT_CONTEXT_WINDOW Messages getrimmt (default 40).
-    SQLite bleibt vollständig – nur der LLM-Call wird begrenzt.
-    Prompt wird dynamisch pro Aufruf gebaut (claude.md + Sessions + Profil + Retrieval).
-    Nach der Antwort: Auto-Learn-Hook als non-blocking Background-Task.
+    Phase 89: asyncio.create_task() nutzt jetzt _background_tasks Registry.
+    Verhindert stilles GC-Killing von Auto-Learn-Tasks (Python docs Best Practice).
     """
     llm = get_llm()
     clean_messages = _clean_messages_for_chat(state["messages"])
@@ -203,7 +213,6 @@ async def chat_agent(state: AgentState) -> AgentState:
     human_text = _get_last_human_message(state["messages"])
 
     # Phase 77: Retrieval – nur für echte Fragen, nicht für kurze Bestätigungen.
-    # Fail-safe: _get_retrieval_context() gibt immer einen String zurück (nie Exception).
     retrieval_ctx = ""
     if human_text and not _is_short_confirmation(human_text):
         retrieval_ctx = await _get_retrieval_context(human_text)
@@ -234,11 +243,15 @@ async def chat_agent(state: AgentState) -> AgentState:
             logger.warning("chat_agent: Dedup-Sicherheitsnetz – Wiederholung verhindert.")
             result = "Noch etwas, womit ich helfen kann?"
 
-    # Auto-Learn: letzte HumanMessage als Background-Task analysieren
+    # Phase 89: Auto-Learn mit Task-Registry – verhindert GC-Killing.
+    # Vorher: asyncio.create_task() ohne Referenz → GC konnte Task still beenden.
+    # Jetzt:  Task wird in _background_tasks gehalten bis er fertig ist.
     try:
         if human_text:
             from agent.profile_learner import apply_learning
-            asyncio.create_task(apply_learning(human_text))
+            task = asyncio.create_task(apply_learning(human_text))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
     except Exception as e:
         logger.debug(f"Auto-Learn Task konnte nicht gestartet werden (ignoriert): {e}")
 
