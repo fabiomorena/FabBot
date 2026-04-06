@@ -95,6 +95,8 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | asyncio Task-Registry – create_task mit _background_tasks verhindert stilles GC-Killing |
 | ✅ | English SHORT_CONFIRMATIONS – "thanks", "got it", "sounds good" etc. erkannt |
 | ✅ | memory_agent Top-Level-Imports – yaml + profile imports auf Modulebene |
+| ✅ | claude.md Path – ~/.fabbot/claude.md, Auto-Migration, Lock Race-Fix, Heading-Injection-Validierung |
+---
 ---
 
 
@@ -256,6 +258,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 87** ✅ agent_graph Type-Annotation, get_graph() Guard, threading.Lock Rate-Limit
 - **Phase 88** ✅ Security & Async Hardening – Symlink-Bypass, DNS-Rebinding, ainvoke in allen Agents, Pfadtiefe, Query-Sanitization
 - **Phase 89** ✅ Security Fixes – YAML fail-closed, bot_instruction Validation, Task-Registry, English Confirmations
+- **Phase 90** ✅ claude_md Hardening – Path ~/.fabbot/, Migration, Lock Race-Fix, Heading-Injection-Schutz
 ---
 
 
