@@ -1,6 +1,12 @@
 """
 bot/bot.py – Telegram Handler für FabBot.
 
+Phase 97 (Issue #10): _processed_message_ids deque(maxlen=200)
+- _is_duplicate(update) zentraler Helper
+- Aufruf in on_message, on_voice, on_photo, on_document
+- FIFO-Semantik – älteste IDs automatisch verdrängt, kein unbegrenztes Wachstum
+- In-Memory reicht, kein SQLite nötig
+
 Phase 95 (Issue #6): validate_models_on_startup() in _post_init() aufgerufen.
 Harte Model-Validierung beim Start – RuntimeError wenn ANTHROPIC_MODEL_SONNET
 oder ANTHROPIC_MODEL_HAIKU einen ungültigen String enthalten.
@@ -16,6 +22,7 @@ import contextlib
 import logging
 import os
 import asyncio
+from collections import deque
 from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -53,6 +60,11 @@ _IMAGE_MAX_BYTES = 5_000_000  # 5 MB
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
 _background_tasks: set[asyncio.Task] = set()
 
+# Issue #10: Dedup-Store – verhindert Doppelverarbeitung bei Telegram-Retries.
+# deque(maxlen=200): FIFO-Semantik, älteste IDs werden automatisch verdrängt.
+# In-Memory reicht – nach Neustart sind pending Retries irrelevant.
+_processed_message_ids: deque[int] = deque(maxlen=200)
+
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
     """Skaliert Bild auf max. 1920px falls nötig."""
@@ -77,6 +89,23 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
     except Exception as e:
         logger.warning(f"Bild-Resize fehlgeschlagen (Original wird verwendet): {e}")
         return img_bytes, mime_type
+
+
+def _is_duplicate(update: Update) -> bool:
+    """Issue #10: Prüft ob diese Message-ID bereits verarbeitet wurde.
+
+    Verhindert Doppelverarbeitung bei Telegram-Retries (z.B. nach Timeout).
+    FIFO-Semantik via deque(maxlen=200) – kein unbegrenztes Wachstum.
+    """
+    msg = update.message
+    if msg is None:
+        return False
+    msg_id = msg.message_id
+    if msg_id in _processed_message_ids:
+        logger.debug(f"Duplikat ignoriert: message_id={msg_id}")
+        return True
+    _processed_message_ids.append(msg_id)
+    return False
 
 
 _scheduler_tasks: list = []
@@ -540,6 +569,8 @@ async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if _is_duplicate(update):
+        return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     caption = update.message.caption or ""
@@ -571,6 +602,8 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if _is_duplicate(update):
+        return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     doc     = update.message.document
@@ -608,11 +641,15 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if _is_duplicate(update):
+        return
     await handle_message_text(update, ctx.bot, update.message.text)
 
 
 @restricted
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if _is_duplicate(update):
+        return
     thinking = await update.message.reply_text("Transkribiere...")
     try:
         voice       = update.message.voice
@@ -702,8 +739,6 @@ async def _post_init(app: Application) -> None:
     logger.info("Audit-Logger initialisiert.")
 
     # Phase 95 (Issue #6): Harte Model-Validierung beim Start.
-    # RuntimeError wenn ANTHROPIC_MODEL_SONNET/HAIKU einen ungültigen String enthält.
-    # Vor den Schedulern – kein sinnloser Start wenn LLM-Calls nicht funktionieren.
     from agent.llm import validate_models_on_startup
     validate_models_on_startup()
     logger.info("LLM Model-Validierung abgeschlossen.")
