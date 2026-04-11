@@ -1,6 +1,10 @@
 """
 bot/bot.py – Telegram Handler für FabBot.
 
+Phase 95 (Issue #6): validate_models_on_startup() in _post_init() aufgerufen.
+Harte Model-Validierung beim Start – RuntimeError wenn ANTHROPIC_MODEL_SONNET
+oder ANTHROPIC_MODEL_HAIKU einen ungültigen String enthalten.
+
 Phase 92: setup_audit_logger() in _post_init() aufgerufen.
 Vorher: agent.audit öffnete FileHandler beim Import (Module-Level-Seiteneffekt) →
 Tests nicht isoliert. Jetzt: Initialisierung erst in _post_init nach logging.basicConfig().
@@ -693,11 +697,16 @@ async def _post_init(app: Application) -> None:
     logger.info("SqliteSaver-Checkpointer initialisiert.")
 
     # Phase 92: Audit-Logger erst jetzt initialisieren (nach logging.basicConfig()).
-    # Vorher: FileHandler wurde beim Import von agent.audit geöffnet →
-    # Tests waren nicht isoliert, ~/.fabbot/audit.log wurde in Tests angelegt.
     from agent.audit import setup_audit_logger
     setup_audit_logger()
     logger.info("Audit-Logger initialisiert.")
+
+    # Phase 95 (Issue #6): Harte Model-Validierung beim Start.
+    # RuntimeError wenn ANTHROPIC_MODEL_SONNET/HAIKU einen ungültigen String enthält.
+    # Vor den Schedulern – kein sinnloser Start wenn LLM-Calls nicht funktionieren.
+    from agent.llm import validate_models_on_startup
+    validate_models_on_startup()
+    logger.info("LLM Model-Validierung abgeschlossen.")
 
     from agent.telemetry import setup_telemetry
     setup_telemetry()
@@ -742,6 +751,10 @@ async def _post_init(app: Application) -> None:
     from bot.party_report import run_party_report_scheduler
     task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_party)
+
+    from bot.session_summary import run_session_summary_scheduler
+    task_summary = asyncio.create_task(run_session_summary_scheduler(app.bot, chat_id))
+    _scheduler_tasks.append(task_summary)
 
     try:
         from agent.retrieval import index_all
