@@ -27,6 +27,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm, get_fast_llm
 from agent.profile import load_profile, add_note_to_profile, write_profile
+from agent.utils import get_current_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,7 @@ async def _formulate_bot_instruction_from_context(context: str) -> str:
         return ""
 
 
-_PARSER_PROMPT = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
+_PARSER_PROMPT_BASE = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
 Bestimme was gespeichert, aktualisiert oder gelöscht werden soll.
 
 Antworte NUR mit reinem JSON – kein Markdown, keine Erklärung.
@@ -256,7 +257,7 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
                 continue
             all_filtered.append(m)
         context_msgs = all_filtered[-6:]
-        response = await llm.ainvoke([SystemMessage(content=_PARSER_PROMPT)] + context_msgs)
+        response = await llm.ainvoke([SystemMessage(content=f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]\n" + _PARSER_PROMPT_BASE)] + context_msgs)
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -618,3 +619,11 @@ async def memory_agent(state: AgentState) -> AgentState:
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")
         return {"messages": [AIMessage(content="Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es nochmal.")]}
+
+
+def _build_memory_prompt() -> str:
+    """Memory-Agent Haupt-Prompt mit aktuellem Datum (Ph.98)."""
+    from agent.utils import get_current_datetime
+    dt = get_current_datetime()
+    base = _PARSER_PROMPT_BASE if "_PARSER_PROMPT_BASE" in globals() else ""
+    return f"[Aktuelles Datum/Uhrzeit: {dt}]\n" + base

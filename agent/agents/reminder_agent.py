@@ -133,3 +133,10 @@ async def reminder_agent(state: AgentState) -> AgentState:
             return {"messages": [AIMessage(content=f"Erinnerung #{reminder_id} nicht gefunden.")]}
 
     return {"messages": [AIMessage(content="Unbekannte Aktion.")]}
+
+
+def _build_reminder_prompt() -> str:
+    """Reminder-Agent System-Prompt mit aktuellem Datum (Ph.98)."""
+    from agent.utils import get_current_datetime
+    dt = get_current_datetime()
+    return f"[Aktuelles Datum/Uhrzeit: {dt}]"

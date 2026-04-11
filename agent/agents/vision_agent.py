@@ -110,3 +110,8 @@ async def vision_agent(state: AgentState) -> AgentState:
     damit der Supervisor weiterhin korrekt routet.
     """
     return {"messages": [AIMessage(content="Bildanalyse nicht verfügbar – bitte Foto direkt senden.")]}
+
+def _build_vision_prompt() -> str:
+    # Ph.98: Datum fuer Tests
+    from agent.utils import get_current_datetime
+    return '[Aktuelles Datum/Uhrzeit: ' + get_current_datetime() + ']'

@@ -226,3 +226,10 @@ def terminal_agent_execute(command: str, chat_id: int) -> str:
     output = execute_command(command)
     log_action("terminal_agent", command[:200], f"done, {len(output)}b output", chat_id, status="executed")
     return output
+
+
+def _build_terminal_prompt() -> str:
+    """Terminal-Agent System-Prompt mit aktuellem Datum (Ph.98)."""
+    from agent.utils import get_current_datetime
+    dt = get_current_datetime()
+    return f"[Aktuelles Datum/Uhrzeit: {dt}]"

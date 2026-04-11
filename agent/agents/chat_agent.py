@@ -3,6 +3,7 @@ import logging
 import os
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
+from agent.utils import get_current_datetime
 from agent.llm import get_llm
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,8 @@ logger = logging.getLogger(__name__)
 # https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
 _background_tasks: set[asyncio.Task] = set()
 
-_CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
+_CHAT_PROMPT_BASE = """[Aktuelles Datum/Uhrzeit: {datetime}]
+Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
 Beantworte die Frage des Users. Du hast Zugriff auf:
 1. Den persoenlichen Kontext des Users (Profil) – das ist deine primaere Wissensquelle
@@ -56,7 +58,8 @@ def _build_chat_prompt() -> str:
     Jeder Block hat eigenes try/except – ein Fehler bricht nicht den ganzen Prompt.
     Imports innerhalb der Funktion damit unittest.mock.patch() greift.
     """
-    parts = [_CHAT_PROMPT_BASE]
+    dt = get_current_datetime()
+    parts = [_CHAT_PROMPT_BASE.replace('{datetime}', dt)]
 
     # Block 1: Bot-Instruktionen aus claude.md
     try:

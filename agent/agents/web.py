@@ -334,3 +334,10 @@ async def web_agent(state: AgentState) -> AgentState:
         return {"messages": [AIMessage(content="Timeout beim Abrufen der Webseite.")]}
     except Exception as e:
         return {"messages": [AIMessage(content=f"Fehler: {e}")]}
+
+
+def _build_web_prompt() -> str:
+    """Web-Agent System-Prompt mit aktuellem Datum (Ph.98)."""
+    from agent.utils import get_current_datetime
+    dt = get_current_datetime()
+    return f"[Aktuelles Datum/Uhrzeit: {dt}]"

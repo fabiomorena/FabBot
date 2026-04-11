@@ -3507,7 +3507,9 @@ class TestClaudeMdInChatPrompt:
         with patch("agent.claude_md.load_claude_md", side_effect=Exception("Fehler")):
             prompt = _build_chat_prompt()
 
-        assert _CHAT_PROMPT_BASE in prompt
+        # Ph.98: _CHAT_PROMPT_BASE enthält {datetime} als Platzhalter,
+        # der echte Prompt hat das ersetzt – daher nur einen stabilen Teil prüfen
+        assert "Du bist ein hilfreicher persoenlicher Assistent" in prompt
 
     def test_base_prompt_always_present(self) -> None:
         """Basis-Prompt ist immer im generierten Prompt enthalten."""
@@ -5462,7 +5464,9 @@ class TestChatAgentSessionContext:
                    side_effect=Exception("Lesefehler")):
             prompt = _build_chat_prompt()
 
-        assert _CHAT_PROMPT_BASE in prompt
+        # Ph.98: _CHAT_PROMPT_BASE enthält {datetime} als Platzhalter,
+        # der echte Prompt hat das ersetzt – daher nur einen stabilen Teil prüfen
+        assert "Du bist ein hilfreicher persoenlicher Assistent" in prompt
 
     def test_session_load_called_with_n5(self) -> None:
         """load_session_summaries wird mit n=5 aufgerufen."""
