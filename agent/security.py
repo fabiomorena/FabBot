@@ -121,7 +121,7 @@ _INJECTION_PATTERNS = [
     r":\(\)\{.*\}\s*;",
     r"curl\s+.*\|\s*(bash|sh)",
     r"base64\s*-d",
-    r"sudo\s+",
+    r"sudo\s+[a-zA-Z].*[-/]",
     r"<\s*script",
     r"eval\s*\(",
     r"exec\s*\(",
