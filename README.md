@@ -105,7 +105,8 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | llm.py Model-String-Validierung – _warn_if_unusual() loggt Warning bei Tippfehlern in .env |
 | ✅ | .env.example vervollständigt – TELEGRAM_CHAT_ID, OPENAI_API_KEY, LangSmith-Vars dokumentiert |
 | ✅ | Profil-Backup – `personal_profile.yaml.bak` vor jedem Schreibvorgang (Issue #1) |
----
+| ✅ | Party Report – RA-Direktfetch, konkrete Datum-Queries, lockerere LLM-Extraktion, Trailing-Filter (Issue #5) |
+
 ---
 
 
@@ -271,7 +272,9 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 91** ✅ Stability & Protocol Fixes – Migration Lock, Task-Registry, MEMORY_VISION_MARKER, is_any_confirm CONFIRM_VISION
 - **Phase 92** ✅ Security & Code Quality – crypto.py Keyring-Fehlerbehandlung, audit.py setup_audit_logger(), llm.py Model-String-Warn, .env.example vervollständigt
 - **Phase 93** ✅ Code Quality – Profil-Backup vor destruktivem Schreiben (`profile.py`), Issue #1
+- **Phase 94** ✅ Code Quality & Fixes – Profil-Backup (#1), api_key.strip() (#9), sudo-Pattern (#4), Party Report verbessert (#5)
 ---
+
 
 
 
