@@ -191,7 +191,7 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     Erstellt Embeddings via OpenAI text-embedding-3-small.
     Ein einziger AsyncClient für alle Batches – HTTP/2-Connection-Reuse.
     """
-    api_key = os.getenv("OPENAI_API_KEY", "")
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         logger.error("OPENAI_API_KEY nicht gesetzt – Embedding nicht möglich.")
         return None
