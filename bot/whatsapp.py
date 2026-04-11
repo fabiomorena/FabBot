@@ -1,5 +1,13 @@
 """
-WhatsApp Web Service Client für FabBot – Phase 83/86.
+WhatsApp Web Service Client für FabBot – Phase 83/86/95c.
+
+Phase 95c Fix (Issue #7): stop_service() → async def stop_service().
+Vorher: stop_service() war sync und wurde in _post_shutdown() (async) direkt
+aufgerufen → blockierte den Event Loop beim Shutdown (subprocess.terminate()
+ist zwar non-blocking, aber der sync Aufruf im async Context ist schlechtes
+Pattern und verhindert künftige await-Erweiterungen wie graceful drain).
+Jetzt: async def, await stop_service() in _post_shutdown().
+Abwärtskompatibel – subprocess.terminate() selbst braucht kein await.
 
 Phase 86 Fix #2: start_service() nutzt aktives HTTP-Polling statt
 blindem asyncio.sleep(3). Erkennt einen erfolgreichen Start sobald
@@ -13,7 +21,7 @@ der Express-Server antwortet (typisch 0.5–2s, nicht immer 3s).
   await get_qr_code()                              → str | None
   await send_whatsapp_message(wa_name, text)       → (bool, str)
   await start_service()                            → bool
-  stop_service()                                   → None
+  await stop_service()                             → None  ← Phase 95c
   await add_whatsapp_contact(name, wa_name)        → (bool, str)
   await remove_whatsapp_contact(name)              → (bool, str)
   list_whatsapp_contacts_formatted()               → str
@@ -74,8 +82,6 @@ async def start_service() -> bool:
 
     Phase 86 Fix #2: Aktives HTTP-Polling statt blindem asyncio.sleep(3).
     Prüft alle 0.5s ob der Express-Server antwortet (max 10s).
-    Erkennt einen schnellen Start auf schnellen Systemen früher
-    und schlägt auf langsamen Systemen nicht fälschlicherweise fehl.
     """
     global _service_process
 
@@ -114,11 +120,9 @@ async def start_service() -> bool:
         return False
 
     # Phase 86: Aktives Polling statt blindem sleep(3)
-    # Sobald Express antwortet → sofort fertig, kein unnötiges Warten
     for attempt in range(_STARTUP_POLL_ATTEMPTS):
         await asyncio.sleep(_STARTUP_POLL_INTERVAL)
 
-        # Prozess sofort beendet → Fehler
         if _service_process.poll() is not None:
             logger.error(
                 "WhatsApp Service sofort beendet – "
@@ -126,7 +130,6 @@ async def start_service() -> bool:
             )
             return False
 
-        # HTTP-Check: antwortet der Express-Server schon?
         try:
             status = await get_service_status()
             if status.get("ok"):
@@ -138,10 +141,8 @@ async def start_service() -> bool:
                 )
                 return True
         except Exception:
-            pass  # noch nicht bereit – weiter pollen
+            pass
 
-    # Nach max. Wartezeit: Prozess läuft noch → als gestartet betrachten
-    # (QR-Generierung kann länger dauern als der HTTP-Server-Start)
     if _service_process.poll() is None:
         elapsed = _STARTUP_POLL_ATTEMPTS * _STARTUP_POLL_INTERVAL
         logger.info(
@@ -154,8 +155,17 @@ async def start_service() -> bool:
     return False
 
 
-def stop_service() -> None:
-    """Stoppt den Node.js WhatsApp Service sauber."""
+async def stop_service() -> None:
+    """
+    Stoppt den Node.js WhatsApp Service sauber.
+
+    Phase 95c (Issue #7): sync → async.
+    Vorher: _post_shutdown() rief stop_service() sync auf – schlechtes Pattern
+    im async Shutdown-Hook, blockiert den Event Loop und verhindert künftige
+    await-Erweiterungen (z.B. graceful drain, HTTP-Goodbye-Call).
+    Jetzt: await stop_service() in _post_shutdown() – konsistent async.
+    subprocess.terminate() ist non-blocking, kein run_in_executor nötig.
+    """
     global _service_process
     if _service_process and _service_process.poll() is None:
         _service_process.terminate()

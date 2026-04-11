@@ -775,7 +775,7 @@ async def _post_shutdown(app: Application) -> None:
         if not task.done():
             task.cancel()
     try:
-        stop_service()
+        await stop_service()
     except Exception as e:
         logger.warning(f"WhatsApp Service Stop fehlgeschlagen (ignoriert): {e}")
     from agent.supervisor import close_graph

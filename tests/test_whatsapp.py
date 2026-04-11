@@ -8,6 +8,10 @@ Tests für Phase 83 – WhatsApp Service (HTTP-basiert, whatsapp-web.js).
 - TestLoadWhatsappContacts, TestFindContact, TestWhatsappAgent,
   TestProtoWhatsapp, TestAddWhatsappContact, TestRemoveWhatsappContact
   → unverändert
+
+Phase 95c Fix (Issue #7): TestServiceLifecycle.test_stop_service_no_process
+und test_stop_service_running_process auf async umgestellt, da stop_service()
+jetzt async def ist.
 """
 
 import pytest
@@ -275,14 +279,16 @@ class TestServiceLifecycle:
             result = await start_service()
         assert result is False
 
-    def test_stop_service_no_process(self):
+    @pytest.mark.asyncio
+    async def test_stop_service_no_process(self):
         """stop_service() ohne laufenden Prozess → kein Crash."""
         import bot.whatsapp as wa_module
         wa_module._service_process = None
         from bot.whatsapp import stop_service
-        stop_service()  # darf nicht crashen
+        await stop_service()  # darf nicht crashen
 
-    def test_stop_service_running_process(self):
+    @pytest.mark.asyncio
+    async def test_stop_service_running_process(self):
         """stop_service() mit laufendem Prozess → terminate() aufgerufen."""
         import bot.whatsapp as wa_module
         mock_proc = MagicMock()
@@ -290,7 +296,7 @@ class TestServiceLifecycle:
         wa_module._service_process = mock_proc
 
         from bot.whatsapp import stop_service
-        stop_service()
+        await stop_service()
 
         mock_proc.terminate.assert_called_once()
         assert wa_module._service_process is None
@@ -371,7 +377,7 @@ class TestFindContact:
 
 
 # ---------------------------------------------------------------------------
-# whatsapp_agent – unverändert aus Phase 81 (Mocks auf gleiche Pfade)
+# whatsapp_agent
 # ---------------------------------------------------------------------------
 
 def _state(text: str) -> dict:
