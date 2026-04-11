@@ -10,6 +10,8 @@ aiohttp==3.13.3
     # via -r requirements.txt
 aiosignal==1.4.0
     # via aiohttp
+annotated-doc==0.0.4
+    # via typer
 annotated-types==0.7.0
     # via pydantic
 anthropic==0.85.0
@@ -20,31 +22,58 @@ anyio==4.12.1
     # via
     #   anthropic
     #   httpx
+    #   watchfiles
 attrs==25.4.0
-    # via aiohttp
+    # via
+    #   aiohttp
+    #   jsonschema
+    #   referencing
+backports-tarfile==1.2.0
+    # via jaraco-context
+bcrypt==5.0.0
+    # via chromadb
+build==1.4.3
+    # via chromadb
 certifi==2026.2.25
     # via
     #   httpcore
     #   httpx
+    #   kubernetes
     #   requests
 cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.6
     # via requests
-cryptography==46.0.5
-    # via google-auth
+chromadb==1.5.7
+    # via -r requirements.txt
+click==8.3.2
+    # via
+    #   typer
+    #   uvicorn
+cryptography==46.0.7
+    # via
+    #   -r requirements.txt
+    #   google-auth
 distro==1.9.0
     # via anthropic
 docstring-parser==0.17.0
     # via anthropic
+durationpy==0.10
+    # via kubernetes
 filelock==3.25.2
-    # via torch
+    # via
+    #   huggingface-hub
+    #   torch
+flatbuffers==25.12.19
+    # via onnxruntime
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
 fsspec==2026.2.0
-    # via torch
+    # via
+    #   huggingface-hub
+    #   torch
 google-api-core==2.30.0
     # via google-api-python-client
 google-api-python-client==2.192.0
@@ -62,28 +91,60 @@ google-auth-httplib2==0.3.0
 google-auth-oauthlib==1.3.0
     # via -r requirements.txt
 googleapis-common-protos==1.73.0
-    # via google-api-core
+    # via
+    #   google-api-core
+    #   opentelemetry-exporter-otlp-proto-grpc
+greenlet==3.4.0
+    # via playwright
+grpcio==1.80.0
+    # via
+    #   chromadb
+    #   opentelemetry-exporter-otlp-proto-grpc
 h11==0.16.0
-    # via httpcore
+    # via
+    #   httpcore
+    #   uvicorn
+hf-xet==1.4.3
+    # via huggingface-hub
+homoglyphs==2.0.4
+    # via -r requirements.txt
 httpcore==1.0.9
     # via httpx
 httplib2==0.31.2
     # via
     #   google-api-python-client
     #   google-auth-httplib2
+httptools==0.7.1
+    # via uvicorn
 httpx==0.28.1
     # via
     #   -r requirements.txt
     #   anthropic
+    #   chromadb
+    #   huggingface-hub
     #   langgraph-sdk
     #   langsmith
     #   python-telegram-bot
+huggingface-hub==1.10.1
+    # via tokenizers
 idna==3.11
     # via
     #   anyio
     #   httpx
     #   requests
     #   yarl
+importlib-metadata==8.7.1
+    # via
+    #   keyring
+    #   opentelemetry-api
+importlib-resources==6.5.2
+    # via chromadb
+jaraco-classes==3.4.0
+    # via keyring
+jaraco-context==6.1.2
+    # via keyring
+jaraco-functools==4.4.0
+    # via keyring
 jinja2==3.1.6
     # via torch
 jiter==0.13.0
@@ -92,9 +153,17 @@ jsonpatch==1.33
     # via langchain-core
 jsonpointer==3.0.0
     # via jsonpatch
+jsonschema==4.26.0
+    # via chromadb
+jsonschema-specifications==2025.9.1
+    # via jsonschema
+keyring==25.7.0
+    # via -r requirements.txt
+kubernetes==35.0.0
+    # via chromadb
 langchain-anthropic==1.3.5
     # via -r requirements.txt
-langchain-core==1.2.19
+langchain-core==1.2.28
     # via
     #   langchain-anthropic
     #   langgraph
@@ -114,10 +183,19 @@ langsmith==0.7.18
     # via langchain-core
 llvmlite==0.46.0
     # via numba
+markdown-it-py==4.0.0
+    # via rich
 markupsafe==3.0.3
     # via jinja2
+mdurl==0.1.2
+    # via markdown-it-py
+mmh3==5.2.1
+    # via chromadb
 more-itertools==10.8.0
-    # via openai-whisper
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
+    #   openai-whisper
 mouseinfo==0.1.3
     # via pyautogui
 mpmath==1.3.0
@@ -132,24 +210,56 @@ numba==0.64.0
     # via openai-whisper
 numpy==2.4.3
     # via
+    #   chromadb
     #   numba
+    #   onnxruntime
     #   openai-whisper
 oauthlib==3.3.1
     # via requests-oauthlib
+onnxruntime==1.24.4
+    # via chromadb
 openai-whisper==20250625
     # via -r requirements.txt
+opentelemetry-api==1.41.0
+    # via
+    #   chromadb
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+opentelemetry-exporter-otlp-proto-common==1.41.0
+    # via opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-grpc==1.41.0
+    # via chromadb
+opentelemetry-proto==1.41.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-sdk==1.41.0
+    # via
+    #   chromadb
+    #   opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-semantic-conventions==0.62b0
+    # via opentelemetry-sdk
 orjson==3.11.7
     # via
+    #   chromadb
     #   langgraph-sdk
     #   langsmith
 ormsgpack==1.12.2
     # via langgraph-checkpoint
+overrides==7.7.0
+    # via chromadb
 packaging==26.0
     # via
+    #   build
+    #   huggingface-hub
     #   langchain-core
     #   langsmith
+    #   onnxruntime
 pillow==12.1.1
     # via pyscreeze
+playwright==1.58.0
+    # via -r requirements.txt
 propcache==0.4.1
     # via
     #   aiohttp
@@ -160,6 +270,8 @@ protobuf==6.33.5
     # via
     #   google-api-core
     #   googleapis-common-protos
+    #   onnxruntime
+    #   opentelemetry-proto
     #   proto-plus
 pyasn1==0.6.2
     # via pyasn1-modules
@@ -167,19 +279,29 @@ pyasn1-modules==0.4.2
     # via google-auth
 pyautogui==0.9.54
     # via -r requirements.txt
+pybase64==1.4.3
+    # via chromadb
 pycparser==3.0
     # via cffi
 pydantic==2.12.5
     # via
     #   anthropic
+    #   chromadb
     #   langchain-anthropic
     #   langchain-core
     #   langgraph
     #   langsmith
+    #   pydantic-settings
 pydantic-core==2.41.5
     # via pydantic
+pydantic-settings==2.13.1
+    # via chromadb
+pyee==13.0.1
+    # via playwright
 pygetwindow==0.0.9
     # via pyautogui
+pygments==2.20.0
+    # via rich
 pymsgbox==2.0.1
     # via pyautogui
 pyobjc-core==12.1
@@ -197,72 +319,145 @@ pyparsing==3.3.2
     # via httplib2
 pyperclip==1.11.0
     # via mouseinfo
+pypika==0.51.1
+    # via chromadb
+pyproject-hooks==1.2.0
+    # via build
 pyrect==0.2.0
     # via pygetwindow
 pyscreeze==1.0.1
     # via pyautogui
+python-dateutil==2.9.0.post0
+    # via kubernetes
 python-dotenv==1.2.2
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   pydantic-settings
+    #   uvicorn
 python-telegram-bot==22.7
     # via -r requirements.txt
 pytweening==1.2.0
     # via pyautogui
 pyyaml==6.0.3
-    # via langchain-core
+    # via
+    #   chromadb
+    #   huggingface-hub
+    #   kubernetes
+    #   langchain-core
+    #   uvicorn
+referencing==0.37.0
+    # via
+    #   jsonschema
+    #   jsonschema-specifications
 regex==2026.2.28
     # via tiktoken
 requests==2.32.5
     # via
     #   google-api-core
+    #   kubernetes
     #   langsmith
     #   requests-oauthlib
     #   requests-toolbelt
     #   tiktoken
 requests-oauthlib==2.0.0
-    # via google-auth-oauthlib
+    # via
+    #   google-auth-oauthlib
+    #   kubernetes
 requests-toolbelt==1.0.0
     # via langsmith
+rich==14.3.4
+    # via
+    #   chromadb
+    #   typer
+rpds-py==0.30.0
+    # via
+    #   jsonschema
+    #   referencing
 rubicon-objc==0.5.3
     # via mouseinfo
 rumps==0.4.0
     # via -r requirements.txt
+shellingham==1.5.4
+    # via typer
+six==1.17.0
+    # via
+    #   kubernetes
+    #   python-dateutil
 sniffio==1.3.1
     # via anthropic
 sympy==1.14.0
-    # via torch
+    # via
+    #   onnxruntime
+    #   torch
 tenacity==9.1.4
-    # via langchain-core
+    # via
+    #   chromadb
+    #   langchain-core
 tiktoken==0.12.0
     # via openai-whisper
+tokenizers==0.22.2
+    # via chromadb
 torch==2.10.0
     # via openai-whisper
 tqdm==4.67.3
-    # via openai-whisper
+    # via
+    #   chromadb
+    #   huggingface-hub
+    #   openai-whisper
+typer==0.24.1
+    # via
+    #   chromadb
+    #   huggingface-hub
 typing-extensions==4.15.0
     # via
     #   aiosignal
     #   anthropic
     #   anyio
+    #   chromadb
+    #   grpcio
+    #   huggingface-hub
     #   langchain-core
+    #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pyee
+    #   referencing
     #   torch
     #   typing-inspection
 typing-inspection==0.4.2
-    # via pydantic
+    # via
+    #   pydantic
+    #   pydantic-settings
 uritemplate==4.2.0
     # via google-api-python-client
 urllib3==2.6.3
-    # via requests
+    # via
+    #   kubernetes
+    #   requests
 uuid-utils==0.14.1
     # via
     #   langchain-core
     #   langsmith
+uvicorn[standard]==0.44.0
+    # via chromadb
+uvloop==0.22.1
+    # via uvicorn
+watchfiles==1.1.1
+    # via uvicorn
+websocket-client==1.9.0
+    # via kubernetes
+websockets==16.0
+    # via uvicorn
 xxhash==3.6.0
     # via
     #   langgraph
     #   langsmith
 yarl==1.23.0
     # via aiohttp
+zipp==3.23.0
+    # via importlib-metadata
 zstandard==0.25.0
     # via langsmith
