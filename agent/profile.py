@@ -9,6 +9,11 @@ Fall korruptes File. Fix: _migration_lock (threading.Lock) + _migration_done Fla
 machen die Migration idempotent. threading.Lock statt asyncio.Lock weil load_profile()
 synchron ist und nicht awaiten kann.
 
+Phase 93 Fix (Issue #1): Backup vor jedem destruktiven Schreibvorgang.
+_write_profile_bytes() kopiert personal_profile.yaml → personal_profile.yaml.bak
+bevor die Datei überschrieben wird. Gilt für Migration, add_note_to_profile()
+und write_profile(). Das Backup enthält immer den letzten guten Stand.
+
 Lädt personal_profile.yaml aus dem Projektwurzelverzeichnis und stellt
 formatierte Kontext-Strings für die Agents bereit.
 
@@ -40,6 +45,7 @@ Thread-Safety:
 
 import asyncio
 import logging
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +54,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _PROFILE_PATH = Path(__file__).parent.parent / "personal_profile.yaml"
+_BACKUP_PATH = _PROFILE_PATH.with_suffix(".yaml.bak")
 _profile_cache: dict[str, Any] | None = None
 
 # Lock für alle async Schreiboperationen auf personal_profile.yaml
@@ -60,6 +67,25 @@ _migration_lock = threading.Lock()
 _migration_done: bool = False
 
 
+def _write_profile_bytes(data: bytes) -> None:
+    """
+    Phase 93 (Issue #1): Zentraler Schreibpunkt für personal_profile.yaml.
+    Erstellt immer zuerst ein Backup (personal_profile.yaml.bak) bevor
+    die Originaldatei überschrieben wird.
+
+    Das Backup enthält den letzten erfolgreich geschriebenen Stand.
+    Bei Fehler während des Schreibens bleibt das Backup erhalten und
+    kann manuell wiederhergestellt werden.
+
+    Wirft IOError / OSError wenn Backup oder Schreiben fehlschlägt –
+    Caller entscheidet über Exception-Handling.
+    """
+    if _PROFILE_PATH.exists():
+        shutil.copy2(_PROFILE_PATH, _BACKUP_PATH)
+        logger.debug(f"Profil-Backup erstellt: {_BACKUP_PATH}")
+    _PROFILE_PATH.write_bytes(data)
+
+
 def load_profile() -> dict[str, Any]:
     """
     Lädt personal_profile.yaml. Cached nach erstem Aufruf.
@@ -69,6 +95,8 @@ def load_profile() -> dict[str, Any]:
     Phase 91: Migration ist jetzt thread-safe via _migration_lock + _migration_done.
     Vorher: Zwei gleichzeitige Aufrufe konnten beide schreiben → korruptes File möglich.
     Jetzt:  Nur der erste Aufrufer schreibt; alle weiteren überspringen die Migration.
+
+    Phase 93: Migration nutzt _write_profile_bytes() → Backup vor Verschlüsselung.
     """
     global _profile_cache, _migration_done
     if _profile_cache is not None:
@@ -91,7 +119,7 @@ def load_profile() -> dict[str, Any]:
             with _migration_lock:
                 if not _migration_done:
                     logger.info("Migration: personal_profile.yaml wird verschlüsselt...")
-                    _PROFILE_PATH.write_bytes(encrypt(yaml_text))
+                    _write_profile_bytes(encrypt(yaml_text))
                     _migration_done = True
                     logger.info("Migration abgeschlossen – Profil ist jetzt verschlüsselt.")
         loaded = yaml.safe_load(yaml_text)
@@ -119,6 +147,8 @@ async def add_note_to_profile(text: str) -> bool:
     Fügt eine neue Note zum 'notes' Abschnitt in personal_profile.yaml hinzu.
     Verwendet _profile_write_lock gegen gleichzeitige Schreibzugriffe.
     Gibt True zurück bei Erfolg, False bei Fehler.
+
+    Phase 93: _write_profile_bytes() erstellt Backup vor dem Schreiben.
     """
     if not text or not text.strip():
         return False
@@ -137,7 +167,7 @@ async def add_note_to_profile(text: str) -> bool:
             timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
             profile["notes"].append(f"[{timestamp}] {text.strip()}")
             serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-            _PROFILE_PATH.write_bytes(encrypt(serialized))
+            _write_profile_bytes(encrypt(serialized))
         reload_profile()
         logger.info(f"Note zu Profil hinzugefügt: {text[:80]}")
         return True
@@ -151,6 +181,8 @@ async def write_profile(profile: dict[str, Any]) -> bool:
     Schreibt ein vollständiges Profil-Dict in personal_profile.yaml.
     Verwendet _profile_write_lock gegen gleichzeitige Schreibzugriffe.
     Gibt True zurück bei Erfolg, False bei Fehler.
+
+    Phase 93: _write_profile_bytes() erstellt Backup vor dem Schreiben.
     """
     if not profile or not isinstance(profile, dict):
         return False
@@ -169,7 +201,7 @@ async def write_profile(profile: dict[str, Any]) -> bool:
                 )
                 return False
             from agent.crypto import encrypt
-            _PROFILE_PATH.write_bytes(encrypt(serialized))
+            _write_profile_bytes(encrypt(serialized))
         reload_profile()
         logger.info("write_profile: Profil erfolgreich verschlüsselt gespeichert.")
         return True
