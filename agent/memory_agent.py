@@ -1,0 +1,704 @@
+"""
+Memory Agent fuer FabBot – Phase 45/46/63/64/65/89/96.
+
+Phase 96 Refactor (Issue #8):
+- _apply_memory_update: Switch-Kaskade → Registry-Pattern
+- _SAVE_HANDLERS / _DELETE_HANDLERS: je ein Dict[str, Callable]
+- Pro Category eine dedizierte Handler-Funktion
+- bot_instruction bleibt außen vor (wird in memory_agent() vor _apply_memory_update abgefangen)
+- Keine Verhaltensänderung – rein strukturelles Refactoring
+
+Phase 89 Fixes (bestehend):
+- YAML-Review INVALID → fail-closed: kein Schreiben mehr (weder yaml noch add_note_to_profile)
+- bot_instruction: Längenlimit (_INSTRUCTION_MAX_LEN) + Forbidden-Pattern (_INSTRUCTION_FORBIDDEN)
+  verhindert persistente Prompt-Injection via claude.md
+- Lazy Imports (import yaml, agent.profile) → Top-Level (bessere Fehlerdiagnose)
+
+Phase 65 Fixes (bestehend):
+- get_fast_llm() statt get_llm() in _formulate_bot_instruction_from_context()
+- Newline-Sanitizing + Laengenbegrenzung im Ergebnis
+- Rekursiver Trigger in _get_prev_human_message() abgefangen
+- HumanMessage top-level Import in _review_yaml() (kein lokaler HM-Alias)
+- MERKE_DIR_DAS_TRIGGERS als oeffentliche Konstante (Single Source of Truth)
+"""
+
+import copy
+import json
+import logging
+import re
+from typing import Any
+
+import yaml
+
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from agent.state import AgentState
+from agent.llm import get_llm, get_fast_llm
+from agent.profile import load_profile, add_note_to_profile, write_profile
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# bot_instruction Security – Phase 89
+# ---------------------------------------------------------------------------
+
+_INSTRUCTION_MAX_LEN = 200
+_INSTRUCTION_FORBIDDEN = re.compile(
+    r"(ignore|vergiss|system\s*prompt|prompt|instruction|override|jailbreak|"
+    r"anweisung.*ignorier|ignorier.*anweisung)",
+    re.I,
+)
+
+# ---------------------------------------------------------------------------
+# Public Konstante – Single Source of Truth fuer Trigger-Erkennung.
+# Supervisor-Prompt und memory_agent nutzen dieselbe Quelle.
+# ---------------------------------------------------------------------------
+
+MERKE_DIR_DAS_TRIGGERS = frozenset({
+    "merke dir das",
+    "merk dir das",
+    "merke das",
+    "merk das",
+    "das merken",
+    "bitte merken",
+    "kannst du dir merken",
+    "bitte merk dir das",
+    "merke dir das bitte",
+    "das kannst du dir merken",
+    "das solltest du dir merken",
+    "merk dir das bitte",
+})
+
+# Interner Alias – bestehender Code unveraendert
+_MERKE_DIR_DAS_TRIGGERS = MERKE_DIR_DAS_TRIGGERS
+
+_FORMULATE_PROMPT = """Du bist ein Assistent der Bot-Instruktionen formuliert.
+
+Der User hat folgendes gesagt:
+"{context}"
+
+Formuliere daraus eine praezise Bot-Instruktion (1 Satz, max. 20 Woerter).
+Die Instruktion beschreibt wie der Bot sich verhalten soll basierend auf dieser Info.
+Fokus: Kommunikationsstil, Reaktion auf den User, Anpassung an seine Gewohnheiten.
+
+Antworte NUR mit der Bot-Instruktion – kein Markdown, keine Erklaerung, kein Prefix.
+
+Gute Beispiele:
+- "Fabio antwortet morgens kurz – er ist im Flow, kurz und praezise bleiben"
+- "Fabio hoert beim Coden Techno – bei Musik-Empfehlungen elektronische Musik bevorzugen"
+- "Fabio bevorzugt direkte Empfehlungen statt 'es kommt drauf an'"
+"""
+
+
+def _is_merke_dir_das(text: str) -> bool:
+    """Erkennt kurze 'merke dir das' Nachrichten ohne weiteren spezifischen Inhalt."""
+    normalized = text.strip().lower().rstrip("!.?").strip()
+    return normalized in MERKE_DIR_DAS_TRIGGERS
+
+
+def _get_current_human_message(messages: list) -> str:
+    """Gibt den Text der letzten HumanMessage zurueck."""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content).strip()
+            return str(content).strip()
+    return ""
+
+
+def _get_prev_human_message(messages: list) -> str:
+    """
+    Gibt den Text der vorletzten HumanMessage zurueck (vor 'merke dir das').
+
+    Phase 65 Fix: Prueft ob der Kandidat selbst ein Trigger ist
+    (rekursive Referenz vermeiden).
+    """
+    human_texts = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                text = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content).strip()
+            else:
+                text = str(content).strip()
+            if text:
+                human_texts.append(text)
+
+    if len(human_texts) >= 2:
+        candidate = human_texts[-2]
+        # Rekursions-Schutz: Wenn auch der Kandidat ein Trigger ist → kein Kontext
+        if _is_merke_dir_das(candidate):
+            logger.debug("_get_prev_human_message: Kandidat ist selbst ein Trigger – kein Kontext.")
+            return ""
+        return candidate
+    return ""
+
+
+def _validate_instruction(text: str) -> tuple[bool, str]:
+    """
+    Phase 89: Validiert eine Bot-Instruktion vor dem Schreiben in claude.md.
+
+    Verhindert persistente Prompt-Injection via bot_instruction-Kategorie.
+    Gibt (True, "") bei Erfolg, (False, reason) bei Ablehnung zurück.
+    """
+    if not text or not text.strip():
+        return False, "Leere Instruktion."
+    if len(text) > _INSTRUCTION_MAX_LEN:
+        return False, f"Instruktion zu lang (max {_INSTRUCTION_MAX_LEN} Zeichen)."
+    if _INSTRUCTION_FORBIDDEN.search(text):
+        return False, "Ungültige Bot-Instruktion erkannt."
+    return True, ""
+
+
+async def _formulate_bot_instruction_from_context(context: str) -> str:
+    """
+    Formuliert aus einer Aussage des Users eine Bot-Instruktion.
+
+    Phase 65 Fixes:
+    - get_fast_llm() statt get_llm() (Haiku reicht fuer 1-Satz-Formulierung)
+    - Newline-Sanitizing im Ergebnis
+    - Laengenbegrenzung auf 200 Zeichen
+    """
+    try:
+        llm = get_fast_llm()  # Haiku – ~10x guenstiger als Sonnet fuer diese Aufgabe
+        prompt = _FORMULATE_PROMPT.format(context=context[:500])
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+
+        # Sanitize: Newlines entfernen + Laenge begrenzen
+        result = content.strip().replace("\n", " ").replace("\r", "").strip()
+        result = result[:_INSTRUCTION_MAX_LEN]
+
+        logger.info(f"MemoryAgent Phase64: Instruktion formuliert: {result[:80]}")
+        return result
+    except Exception as e:
+        logger.error(f"MemoryAgent Phase64: Formulierung fehlgeschlagen: {e}")
+        return ""
+
+
+_PARSER_PROMPT = """Du bist ein Profil-Manager. Analysiere die Anfrage des Users und den Gesprächskontext.
+Bestimme was gespeichert, aktualisiert oder gelöscht werden soll.
+
+Antworte NUR mit reinem JSON – kein Markdown, keine Erklärung.
+
+Format:
+{
+  "action": "save|update|delete",
+  "category": "people|project|place|media|preference|job|location|custom|bot_instruction",
+  "data": { ... }
+}
+
+Kategorien und data-Format:
+
+people:
+  {"name": "Vollständiger Name", "context": "Beschreibung der Person und Beziehung"}
+
+project:
+  {"name": "Projektname", "description": "Kurze Beschreibung", "stack": ["Python"], "priority": "high|medium|low"}
+
+place:
+  {"name": "Ortsname", "type": "restaurant|bar|cafe|gym|shop|sonstige", "location": "Stadtteil, Stadt", "context": "Warum relevant"}
+
+media:
+  {"title": "Titel", "type": "song|album|film|serie|podcast|buch|künstler", "artist": "optional", "context": "Warum relevant"}
+
+preference:
+  {"key": "schluessel", "value": "Wert"}
+
+job:
+  {"employer": "Firmenname", "role": "Jobtitel", "context": "Zusatzinfo"}
+
+location:
+  {"location": "Stadt, Land"}
+
+custom:
+  {"key": "schluessel", "value": "Wert"}
+
+bot_instruction:
+  {"text": "Die vollständige Bot-Instruktion als präziser Satz"}
+
+Für delete:
+  {"name": "Name"} oder {"key": "Schlüssel"} oder {"title": "Titel"}
+
+Wichtige Regeln:
+- Restaurants, Bars, Cafés, Gyms → category=place
+- Lieder, Alben, Filme, Serien, Podcasts, Bücher → category=media
+- Firmen wo der User arbeitet → category=job
+- Eigene Software-Projekte → category=project
+- Bot-Verhalten, Antwort-Stil für den Bot → category=bot_instruction
+  Trigger: "grundsätzlich", "von jetzt an", "du sollst immer", "dein Verhalten"
+- Persönliche Infos über den User → preference oder custom
+- Wenn unklar: category=custom
+"""
+
+_REVIEWER_PROMPT = """Du bist ein YAML-Validator. Vergleiche Original- und neues YAML.
+
+Original:
+<original>
+{original}
+</original>
+
+Neu:
+<new>
+{new}
+</new>
+
+Antworte NUR mit einem einzigen Wort:
+VALID   – YAML-Syntax korrekt, alle Original-Daten erhalten, nur sinnvolle Ergänzungen/Änderungen
+INVALID – YAML kaputt, wichtige Daten fehlen, oder verdächtige Inhalte
+
+Nur VALID oder INVALID."""
+
+
+async def _parse_memory_intent(messages: list) -> dict[str, Any]:
+    """Sonnet versteht die Anfrage + Kontext → strukturiertes JSON."""
+    try:
+        llm = get_llm()
+        all_filtered = []
+        for m in messages:
+            c = m.content if hasattr(m, "content") else ""
+            if isinstance(c, str) and c.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
+                continue
+            all_filtered.append(m)
+        context_msgs = all_filtered[-6:]
+        response = await llm.ainvoke([SystemMessage(content=_PARSER_PROMPT)] + context_msgs)
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        content = content.strip()
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content).strip()
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict) or "action" not in parsed:
+            return {"action": "error"}
+        return parsed
+    except Exception as e:
+        logger.error(f"MemoryAgent Parser Fehler: {e}")
+        return {"action": "error"}
+
+
+# ---------------------------------------------------------------------------
+# Registry-Pattern – Phase 96 (Issue #8)
+# ---------------------------------------------------------------------------
+# Jede Handler-Funktion bekommt (updated: dict, data: dict) → dict | None.
+# None bedeutet: ungültige/unvollständige Daten, kein Update.
+# ---------------------------------------------------------------------------
+
+def _save_people(updated: dict, data: dict) -> dict | None:
+    name = data.get("name", "").strip()
+    context = data.get("context", "").strip()
+    if not name:
+        return None
+    if "people" not in updated or not isinstance(updated["people"], list):
+        updated["people"] = []
+    for p in updated["people"]:
+        if isinstance(p, dict) and p.get("name", "").lower() == name.lower():
+            if context:
+                p["context"] = context
+            return updated
+    updated["people"].append({"name": name, "context": context})
+    return updated
+
+
+def _save_project(updated: dict, data: dict) -> dict | None:
+    name = data.get("name", "").strip()
+    if not name:
+        return None
+    if "projects" not in updated or not isinstance(updated["projects"], dict):
+        updated["projects"] = {}
+    if "active" not in updated["projects"] or not isinstance(updated["projects"]["active"], list):
+        updated["projects"]["active"] = []
+    for p in updated["projects"]["active"]:
+        if isinstance(p, dict) and p.get("name", "").lower() == name.lower():
+            if desc := data.get("description", ""):
+                p["description"] = desc
+            if stack := data.get("stack", []):
+                p["stack"] = stack
+            if priority := data.get("priority", ""):
+                p["priority"] = priority
+            return updated
+    new_project: dict[str, Any] = {"name": name}
+    if desc := data.get("description", "").strip():
+        new_project["description"] = desc
+    if stack := data.get("stack", []):
+        new_project["stack"] = stack if isinstance(stack, list) else []
+    new_project["priority"] = data.get("priority", "medium")
+    updated["projects"]["active"].append(new_project)
+    return updated
+
+
+def _save_place(updated: dict, data: dict) -> dict | None:
+    name = data.get("name", "").strip()
+    if not name:
+        return None
+    if "places" not in updated or not isinstance(updated["places"], list):
+        updated["places"] = []
+    for p in updated["places"]:
+        if isinstance(p, dict) and p.get("name", "").lower() == name.lower():
+            for key in ("type", "location", "context"):
+                if v := data.get(key, "").strip():
+                    p[key] = v
+            return updated
+    new_place: dict[str, Any] = {"name": name}
+    for key in ("type", "location", "context"):
+        if v := data.get(key, "").strip():
+            new_place[key] = v
+    updated["places"].append(new_place)
+    return updated
+
+
+def _save_media(updated: dict, data: dict) -> dict | None:
+    title = data.get("title", "").strip()
+    if not title:
+        return None
+    media_type = data.get("type", "").strip()
+    artist = data.get("artist", "").strip()
+    context = data.get("context", "").strip()
+    if "media" not in updated or not isinstance(updated["media"], list):
+        updated["media"] = []
+    for m in updated["media"]:
+        if isinstance(m, dict) and m.get("title", "").lower() == title.lower():
+            if media_type:
+                m["type"] = media_type
+            if artist:
+                m["artist"] = artist
+            if context:
+                m["context"] = context
+            return updated
+    new_media: dict[str, Any] = {"title": title}
+    if media_type:
+        new_media["type"] = media_type
+    if artist:
+        new_media["artist"] = artist
+    if context:
+        new_media["context"] = context
+    updated["media"].append(new_media)
+    return updated
+
+
+def _save_preference(updated: dict, data: dict) -> dict | None:
+    key = data.get("key", "").strip()
+    value = data.get("value", "").strip()
+    if not key or not value:
+        return None
+    if "preferences" not in updated or not isinstance(updated["preferences"], dict):
+        updated["preferences"] = {}
+    updated["preferences"][key] = value
+    return updated
+
+
+def _save_job(updated: dict, data: dict) -> dict | None:
+    employer = data.get("employer", "").strip()
+    role = data.get("role", "").strip()
+    if not employer:
+        return None
+    if "work" not in updated or not isinstance(updated["work"], dict):
+        updated["work"] = {}
+    updated["work"]["employer"] = employer
+    if role:
+        updated["work"]["role"] = role
+    if ctx := data.get("context", "").strip():
+        updated["work"]["job_context"] = ctx
+    return updated
+
+
+def _save_location(updated: dict, data: dict) -> dict | None:
+    location = data.get("location", "").strip()
+    if not location:
+        return None
+    if "identity" not in updated or not isinstance(updated["identity"], dict):
+        updated["identity"] = {}
+    updated["identity"]["location"] = location
+    return updated
+
+
+def _save_custom(updated: dict, data: dict) -> dict | None:
+    key = data.get("key", "").strip()
+    value = data.get("value", "").strip()
+    if not key or not value:
+        return None
+    if "custom" not in updated or not isinstance(updated["custom"], list):
+        updated["custom"] = []
+    for item in updated["custom"]:
+        if isinstance(item, dict) and item.get("key", "").lower() == key.lower():
+            item["value"] = value
+            return updated
+    updated["custom"].append({"key": key, "value": value})
+    return updated
+
+
+def _delete_people(updated: dict, data: dict) -> dict | None:
+    name = data.get("name", "").strip().lower()
+    if "people" in updated and isinstance(updated["people"], list):
+        updated["people"] = [
+            p for p in updated["people"]
+            if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+        ]
+    return updated
+
+
+def _delete_project(updated: dict, data: dict) -> dict | None:
+    name = data.get("name", "").strip().lower()
+    if "projects" in updated and isinstance(updated["projects"], dict):
+        active = updated["projects"].get("active", [])
+        if isinstance(active, list):
+            updated["projects"]["active"] = [
+                p for p in active
+                if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+            ]
+    return updated
+
+
+def _delete_place(updated: dict, data: dict) -> dict | None:
+    name = data.get("name", "").strip().lower()
+    if "places" in updated and isinstance(updated["places"], list):
+        updated["places"] = [
+            p for p in updated["places"]
+            if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+        ]
+    return updated
+
+
+def _delete_media(updated: dict, data: dict) -> dict | None:
+    title = data.get("title", "").strip().lower()
+    if "media" in updated and isinstance(updated["media"], list):
+        updated["media"] = [
+            m for m in updated["media"]
+            if not (isinstance(m, dict) and m.get("title", "").lower() == title)
+        ]
+    return updated
+
+
+def _delete_custom(updated: dict, data: dict) -> dict | None:
+    key = data.get("key", "").strip().lower()
+    if "custom" in updated and isinstance(updated["custom"], list):
+        updated["custom"] = [
+            item for item in updated["custom"]
+            if not (isinstance(item, dict) and item.get("key", "").lower() == key)
+        ]
+    return updated
+
+
+# Registry: category → handler(updated, data) → dict | None
+_SAVE_HANDLERS: dict[str, Any] = {
+    "people":     _save_people,
+    "project":    _save_project,
+    "place":      _save_place,
+    "media":      _save_media,
+    "preference": _save_preference,
+    "job":        _save_job,
+    "location":   _save_location,
+    "custom":     _save_custom,
+}
+
+_DELETE_HANDLERS: dict[str, Any] = {
+    "people":  _delete_people,
+    "project": _delete_project,
+    "place":   _delete_place,
+    "media":   _delete_media,
+    "custom":  _delete_custom,
+}
+
+
+def _apply_memory_update(profile: dict, action: str, category: str, data: dict) -> dict | None:
+    """
+    Wendet das geparste Update auf das Profil-Dict an.
+
+    Phase 96 (Issue #8): Switch-Kaskade → Registry-Pattern.
+    bot_instruction wird nie übergeben (Abfang in memory_agent() davor).
+    """
+    updated = copy.deepcopy(profile)
+
+    if action in ("save", "update"):
+        handler = _SAVE_HANDLERS.get(category)
+        if handler is None:
+            logger.warning(f"_apply_memory_update: unbekannte category '{category}' für {action}")
+            return None
+        return handler(updated, data)
+
+    if action == "delete":
+        handler = _DELETE_HANDLERS.get(category)
+        if handler is None:
+            logger.warning(f"_apply_memory_update: unbekannte category '{category}' für delete")
+            return None
+        return handler(updated, data)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# YAML Review
+# ---------------------------------------------------------------------------
+
+async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
+    """Haiku reviewt das neue YAML.
+    Phase 65 Fix: HumanMessage top-level Import statt lokalem HM-Alias.
+    """
+    try:
+        llm = get_fast_llm()
+        prompt = _REVIEWER_PROMPT.format(
+            original=original_yaml[:2000],
+            new=new_yaml[:2000],
+        )
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        verdict = content.strip().upper()
+        is_valid = verdict == "VALID"
+        if not is_valid:
+            logger.warning(f"MemoryAgent Reviewer: INVALID – verdict='{verdict}'")
+        return is_valid
+    except Exception as e:
+        logger.error(f"MemoryAgent Reviewer Fehler: {e}")
+        return False
+
+
+def _build_confirmation(action: str, category: str, data: dict) -> str:
+    icons = {
+        "people": "👤", "project": "🚀", "place": "📍",
+        "media": "🎵", "preference": "⚙️", "job": "💼",
+        "location": "🏠", "custom": "📝", "bot_instruction": "🤖",
+    }
+    icon = icons.get(category, "✅")
+
+    if category == "bot_instruction":
+        text = data.get("text", "")
+        return f"🤖 Bot-Instruktion gespeichert:\n_{text}_\n\nAb sofort aktiv – kein Neustart nötig."
+    if action == "delete":
+        name = data.get("name") or data.get("title") or data.get("key", "Eintrag")
+        return f"🗑️ Gelöscht: {name}"
+    if category == "place":
+        name = data.get("name", "")
+        parts = [f"{icon} Ort gespeichert: **{name}**"]
+        if v := data.get("type", ""):
+            parts.append(f"Typ: {v}")
+        if v := data.get("location", ""):
+            parts.append(f"Wo: {v}")
+        if v := data.get("context", ""):
+            parts.append(f"Kontext: {v}")
+        return "\n".join(parts)
+    elif category == "media":
+        parts = [f"{icon} Gespeichert: **{data.get('title', '')}**"]
+        if v := data.get("artist", ""):
+            parts.append(f"von {v}")
+        if v := data.get("type", ""):
+            parts.append(f"({v})")
+        if v := data.get("context", ""):
+            parts.append(f"– {v}")
+        return " ".join(parts)
+    elif category == "people":
+        return f"{icon} Person gespeichert: **{data.get('name', '')}** – {data.get('context', '')}"
+    elif category == "project":
+        return f"{icon} Projekt gespeichert: **{data.get('name', '')}** – {data.get('description', '')}"
+    elif category == "job":
+        return f"{icon} Job aktualisiert: **{data.get('role', '')}** bei {data.get('employer', '')}"
+    elif category == "location":
+        return f"🏠 Standort aktualisiert: {data.get('location', '')}"
+    elif category == "preference":
+        return f"{icon} Präferenz gespeichert: {data.get('key', '')} = {data.get('value', '')}"
+    elif category == "custom":
+        return f"{icon} Notiert: {data.get('value', '')}"
+    return "✅ Gespeichert."
+
+
+async def memory_agent(state: AgentState) -> AgentState:
+    """
+    Vollständige Memory-Pipeline.
+    Phase 63: bot_instruction → claude.md
+    Phase 64: 'merke dir das' → vorherige Aussage als Bot-Instruktion
+    Phase 65: Security & Code Quality Fixes
+    Phase 89: Security Fixes:
+      - YAML-Review INVALID → fail-closed (kein Schreiben, kein add_note_to_profile Fallback)
+      - bot_instruction: Längen- und Forbidden-Pattern-Validierung
+      - Top-Level-Imports (yaml, profile) – kein Lazy Import mehr
+    Phase 96: _apply_memory_update Registry-Pattern (Issue #8)
+    """
+    try:
+        # ── Phase 64: "Merke dir das" → vorherige Message als Bot-Instruktion ──
+        current_human = _get_current_human_message(state["messages"])
+        if _is_merke_dir_das(current_human):
+            prev_human = _get_prev_human_message(state["messages"])
+            if not prev_human:
+                return {"messages": [AIMessage(content="Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")]}
+            instruction = await _formulate_bot_instruction_from_context(prev_human)
+            if not instruction:
+                return {"messages": [AIMessage(content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")]}
+
+            # Phase 89: Auch formulierte Instruktionen validieren
+            valid, reason = _validate_instruction(instruction)
+            if not valid:
+                logger.warning(f"MemoryAgent Phase89: formulierte Instruktion abgelehnt: {reason}")
+                return {"messages": [AIMessage(content="Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders.")]}
+
+            from agent.claude_md import append_to_claude_md
+            success = await append_to_claude_md(instruction)
+            if success:
+                return {"messages": [AIMessage(content=f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")]}
+            else:
+                return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion.")]}
+        # ─────────────────────────────────────────────────────────────────────
+
+        parsed = await _parse_memory_intent(state["messages"])
+        action = parsed.get("action", "error")
+        category = parsed.get("category", "custom")
+        data = parsed.get("data", {})
+
+        if action == "error" or not data:
+            return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
+
+        # ── Phase 63 + 89: bot_instruction → claude.md mit Validierung ───────
+        if action in ("save", "update") and category == "bot_instruction":
+            text = data.get("text", "").strip()
+            if not text:
+                return {"messages": [AIMessage(content="Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")]}
+
+            # Phase 89: Längen- und Forbidden-Pattern-Check
+            valid, reason = _validate_instruction(text)
+            if not valid:
+                logger.warning(f"MemoryAgent Phase89: bot_instruction abgelehnt – {reason}: {text[:80]}")
+                return {"messages": [AIMessage(content=f"Bot-Instruktion konnte nicht gespeichert werden: {reason}")]}
+
+            from agent.claude_md import append_to_claude_md
+            success = await append_to_claude_md(text)
+            if success:
+                return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
+            else:
+                return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion in claude.md.")]}
+        # ─────────────────────────────────────────────────────────────────────
+
+        current_profile = load_profile()
+        updated_profile = _apply_memory_update(current_profile, action, category, data)
+
+        if updated_profile is None:
+            fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
+            await add_note_to_profile(fallback)
+            confirmation = _build_confirmation(action, category, data)
+            return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")]}
+
+        original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        is_valid = await _review_yaml(original_yaml, new_yaml)
+        if not is_valid:
+            logger.warning(f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
+            return {"messages": [AIMessage(content="Konnte nicht gespeichert werden – bitte nochmal versuchen.")]}
+
+        try:
+            yaml.safe_load(new_yaml)
+        except yaml.YAMLError as e:
+            logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
+            return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – bitte nochmal versuchen.")]}
+
+        success = await write_profile(updated_profile)
+        if not success:
+            return {"messages": [AIMessage(content="Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")]}
+
+        logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
+        return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
+
+    except Exception as e:
+        logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")
+        return {"messages": [AIMessage(content="Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es nochmal.")]}

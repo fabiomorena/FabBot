@@ -109,6 +109,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Prompt-Cache – chat_agent cached claude.md + Sessions + Profil (TTL 60s), invalidate_chat_cache() aus profile/claude_md/session_summary (Issue #2) |
 | ✅ | Model-Validierung beim Start – validate_models_on_startup() in _post_init(), RuntimeError bei ungültigem ANTHROPIC_MODEL_SONNET/HAIKU (Issue #6) |
 | ✅ | stop_service() async – kein Event-Loop-Block im Shutdown-Hook (Issue #7) |
+| ✅ | memory_agent Registry-Pattern – _apply_memory_update Switch→Registry (8 Save + 5 Delete Handler, erweiterbar ohne if-Kaskade), Issue #8 |
 ---
 
 
@@ -278,6 +279,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 95** ✅ Performance – Prompt-Cache in chat_agent (TTL 60s, 0 Disk-Reads nach erstem Build, invalidate_chat_cache() aus profile.py / claude_md.py / session_summary.py), Issue #2
 - **Phase 95b** ✅ Security – Harte Model-String-Validierung beim Start (validate_models_on_startup(), RuntimeError fail-closed), Issue #6
 - **Phase 95c** ✅ Code Quality – stop_service() async def, await in _post_shutdown(), Issue #7
+- **Phase 96** ✅ Refactor – _apply_memory_update Switch→Registry-Pattern, 13 dedizierte Handler-Funktionen, Issue #8
 ---
 
 
