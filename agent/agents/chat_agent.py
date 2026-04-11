@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
 _background_tasks: set[asyncio.Task] = set()
 
-_CHAT_PROMPT_BASE = """[Aktuelles Datum/Uhrzeit: {datetime}]
+_CHAT_PROMPT_BASE = """AKTUELLE UHRZEIT UND DATUM: {datetime} – das ist die exakte Berliner Zeit. Wenn der User nach der Uhrzeit fragt, antworte NUR mit diesem Wert, keine andere Quelle verwenden.
 Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
 Beantworte die Frage des Users. Du hast Zugriff auf:

@@ -30,7 +30,7 @@ SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, 
 
 Verfuegbare Agenten:
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
-- terminal_agent: Shell-Befehle, aktuelles Datum/Uhrzeit abrufen, Speicher, CPU, Prozesse – NUR technische Systemabfragen
+- terminal_agent: Shell-Befehle, Speicher, CPU, Prozesse – NUR technische Systemabfragen, NICHT fuer Datum/Uhrzeit-Fragen
 - web_agent: STANDARD-AGENT fuer alle Fragen ueber die Welt, Personen, Ereignisse, Fakten.
   Nutze web_agent IMMER bei:
   - Fragen ueber reale Personen (lebt X noch? was macht X? wer ist X?)
@@ -51,7 +51,7 @@ Verfuegbare Agenten:
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
   NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
   NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen ('was steht in...', 'was habe ich notiert...')
-- chat_agent: NUR fuer rein konversationelle Nachrichten OHNE Faktenbezug zur Welt:
+- chat_agent: Konversationelle Nachrichten, Datum/Uhrzeit-Fragen ('wieviel uhr', 'welches datum', 'was ist heute'), persoenliche Fragen, Smalltalk:
   - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
   - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete)
   - Fragen ueber gespeicherte Notizen, Sessions oder Wissen ("was steht in meinen Sessions", "was habe ich ueber X notiert", "was weisst du ueber mein Projekt")
@@ -66,7 +66,7 @@ Verfuegbare Agenten:
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
 - Sonst: waehle den passenden Agenten
-- Im Zweifel zwischen web_agent und chat_agent: IMMER web_agent
+- Im Zweifel zwischen web_agent und chat_agent: web_agent – AUSNAHME: Datum/Uhrzeit-Fragen immer chat_agent
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
 - Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent (nicht memory_agent)
