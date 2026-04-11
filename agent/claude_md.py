@@ -1,5 +1,11 @@
 """
-claude.md Loader fuer FabBot – Phase 62/63/65/66/67/90.
+claude.md Loader fuer FabBot – Phase 62/63/65/66/67/90/95.
+
+Phase 95 Fix (Issue #2):
+- append_to_claude_md(): invalidate_chat_cache() nach dem Schreiben.
+  Wenn eine neue Bot-Instruktion gespeichert wird, soll chat_agent beim
+  nächsten Aufruf die aktualisierte claude.md lesen – nicht den alten
+  Prompt-Cache nutzen.
 
 Phase 90 Fixes:
 - _CLAUDE_MD_PATH: ~/.fabbot/claude.md statt Repo-Root
@@ -49,12 +55,6 @@ _MAX_AUTO_ENTRIES = 50
 # Phase 90: Defense-in-Depth – zweite Validierungsschicht in append_to_claude_md().
 # Schicht 1 (memory_agent.py, Phase 89): _validate_instruction() vor dem Aufruf.
 # Schicht 2 (hier): fängt direkte Aufrufe und umgangene Validierungen ab.
-# Muster:
-#   #{1,6}\s  – Markdown-Heading (## System, ### Admin …) anywhere in string
-#   ignore / vergiss / system prompt / override / jailbreak – Injection-Klassiker
-#   anweisung.*ignorier / ignorier.*anweisung – deutsche Varianten
-# re.IGNORECASE: Groß-/Kleinschreibung irrelevant.
-# Kein re.MULTILINE nötig: clean_text hat nach replace("\n", " ") keine Zeilenumbrüche.
 _APPEND_MAX_LEN = 200
 _APPEND_FORBIDDEN = re.compile(
     r"#{1,6}\s"
@@ -211,6 +211,11 @@ async def append_to_claude_md(text: str) -> bool:
     """
     Haengt eine neue Bot-Instruktion an claude.md an.
 
+    Phase 95 Fix (Issue #2): invalidate_chat_cache() nach dem Schreiben.
+    Wenn claude.md aktualisiert wird, muss der Prompt-Cache von chat_agent
+    sofort ungültig werden – sonst arbeitet chat_agent bis zu 60s mit dem
+    alten Stand.
+
     Phase 90 Fixes:
     1. load_claude_md() jetzt innerhalb des Locks (Race-Window-Fix).
        Vorher: Cache wurde außerhalb des Locks befüllt → andere Coroutine
@@ -278,10 +283,16 @@ async def append_to_claude_md(text: str) -> bool:
                 )
 
             # Phase 90 Race-Fix: Cache-Invalidierung UND Neu-Befüllung innerhalb des Locks.
-            # Vorher: load_claude_md() nach dem `async with`-Block → Race-Window.
-            # Jetzt:  identisches Muster wie reload_claude_md() (Phase 66/67).
             _claude_md_cache = None
             load_claude_md()
+
+        # Phase 95: Prompt-Cache von chat_agent invalidieren – außerhalb des
+        # _write_lock (kein Deadlock-Risiko, da verschiedene Locks).
+        try:
+            from agent.chat_agent import invalidate_chat_cache
+            invalidate_chat_cache()
+        except Exception as e:
+            logger.debug(f"invalidate_chat_cache (append_to_claude_md) fehlgeschlagen (ignoriert): {e}")
 
         logger.info(f"claude.md: Bot-Instruktion gespeichert: {clean_text[:80]}")
         return True

@@ -14,6 +14,11 @@ _write_profile_bytes() kopiert personal_profile.yaml → personal_profile.yaml.b
 bevor die Datei überschrieben wird. Gilt für Migration, add_note_to_profile()
 und write_profile(). Das Backup enthält immer den letzten guten Stand.
 
+Phase 95 Fix (Issue #2): invalidate_chat_cache() nach jedem Schreibvorgang.
+add_note_to_profile() und write_profile() rufen nach reload_profile()
+invalidate_chat_cache() auf – zwingt chat_agent beim nächsten Aufruf das
+Profil neu einzulesen statt veraltete Daten aus dem Prompt-Cache zu liefern.
+
 Lädt personal_profile.yaml aus dem Projektwurzelverzeichnis und stellt
 formatierte Kontext-Strings für die Agents bereit.
 
@@ -149,6 +154,8 @@ async def add_note_to_profile(text: str) -> bool:
     Gibt True zurück bei Erfolg, False bei Fehler.
 
     Phase 93: _write_profile_bytes() erstellt Backup vor dem Schreiben.
+    Phase 95: invalidate_chat_cache() nach reload_profile() – Prompt-Cache sofort
+    ungültig machen damit chat_agent die neue Note beim nächsten Aufruf sieht.
     """
     if not text or not text.strip():
         return False
@@ -169,6 +176,13 @@ async def add_note_to_profile(text: str) -> bool:
             serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
             _write_profile_bytes(encrypt(serialized))
         reload_profile()
+        # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
+        # liest das aktualisierte Profil neu ein.
+        try:
+            from agent.chat_agent import invalidate_chat_cache
+            invalidate_chat_cache()
+        except Exception as e:
+            logger.debug(f"invalidate_chat_cache (add_note) fehlgeschlagen (ignoriert): {e}")
         logger.info(f"Note zu Profil hinzugefügt: {text[:80]}")
         return True
     except Exception as e:
@@ -183,6 +197,8 @@ async def write_profile(profile: dict[str, Any]) -> bool:
     Gibt True zurück bei Erfolg, False bei Fehler.
 
     Phase 93: _write_profile_bytes() erstellt Backup vor dem Schreiben.
+    Phase 95: invalidate_chat_cache() nach reload_profile() – Prompt-Cache sofort
+    ungültig machen damit chat_agent das neue Profil beim nächsten Aufruf sieht.
     """
     if not profile or not isinstance(profile, dict):
         return False
@@ -203,6 +219,13 @@ async def write_profile(profile: dict[str, Any]) -> bool:
             from agent.crypto import encrypt
             _write_profile_bytes(encrypt(serialized))
         reload_profile()
+        # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
+        # liest das aktualisierte Profil neu ein.
+        try:
+            from agent.chat_agent import invalidate_chat_cache
+            invalidate_chat_cache()
+        except Exception as e:
+            logger.debug(f"invalidate_chat_cache (write_profile) fehlgeschlagen (ignoriert): {e}")
         logger.info("write_profile: Profil erfolgreich verschlüsselt gespeichert.")
         return True
     except Exception as e:

@@ -1,5 +1,11 @@
 """
-Session Summary für FabBot – Phase 73.
+Session Summary für FabBot – Phase 73/95.
+
+Phase 95 Fix (Issue #2):
+- summarize_session(): invalidate_chat_cache() nach erfolgreichem Schreiben.
+  Wenn eine neue Session-Summary gespeichert wird, soll chat_agent beim
+  nächsten Aufruf die aktualisierte Summary lesen – nicht den alten
+  Prompt-Cache mit veralteten Sessions nutzen.
 
 Erstellt täglich eine kompakte Zusammenfassung der Konversation und
 speichert sie als Markdown in ~/Documents/Wissen/Sessions/.
@@ -219,6 +225,10 @@ async def summarize_session(
     - Schneller exists()-Check außerhalb des Locks (fast path, kein Overhead)
     - LLM-Call außerhalb des Locks (langsam, soll Lock nicht halten)
     - Atomarer exists()-Check + Write innerhalb des Locks (TOCTOU-sicher)
+
+    Phase 95: invalidate_chat_cache() nach erfolgreichem Schreiben.
+    Neue Session-Summary → Prompt-Cache sofort ungültig → chat_agent liest
+    beim nächsten Aufruf die aktualisierte Summary.
     """
     target_date = target_date or date.today()
     path = _session_path(target_date)
@@ -254,13 +264,22 @@ async def summarize_session(
         return False
 
     # Phase 80: TOCTOU-sicherer Write – atomarer Check + Write innerhalb des Locks.
-    # Verhindert dass zwei gleichzeitige Aufrufe beide schreiben wenn der
-    # fast-path-Check gleichzeitig False zurückgibt.
+    success = False
     async with _summary_write_lock:
         if path.exists():
             logger.debug(f"SessionSummary: {path.name} wurde zwischenzeitlich erstellt – skip")
             return False
-        return _write_summary_file(path, summary, target_date)
+        success = _write_summary_file(path, summary, target_date)
+
+    # Phase 95: Prompt-Cache invalidieren – außerhalb des _summary_write_lock.
+    if success:
+        try:
+            from agent.chat_agent import invalidate_chat_cache
+            invalidate_chat_cache()
+        except Exception as e:
+            logger.debug(f"invalidate_chat_cache (summarize_session) fehlgeschlagen (ignoriert): {e}")
+
+    return success
 
 
 def load_session_summaries(n: int = 5) -> str:
