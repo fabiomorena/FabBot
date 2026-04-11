@@ -111,6 +111,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | stop_service() async – kein Event-Loop-Block im Shutdown-Hook (Issue #7) |
 | ✅ | memory_agent Registry-Pattern – _apply_memory_update Switch→Registry (8 Save + 5 Delete Handler, erweiterbar ohne if-Kaskade), Issue #8 |
 | ✅ | Telegram Dedup – _is_duplicate() zentraler Helper, deque(maxlen=200) verhindert Doppelverarbeitung bei Retries (Issue #10) |
+| ✅ | Datetime-Awareness | `get_current_datetime()` in `agent/utils.py` – Europe/Berlin (CET/CEST), alle Agenten-Prompts | Ph.98 |
 ---
 
 
@@ -282,6 +283,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 95c** ✅ Code Quality – stop_service() async def, await in _post_shutdown(), Issue #7
 - **Phase 96** ✅ Refactor – _apply_memory_update Switch→Registry-Pattern, 13 dedizierte Handler-Funktionen, Issue #8
 - **Phase 97** ✅ Refactor – _processed_message_ids deque(maxlen=200), _is_duplicate() Helper in on_message/on_voice/on_photo/on_document, Issue #10
+- **Phase 98** ✅ Feature – `get_current_datetime()` in `agent/utils.py` (Europe/Berlin), in alle Agenten-Prompts injiziert, 13 neue Tests, 849 Tests grün
 ---
 
 
