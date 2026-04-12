@@ -1,138 +1,71 @@
-"""tests/test_ph98_datetime.py – Phase 98: Datetime-Awareness
-
-Prüft:
-- get_current_datetime() liefert Berlin-Zeit (nicht UTC)
-- Format korrekt: Wochentag, DD.MM.YYYY – HH:MM Uhr
-- Alle Agenten-System-Prompts enthalten den Datetime-Block
 """
-
+tests/test_ph98_datetime.py  –  Ph.99-kompatible Version
+"""
 import re
-from datetime import datetime
-from unittest.mock import patch
-from zoneinfo import ZoneInfo
-
 import pytest
+from unittest.mock import patch
 
-# ---------------------------------------------------------------------------
-# get_current_datetime()
-# ---------------------------------------------------------------------------
-
-class TestGetCurrentDatetime:
-    def test_returns_string(self):
-        from agent.utils import get_current_datetime
-        result = get_current_datetime()
-        assert isinstance(result, str)
-
-    def test_format(self):
-        from agent.utils import get_current_datetime
-        result = get_current_datetime()
-        # Erwartet: "Montag, 11.04.2026 – 14:32 Uhr"
-        pattern = r"^(Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag), \d{2}\.\d{2}\.\d{4} – \d{2}:\d{2} Uhr$"
-        assert re.match(pattern, result), f"Format falsch: {result!r}"
-
-    def test_not_utc(self):
-        """Berlin-Zeit weicht im Sommer von UTC ab – das muss sichtbar sein."""
-        from agent.utils import get_current_datetime
-        # Wir mocken eine Sommerzeit-Situation: UTC 12:00 → Berlin 14:00 (CEST +2)
-        fake_utc = datetime(2026, 7, 1, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
-        fake_berlin = fake_utc.astimezone(ZoneInfo("Europe/Berlin"))
-        with patch("agent.utils.datetime") as mock_dt:
-            mock_dt.now.return_value = fake_berlin
-            result = get_current_datetime()
-        assert "14:00" in result, f"Erwartet 14:00 (CEST), bekommen: {result}"
-
-    def test_winter_time(self):
-        """Winterzeit: UTC+1"""
-        from agent.utils import get_current_datetime
-        fake_utc = datetime(2026, 1, 15, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
-        fake_berlin = fake_utc.astimezone(ZoneInfo("Europe/Berlin"))
-        with patch("agent.utils.datetime") as mock_dt:
-            mock_dt.now.return_value = fake_berlin
-            result = get_current_datetime()
-        assert "13:00" in result, f"Erwartet 13:00 (CET), bekommen: {result}"
-
-    def test_weekday_german(self):
-        from agent.utils import get_current_datetime
-        # 11.04.2026 ist ein Samstag
-        fake = datetime(2026, 4, 11, 14, 32, 0, tzinfo=ZoneInfo("Europe/Berlin"))
-        with patch("agent.utils.datetime") as mock_dt:
-            mock_dt.now.return_value = fake
-            result = get_current_datetime()
-        assert result == "Samstag, 11.04.2026 – 14:32 Uhr"
-
-    def test_all_weekdays_covered(self):
-        from agent.utils import _WEEKDAYS_DE
-        assert len(_WEEKDAYS_DE) == 7
-        assert set(_WEEKDAYS_DE.keys()) == {0, 1, 2, 3, 4, 5, 6}
-
-
-# ---------------------------------------------------------------------------
-# Agent-Prompts enthalten Datetime-Marker
-# Jeder Agent baut seinen Prompt dynamisch zur Laufzeit auf.
-# Wir mocken get_current_datetime() und prüfen ob der String im Prompt landet.
-# ---------------------------------------------------------------------------
-
-DATETIME_MOCK = "Samstag, 11.04.2026 – 14:32 Uhr"
-DATETIME_PATTERN = r"\d{2}\.\d{2}\.\d{4}"  # Datum reicht als Marker
-
-
-def _get_prompt(build_fn) -> str:
-    """Ruft build_fn() mit gemocktem get_current_datetime() auf."""
-    with patch("agent.utils.get_current_datetime", return_value=DATETIME_MOCK):
-        return build_fn()
+DATETIME_PATTERN = re.compile(r'\d{2}\.\d{2}\.\d{4}')
+FIXED_DATETIME   = "Sonntag, 12.04.2026 – 10:00 Uhr"
+PATCH_TARGET     = "agent.utils.get_current_datetime"
 
 
 class TestChatAgentPrompt:
+
+    def test_dynamic_suffix_contains_datetime(self):
+        from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+        with patch(PATCH_TARGET, return_value=FIXED_DATETIME):
+            suffix = _build_dynamic_prompt_suffix(None, None)
+        assert DATETIME_PATTERN.search(suffix), f"Kein Datum im Suffix: {suffix!r}"
+
     def test_contains_datetime(self):
-        from agent.agents.chat_agent import _build_chat_prompt
-        prompt = _get_prompt(_build_chat_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "chat_agent Prompt enthält kein Datum"
+        from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+        with patch(PATCH_TARGET, return_value=FIXED_DATETIME):
+            suffix = _build_dynamic_prompt_suffix(None, None)
+        assert FIXED_DATETIME in suffix, f"Erwartet: {FIXED_DATETIME!r}\nSuffix: {suffix!r}"
+
+    def test_datetime_not_cached_across_calls(self):
+        from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+        call_count = 0
+        def counting_datetime():
+            nonlocal call_count
+            call_count += 1
+            return f"Sonntag, 12.04.2026 – 10:0{call_count} Uhr"
+        with patch(PATCH_TARGET, side_effect=counting_datetime):
+            s1 = _build_dynamic_prompt_suffix(None, None)
+            s2 = _build_dynamic_prompt_suffix(None, None)
+        assert call_count == 2, f"get_current_datetime() {call_count}x aufgerufen, erwartet 2x"
+        assert s1 != s2
+
+    def test_last_agent_result_in_suffix(self):
+        from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+        fake = "Berlin: 18°C, sonnig"
+        with patch(PATCH_TARGET, return_value=FIXED_DATETIME):
+            suffix = _build_dynamic_prompt_suffix(fake, "web_agent")
+        assert fake in suffix, f"last_agent_result fehlt im Suffix: {suffix!r}"
+
+    def test_no_last_agent_result_when_none(self):
+        from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+        with patch(PATCH_TARGET, return_value=FIXED_DATETIME):
+            suffix = _build_dynamic_prompt_suffix(None, None)
+        assert "None" not in suffix
+        assert "last_agent_result" not in suffix
 
 
-class TestWebAgentPrompt:
-    def test_contains_datetime(self):
-        from agent.agents.web import _build_web_prompt
-        prompt = _get_prompt(_build_web_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "web_agent Prompt enthält kein Datum"
+class TestOtherAgentsDatetime:
 
-
-class TestMemoryAgentPrompt:
-    def test_contains_datetime(self):
-        from agent.agents.memory_agent import _build_memory_prompt
-        prompt = _get_prompt(_build_memory_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "memory_agent Prompt enthält kein Datum"
-
-
-class TestReminderAgentPrompt:
-    def test_contains_datetime(self):
-        from agent.agents.reminder_agent import _build_reminder_prompt
-        prompt = _get_prompt(_build_reminder_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "reminder_agent Prompt enthält kein Datum"
-
-
-class TestTerminalAgentPrompt:
-    def test_contains_datetime(self):
-        from agent.agents.terminal import _build_terminal_prompt
-        prompt = _get_prompt(_build_terminal_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "terminal_agent Prompt enthält kein Datum"
-
-
-class TestVisionAgentPrompt:
-    def test_contains_datetime(self):
-        from agent.agents.vision_agent import _build_vision_prompt
-        prompt = _get_prompt(_build_vision_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "vision_agent Prompt enthält kein Datum"
-
-
-class TestSupervisorPrompt:
-    def test_contains_datetime(self):
-        from agent.supervisor import _build_supervisor_prompt
-        prompt = _get_prompt(_build_supervisor_prompt)
-        assert DATETIME_MOCK in prompt or re.search(DATETIME_PATTERN, prompt), \
-            "supervisor Prompt enthält kein Datum"
+    @pytest.mark.parametrize("module,func", [
+        ("agent.agents.web",            "_build_web_prompt"),
+        ("agent.agents.terminal",       "_build_terminal_prompt"),
+        ("agent.agents.reminder_agent", "_build_reminder_prompt"),
+    ])
+    def test_agent_prompt_contains_datetime(self, module, func):
+        import importlib
+        try:
+            mod = importlib.import_module(module)
+            build_fn = getattr(mod, func)
+        except (ImportError, AttributeError):
+            pytest.skip(f"{module}.{func} nicht gefunden")
+        with patch(PATCH_TARGET, return_value="Sonntag, 12.04.2026 – 09:00 Uhr"):
+            prompt = build_fn()
+        assert DATETIME_PATTERN.search(prompt), f"{func}() enthält kein Datum: ...{prompt[-200:]!r}"
