@@ -284,6 +284,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 96** ✅ Refactor – _apply_memory_update Switch→Registry-Pattern, 13 dedizierte Handler-Funktionen, Issue #8
 - **Phase 97** ✅ Refactor – _processed_message_ids deque(maxlen=200), _is_duplicate() Helper in on_message/on_voice/on_photo/on_document, Issue #10
 - **Phase 98** ✅ Feature – `get_current_datetime()` in `agent/utils.py` (Europe/Berlin), in alle Agenten-Prompts injiziert, 13 neue Tests, 849 Tests grün
+- **Phase 99** ✅ Feature – State-Transfer zwischen Agents (last_agent_result), get_current_datetime() Cache-Fix, 863 Tests grün
 ---
 
 
