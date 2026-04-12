@@ -86,10 +86,10 @@ def _validate_app_name(app: str) -> tuple[bool, str]:
 
 
 async def computer_agent(state: AgentState) -> AgentState:
-    """Phase 88: ainvoke statt invoke – verhindert Event-Loop-Blockierung."""
+    """Phase 88: ainvoke. Phase 99: last_agent_result in allen Returns."""
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
-    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
+    response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -98,23 +98,25 @@ async def computer_agent(state: AgentState) -> AgentState:
     content = re.sub(r"^```(?:json)?\s*", "", content)
     content = re.sub(r"\s*```$", "", content).strip()
 
+    def _err(msg: str) -> AgentState:
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "computer_agent"}
+
     if content == "UNSUPPORTED":
-        return {"messages": [AIMessage(content="Diese Aktion wird vom Computer-Agent nicht unterstuetzt.")]}
+        return _err("Diese Aktion wird vom Computer-Agent nicht unterstuetzt.")
 
     try:
         parsed = json.loads(content)
         action = parsed.get("action")
     except (json.JSONDecodeError, AttributeError) as e:
-        return {"messages": [AIMessage(content=f"Fehler beim Parsen: {e}")]}
+        return _err(f"Fehler beim Parsen: {e}")
 
     if action == "screenshot":
         log_action("computer_agent", "screenshot", "taking screenshot",
                    state.get("telegram_chat_id"), status="executed")
         img_b64 = _take_screenshot()
         if not img_b64:
-            return {"messages": [AIMessage(content="Fehler beim Erstellen des Screenshots.")]}
+            return _err("Fehler beim Erstellen des Screenshots.")
 
-        # Phase 88: ainvoke statt invoke
         analysis_response = await llm.ainvoke([
             HumanMessage(content=[
                 {
@@ -135,6 +137,8 @@ async def computer_agent(state: AgentState) -> AgentState:
         return {
             "messages": [AIMessage(content=f"{Proto.SCREENSHOT}{analysis.strip()}")],
             "next_agent": None,
+            "last_agent_result": None,
+            "last_agent_name": "computer_agent",
         }
 
     elif action == "click":
@@ -143,34 +147,39 @@ async def computer_agent(state: AgentState) -> AgentState:
         return {
             "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}click:{x}:{y}:")],
             "next_agent": None,
+            "last_agent_result": None,
+            "last_agent_name": "computer_agent",
         }
 
     elif action == "type":
         text = parsed.get("text", "")
         valid, reason = _validate_typewrite_text(text)
         if not valid:
-            return {"messages": [AIMessage(content=f"Ungültiger Text: {reason}")]}
+            return _err(f"Ungültiger Text: {reason}")
         return {
             "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}type:0:0:{text}")],
             "next_agent": None,
+            "last_agent_result": None,
+            "last_agent_name": "computer_agent",
         }
 
     elif action == "open_app":
         app = parsed.get("app", "")
         valid, clean_app = _validate_app_name(app)
         if not valid:
-            return {"messages": [AIMessage(content=f"Ungültiger App-Name: {clean_app}")]}
+            return _err(f"Ungültiger App-Name: {clean_app}")
         return {
             "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}open_app:0:0:{clean_app}")],
             "next_agent": None,
+            "last_agent_result": None,
+            "last_agent_name": "computer_agent",
         }
 
     else:
-        return {"messages": [AIMessage(content=f"Unbekannte Aktion: {action}")]}
+        return _err(f"Unbekannte Aktion: {action}")
 
 
 def computer_agent_execute(action: str, x: int, y: int, text: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung ausgefuehrt."""
     try:
         import pyautogui
         pyautogui.FAILSAFE = True

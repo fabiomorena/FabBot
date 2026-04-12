@@ -10,9 +10,11 @@ from agent.protocol import Proto
 
 
 def _build_prompt() -> str:
+    from agent.utils import get_current_datetime
     today = date.today().strftime("%d.%m.%Y")
     weekday = datetime.now().strftime("%A")
-    return f"""Du bist ein spezialisierter Kalender-Agent. Heutiges Datum: {today} ({weekday})
+    dt = get_current_datetime()
+    return f"""Du bist ein spezialisierter Kalender-Agent. Aktuelles Datum/Uhrzeit: {dt} ({weekday})
 
 Analysiere die Anfrage und antworte NUR mit JSON:
 {{
@@ -143,23 +145,25 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
 
 
 async def calendar_agent(state: AgentState) -> AgentState:
-    """Phase 88: ainvoke statt invoke – verhindert Event-Loop-Blockierung."""
+    """Phase 88: ainvoke. Phase 99: last_agent_result in allen Returns."""
     llm = get_llm()
     human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
     last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
     messages = [SystemMessage(content=_build_prompt())] + last_msg
-    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
+    response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     content = _extract_json(content)
 
-    if not content or content == "UNSUPPORTED":
-        return {"messages": [AIMessage(content="Diese Aktion wird vom Kalender-Agent nicht unterstuetzt.")]}
+    def _err(msg: str) -> AgentState:
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "calendar_agent"}
 
-    # Phase 75: Natürliche Sprache abfangen
+    if not content or content == "UNSUPPORTED":
+        return _err("Diese Aktion wird vom Kalender-Agent nicht unterstuetzt.")
+
     if not content.strip().startswith("{"):
-        return {"messages": [AIMessage(content=content.strip())]}
+        return _err(content.strip())
 
     try:
         parsed = json.loads(content)
@@ -178,7 +182,8 @@ async def calendar_agent(state: AgentState) -> AgentState:
         events = _get_apple_events(date_from, date_to)
         formatted = _format_events(events)
         period = date_from if date_from == date_to else f"{date_from} bis {date_to}"
-        return {"messages": [AIMessage(content=f"Termine {period}:\n\n{formatted}")]}
+        result = f"Termine {period}:\n\n{formatted}"
+        return {"messages": [AIMessage(content=result)], "last_agent_result": result, "last_agent_name": "calendar_agent"}
 
     elif action == "create_event":
         title = parsed.get("title", "").strip() if isinstance(parsed, dict) else ""
@@ -186,14 +191,14 @@ async def calendar_agent(state: AgentState) -> AgentState:
         end_time = parsed.get("end_time", "").strip() if isinstance(parsed, dict) else ""
 
         if not title or not start_time:
-            return {"messages": [AIMessage(content="Fehler: Titel und Startzeit sind erforderlich.")]}
+            return _err("Fehler: Titel und Startzeit sind erforderlich.")
 
         try:
             datetime.fromisoformat(start_time)
             if end_time:
                 datetime.fromisoformat(end_time)
         except ValueError:
-            return {"messages": [AIMessage(content="Fehler: Ungültiges Zeitformat. Erwartet: YYYY-MM-DDTHH:MM:SS")]}
+            return _err("Fehler: Ungültiges Zeitformat. Erwartet: YYYY-MM-DDTHH:MM:SS")
 
         confirm_text = f"Neuer Termin:\n{title}\n{start_time}"
         if end_time:
@@ -203,7 +208,9 @@ async def calendar_agent(state: AgentState) -> AgentState:
             "messages": [AIMessage(content=f"{Proto.CONFIRM_CREATE_EVENT}{title}::{start_time}::{end_time}")],
             "next_agent": None,
             "_confirm_display": confirm_text,
+            "last_agent_result": None,
+            "last_agent_name": "calendar_agent",
         }
 
     else:
-        return {"messages": [AIMessage(content=f"Unbekannte Aktion: {action}")]}
+        return _err(f"Unbekannte Aktion: {action}")

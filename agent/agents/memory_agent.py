@@ -1,18 +1,7 @@
 """
-Memory Agent fuer FabBot – Phase 45/46/63/64/65/89.
+Memory Agent fuer FabBot – Phase 45/46/63/64/65/89/99.
 
-Phase 89 Fixes:
-- YAML-Review INVALID → fail-closed: kein Schreiben mehr (weder yaml noch add_note_to_profile)
-- bot_instruction: Längenlimit (_INSTRUCTION_MAX_LEN) + Forbidden-Pattern (_INSTRUCTION_FORBIDDEN)
-  verhindert persistente Prompt-Injection via claude.md
-- Lazy Imports (import yaml, agent.profile) → Top-Level (bessere Fehlerdiagnose)
-
-Phase 65 Fixes (bestehend):
-- get_fast_llm() statt get_llm() in _formulate_bot_instruction_from_context()
-- Newline-Sanitizing + Laengenbegrenzung im Ergebnis
-- Rekursiver Trigger in _get_prev_human_message() abgefangen
-- HumanMessage top-level Import in _review_yaml() (kein lokaler HM-Alias)
-- MERKE_DIR_DAS_TRIGGERS als oeffentliche Konstante (Single Source of Truth)
+Phase 99: last_agent_result + last_agent_name in allen memory_agent() Returns.
 """
 
 import copy
@@ -31,21 +20,12 @@ from agent.utils import get_current_datetime
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# bot_instruction Security – Phase 89
-# ---------------------------------------------------------------------------
-
 _INSTRUCTION_MAX_LEN = 200
 _INSTRUCTION_FORBIDDEN = re.compile(
     r"(ignore|vergiss|system\s*prompt|prompt|instruction|override|jailbreak|"
     r"anweisung.*ignorier|ignorier.*anweisung)",
     re.I,
 )
-
-# ---------------------------------------------------------------------------
-# Public Konstante – Single Source of Truth fuer Trigger-Erkennung.
-# Supervisor-Prompt und memory_agent nutzen dieselbe Quelle.
-# ---------------------------------------------------------------------------
 
 MERKE_DIR_DAS_TRIGGERS = frozenset({
     "merke dir das",
@@ -62,7 +42,6 @@ MERKE_DIR_DAS_TRIGGERS = frozenset({
     "merk dir das bitte",
 })
 
-# Interner Alias – bestehender Code unveraendert
 _MERKE_DIR_DAS_TRIGGERS = MERKE_DIR_DAS_TRIGGERS
 
 _FORMULATE_PROMPT = """Du bist ein Assistent der Bot-Instruktionen formuliert.
@@ -84,13 +63,11 @@ Gute Beispiele:
 
 
 def _is_merke_dir_das(text: str) -> bool:
-    """Erkennt kurze 'merke dir das' Nachrichten ohne weiteren spezifischen Inhalt."""
     normalized = text.strip().lower().rstrip("!.?").strip()
     return normalized in MERKE_DIR_DAS_TRIGGERS
 
 
 def _get_current_human_message(messages: list) -> str:
-    """Gibt den Text der letzten HumanMessage zurueck."""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             content = msg.content
@@ -101,12 +78,6 @@ def _get_current_human_message(messages: list) -> str:
 
 
 def _get_prev_human_message(messages: list) -> str:
-    """
-    Gibt den Text der vorletzten HumanMessage zurueck (vor 'merke dir das').
-
-    Phase 65 Fix: Prueft ob der Kandidat selbst ein Trigger ist
-    (rekursive Referenz vermeiden).
-    """
     human_texts = []
     for msg in messages:
         if isinstance(msg, HumanMessage):
@@ -120,7 +91,6 @@ def _get_prev_human_message(messages: list) -> str:
 
     if len(human_texts) >= 2:
         candidate = human_texts[-2]
-        # Rekursions-Schutz: Wenn auch der Kandidat ein Trigger ist → kein Kontext
         if _is_merke_dir_das(candidate):
             logger.debug("_get_prev_human_message: Kandidat ist selbst ein Trigger – kein Kontext.")
             return ""
@@ -129,12 +99,6 @@ def _get_prev_human_message(messages: list) -> str:
 
 
 def _validate_instruction(text: str) -> tuple[bool, str]:
-    """
-    Phase 89: Validiert eine Bot-Instruktion vor dem Schreiben in claude.md.
-
-    Verhindert persistente Prompt-Injection via bot_instruction-Kategorie.
-    Gibt (True, "") bei Erfolg, (False, reason) bei Ablehnung zurück.
-    """
     if not text or not text.strip():
         return False, "Leere Instruktion."
     if len(text) > _INSTRUCTION_MAX_LEN:
@@ -145,26 +109,15 @@ def _validate_instruction(text: str) -> tuple[bool, str]:
 
 
 async def _formulate_bot_instruction_from_context(context: str) -> str:
-    """
-    Formuliert aus einer Aussage des Users eine Bot-Instruktion.
-
-    Phase 65 Fixes:
-    - get_fast_llm() statt get_llm() (Haiku reicht fuer 1-Satz-Formulierung)
-    - Newline-Sanitizing im Ergebnis
-    - Laengenbegrenzung auf 200 Zeichen
-    """
     try:
-        llm = get_fast_llm()  # Haiku – ~10x guenstiger als Sonnet fuer diese Aufgabe
+        llm = get_fast_llm()
         prompt = _FORMULATE_PROMPT.format(context=context[:500])
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-
-        # Sanitize: Newlines entfernen + Laenge begrenzen
         result = content.strip().replace("\n", " ").replace("\r", "").strip()
         result = result[:_INSTRUCTION_MAX_LEN]
-
         logger.info(f"MemoryAgent Phase64: Instruktion formuliert: {result[:80]}")
         return result
     except Exception as e:
@@ -247,7 +200,6 @@ Nur VALID oder INVALID."""
 
 
 async def _parse_memory_intent(messages: list) -> dict[str, Any]:
-    """Sonnet versteht die Anfrage + Kontext → strukturiertes JSON."""
     try:
         llm = get_llm()
         all_filtered = []
@@ -274,7 +226,6 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
 
 
 def _apply_memory_update(profile: dict, action: str, category: str, data: dict) -> dict | None:
-    """Wendet das geparste Update auf das Profil-Dict an."""
     updated = copy.deepcopy(profile)
 
     if action in ("save", "update"):
@@ -446,16 +397,12 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
 
 
 async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
-    """Haiku reviewt das neue YAML.
-    Phase 65 Fix: HumanMessage top-level Import statt lokalem HM-Alias.
-    """
     try:
         llm = get_fast_llm()
         prompt = _REVIEWER_PROMPT.format(
             original=original_yaml[:2000],
             new=new_yaml[:2000],
         )
-        # Phase 65: HumanMessage direkt nutzen (kein lokaler 'as HM' Import)
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
@@ -518,41 +465,41 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
     return "✅ Gespeichert."
 
 
+def _make_result(msg: str) -> AgentState:
+    """Phase 99: Einheitlicher Return mit last_agent_result."""
+    return {
+        "messages": [AIMessage(content=msg)],
+        "last_agent_result": msg,
+        "last_agent_name": "memory_agent",
+    }
+
+
 async def memory_agent(state: AgentState) -> AgentState:
     """
     Vollständige Memory-Pipeline.
-    Phase 63: bot_instruction → claude.md
-    Phase 64: 'merke dir das' → vorherige Aussage als Bot-Instruktion
-    Phase 65: Security & Code Quality Fixes
-    Phase 89: Security Fixes:
-      - YAML-Review INVALID → fail-closed (kein Schreiben, kein add_note_to_profile Fallback)
-      - bot_instruction: Längen- und Forbidden-Pattern-Validierung
-      - Top-Level-Imports (yaml, profile) – kein Lazy Import mehr
+    Phase 99: last_agent_result + last_agent_name in allen Returns.
     """
     try:
-        # ── Phase 64: "Merke dir das" → vorherige Message als Bot-Instruktion ──
         current_human = _get_current_human_message(state["messages"])
         if _is_merke_dir_das(current_human):
             prev_human = _get_prev_human_message(state["messages"])
             if not prev_human:
-                return {"messages": [AIMessage(content="Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")]}
+                return _make_result("Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")
             instruction = await _formulate_bot_instruction_from_context(prev_human)
             if not instruction:
-                return {"messages": [AIMessage(content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")]}
+                return _make_result("Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")
 
-            # Phase 89: Auch formulierte Instruktionen validieren
             valid, reason = _validate_instruction(instruction)
             if not valid:
                 logger.warning(f"MemoryAgent Phase89: formulierte Instruktion abgelehnt: {reason}")
-                return {"messages": [AIMessage(content="Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders.")]}
+                return _make_result("Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders.")
 
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(instruction)
             if success:
-                return {"messages": [AIMessage(content=f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")]}
+                return _make_result(f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")
             else:
-                return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion.")]}
-        # ─────────────────────────────────────────────────────────────────────
+                return _make_result("Fehler beim Speichern der Bot-Instruktion.")
 
         parsed = await _parse_memory_intent(state["messages"])
         action = parsed.get("action", "error")
@@ -560,27 +507,25 @@ async def memory_agent(state: AgentState) -> AgentState:
         data = parsed.get("data", {})
 
         if action == "error" or not data:
-            return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
+            return _make_result("Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")
 
-        # ── Phase 63 + 89: bot_instruction → claude.md mit Validierung ───────
         if action in ("save", "update") and category == "bot_instruction":
             text = data.get("text", "").strip()
             if not text:
-                return {"messages": [AIMessage(content="Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")]}
+                return _make_result("Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")
 
-            # Phase 89: Längen- und Forbidden-Pattern-Check
             valid, reason = _validate_instruction(text)
             if not valid:
                 logger.warning(f"MemoryAgent Phase89: bot_instruction abgelehnt – {reason}: {text[:80]}")
-                return {"messages": [AIMessage(content=f"Bot-Instruktion konnte nicht gespeichert werden: {reason}")]}
+                return _make_result(f"Bot-Instruktion konnte nicht gespeichert werden: {reason}")
 
             from agent.claude_md import append_to_claude_md
             success = await append_to_claude_md(text)
             if success:
-                return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
+                confirmation = _build_confirmation(action, category, data)
+                return _make_result(confirmation)
             else:
-                return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion in claude.md.")]}
-        # ─────────────────────────────────────────────────────────────────────
+                return _make_result("Fehler beim Speichern der Bot-Instruktion in claude.md.")
 
         current_profile = load_profile()
         updated_profile = _apply_memory_update(current_profile, action, category, data)
@@ -589,41 +534,36 @@ async def memory_agent(state: AgentState) -> AgentState:
             fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
             await add_note_to_profile(fallback)
             confirmation = _build_confirmation(action, category, data)
-            return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")]}
+            return _make_result(f"{confirmation}\n_(als Notiz gespeichert)_")
 
         original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
         new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         is_valid = await _review_yaml(original_yaml, new_yaml)
         if not is_valid:
-            # Phase 89: Fail-closed – kein Fallback-Schreiben wenn Review fehlschlägt.
-            # Vorher: add_note_to_profile() wurde trotzdem aufgerufen → Review war wirkungslos.
-            # Jetzt: Kein Schreiben, klare Fehlermeldung. Der User kann es neu versuchen.
             logger.warning(f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
-            return {"messages": [AIMessage(content="Konnte nicht gespeichert werden – bitte nochmal versuchen.")]}
+            return _make_result("Konnte nicht gespeichert werden – bitte nochmal versuchen.")
 
         try:
             yaml.safe_load(new_yaml)
         except yaml.YAMLError as e:
             logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
-            # Phase 89: Auch hier fail-closed – kein add_note_to_profile
-            return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – bitte nochmal versuchen.")]}
+            return _make_result("Fehler bei der YAML-Validierung – bitte nochmal versuchen.")
 
         success = await write_profile(updated_profile)
         if not success:
-            return {"messages": [AIMessage(content="Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")]}
+            return _make_result("Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")
 
         logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
-        return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
+        confirmation = _build_confirmation(action, category, data)
+        return _make_result(confirmation)
 
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")
-        return {"messages": [AIMessage(content="Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es nochmal.")]}
+        return _make_result("Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es nochmal.")
 
 
 def _build_memory_prompt() -> str:
-    """Memory-Agent Haupt-Prompt mit aktuellem Datum (Ph.98)."""
+    """Ph.98 Kompatibilitäts-Alias – Ph.99: get_current_datetime() direkt in _parse_memory_intent()."""
     from agent.utils import get_current_datetime
-    dt = get_current_datetime()
-    base = _PARSER_PROMPT_BASE if "_PARSER_PROMPT_BASE" in globals() else ""
-    return f"[Aktuelles Datum/Uhrzeit: {dt}]\n" + base
+    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"

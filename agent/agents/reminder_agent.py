@@ -1,6 +1,6 @@
 """
 Reminder Agent fuer FabBot.
-Versteht natuerliche Sprache fuer Erinnerungen und speichert sie in SQLite.
+Phase 99: last_agent_result + last_agent_name in allen Returns.
 """
 import json
 import logging
@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 def _build_prompt() -> str:
+    from agent.utils import get_current_datetime
     now = datetime.now()
     today = date.today().isoformat()
     time_str = now.strftime("%H:%M")
-    return f"""Du bist ein spezialisierter Erinnerungs-Agent. Aktuelles Datum: {today}, Uhrzeit: {time_str}
+    dt = get_current_datetime()
+    return f"""Du bist ein spezialisierter Erinnerungs-Agent. Aktuelles Datum/Uhrzeit: {dt}
 
 Analysiere die Anfrage und antworte NUR mit JSON:
 
@@ -64,8 +66,17 @@ def _extract_json(text: str) -> str:
     return text
 
 
+def _make_result(msg: str) -> AgentState:
+    """Hilfsfunktion: einheitlicher Return mit last_agent_result."""
+    return {
+        "messages": [AIMessage(content=msg)],
+        "last_agent_result": msg,
+        "last_agent_name": "reminder_agent",
+    }
+
+
 async def reminder_agent(state: AgentState) -> AgentState:
-    """Verarbeitet Erinnerungs-Anfragen."""
+    """Verarbeitet Erinnerungs-Anfragen. Phase 99: last_agent_result in allen Returns."""
     from bot.reminders import add_reminder, list_reminders, delete_reminder
 
     llm = get_llm()
@@ -83,18 +94,16 @@ async def reminder_agent(state: AgentState) -> AgentState:
     content = _extract_json(content)
 
     if content == "UNSUPPORTED":
-        return {"messages": [AIMessage(content="Diese Erinnerung konnte ich nicht verstehen. Bitte formuliere es anders, z.B. 'Erinnere mich morgen um 9 Uhr ans Meeting'.")]}
+        return _make_result("Diese Erinnerung konnte ich nicht verstehen. Bitte formuliere es anders, z.B. 'Erinnere mich morgen um 9 Uhr ans Meeting'.")
 
-    # Phase 75: Natürliche Sprache abfangen – LLM hat Rückfrage statt JSON geliefert.
-    # Alle validen Routing-Antworten dieses Agents beginnen mit '{'.
     if not content.strip().startswith("{"):
-        return {"messages": [AIMessage(content=content.strip())]}
+        return _make_result(content.strip())
 
     try:
         parsed = json.loads(content)
         action = parsed.get("action")
     except (json.JSONDecodeError, AttributeError):
-        return {"messages": [AIMessage(content="Fehler beim Verarbeiten der Erinnerung.")]}
+        return _make_result("Fehler beim Verarbeiten der Erinnerung.")
 
     chat_id = state.get("telegram_chat_id", 0)
 
@@ -102,41 +111,41 @@ async def reminder_agent(state: AgentState) -> AgentState:
         text = parsed.get("text", "").strip()
         remind_at_str = parsed.get("remind_at", "")
         if not text or not remind_at_str:
-            return {"messages": [AIMessage(content="Bitte gib an woran und wann ich dich erinnern soll.")]}
+            return _make_result("Bitte gib an woran und wann ich dich erinnern soll.")
         try:
             remind_at = datetime.fromisoformat(remind_at_str)
         except ValueError:
-            return {"messages": [AIMessage(content="Ungültiges Zeitformat. Bitte versuche es nochmal.")]}
-        reminder_id = add_reminder(chat_id, text, remind_at)
+            return _make_result("Ungültiges Zeitformat. Bitte versuche es nochmal.")
+        add_reminder(chat_id, text, remind_at)
         time_str = remind_at.strftime("%d.%m.%Y um %H:%M Uhr")
-        return {"messages": [AIMessage(content=f"✅ Erinnerung gesetzt! Ich erinnere dich am {time_str} an: {text}")]}
+        msg = f"✅ Erinnerung gesetzt! Ich erinnere dich am {time_str} an: {text}"
+        return _make_result(msg)
 
     elif action == "list":
         reminders = list_reminders(chat_id)
         if not reminders:
-            return {"messages": [AIMessage(content="Du hast keine offenen Erinnerungen.")]}
+            return _make_result("Du hast keine offenen Erinnerungen.")
         lines = ["📋 *Deine Erinnerungen:*\n"]
         for r in reminders:
             dt = datetime.fromisoformat(r["remind_at"])
             time_str = dt.strftime("%d.%m.%Y, %H:%M Uhr")
             lines.append(f"• ID {r['id']}: {r['text']} – {time_str}")
-        return {"messages": [AIMessage(content="\n".join(lines))]}
+        return _make_result("\n".join(lines))
 
     elif action == "delete":
         reminder_id = parsed.get("id")
         if not reminder_id:
-            return {"messages": [AIMessage(content="Bitte gib die ID der Erinnerung an.")]}
+            return _make_result("Bitte gib die ID der Erinnerung an.")
         success = delete_reminder(int(reminder_id), chat_id)
         if success:
-            return {"messages": [AIMessage(content=f"✅ Erinnerung #{reminder_id} gelöscht.")]}
+            return _make_result(f"✅ Erinnerung #{reminder_id} gelöscht.")
         else:
-            return {"messages": [AIMessage(content=f"Erinnerung #{reminder_id} nicht gefunden.")]}
+            return _make_result(f"Erinnerung #{reminder_id} nicht gefunden.")
 
-    return {"messages": [AIMessage(content="Unbekannte Aktion.")]}
+    return _make_result("Unbekannte Aktion.")
 
 
 def _build_reminder_prompt() -> str:
-    """Reminder-Agent System-Prompt mit aktuellem Datum (Ph.98)."""
+    """Ph.98 Kompatibilitäts-Alias."""
     from agent.utils import get_current_datetime
-    dt = get_current_datetime()
-    return f"[Aktuelles Datum/Uhrzeit: {dt}]"
+    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"

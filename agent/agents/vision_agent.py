@@ -1,12 +1,6 @@
 """
 Vision Agent für FabBot.
-
-Analysiert Bilder via Claude Sonnet Vision.
-Wird direkt aufgerufen (nicht über LangGraph Graph) um zu vermeiden
-dass große base64-Daten durch den SQLite-Checkpointer laufen.
-
-Das Ergebnis wird als __MEMORY__ in den State geschrieben damit
-chat_agent darauf antworten kann.
+Phase 99: last_agent_result in vision_agent() Return.
 """
 
 import asyncio
@@ -19,7 +13,7 @@ from agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 _DEFAULT_MEDIA_TYPE = "image/jpeg"
 
 VISION_SYSTEM_PROMPT = """Du bist ein präziser Bild-Analyse-Assistent.
@@ -48,11 +42,7 @@ async def analyze_image_direct(
     media_type: str,
     chat_id: int,
 ) -> str:
-    """
-    Analysiert ein Bild direkt via Claude Vision.
-    Gibt den Analyse-Text zurück.
-    Wird direkt aus on_photo/on_document aufgerufen – nicht über Graph.
-    """
+    """Analysiert ein Bild direkt via Claude Vision. Gibt den Analyse-Text zurück."""
     question = caption.strip() if caption.strip() else "Beschreibe dieses Bild detailliert."
 
     try:
@@ -106,12 +96,18 @@ async def analyze_image_direct(
 
 async def vision_agent(state: AgentState) -> AgentState:
     """
-    LangGraph-Node – wird nicht mehr aktiv genutzt aber bleibt im Graph
-    damit der Supervisor weiterhin korrekt routet.
+    LangGraph-Node – bleibt im Graph für korrektes Supervisor-Routing.
+    Phase 99: last_agent_result im Return.
     """
-    return {"messages": [AIMessage(content="Bildanalyse nicht verfügbar – bitte Foto direkt senden.")]}
+    msg = "Bildanalyse nicht verfügbar – bitte Foto direkt senden."
+    return {
+        "messages": [AIMessage(content=msg)],
+        "last_agent_result": msg,
+        "last_agent_name": "vision_agent",
+    }
+
 
 def _build_vision_prompt() -> str:
-    # Ph.98: Datum fuer Tests
+    """Ph.98 Kompatibilitäts-Alias."""
     from agent.utils import get_current_datetime
-    return '[Aktuelles Datum/Uhrzeit: ' + get_current_datetime() + ']'
+    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"

@@ -8,8 +8,6 @@ from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
 
-# Phase 88: Maximale Verzeichnistiefe ab Allowlist-Basis
-# Verhindert beliebig tiefe LLM-generierte Verzeichnisbäume via mkdir(parents=True)
 MAX_PATH_DEPTH = 5
 
 
@@ -92,10 +90,6 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
     if ".." in path.parts:
         return False, "Path-Traversal nicht erlaubt."
 
-    # Phase 88: Symlink-Schutz
-    # Wenn der Pfad ein Symlink ist, muss das aufgelöste Ziel ebenfalls in der Allowlist liegen.
-    # Verhindert: ~/Downloads/evil_link -> ~/.ssh/id_rsa (Symlink in erlaubtem Ordner)
-    # resolve() folgt Symlinks – deshalb muss das _Ziel_ geprüft werden, nicht nur der Pfad.
     if path.is_symlink():
         symlink_target_allowed = False
         for base in ALLOWED_BASE_PATHS:
@@ -118,9 +112,6 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
     for base in ALLOWED_BASE_PATHS:
         try:
             relative = resolved.relative_to(base.resolve())
-            # Phase 88: Tiefenbegrenzung
-            # Verhindert LLM-generierte Pfade wie ~/Documents/a/b/c/d/e/f/g/file.txt
-            # die mkdir(parents=True) mit beliebig vielen Ebenen auslösen könnten.
             if len(relative.parts) > MAX_PATH_DEPTH:
                 return False, (
                     f"Pfad zu tief verschachtelt (max. {MAX_PATH_DEPTH} Ebenen ab Basis, "
@@ -134,21 +125,23 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
 
 
 async def file_agent(state: AgentState) -> AgentState:
-    """Phase 88: async – verhindert Event-Loop-Blockierung durch sync llm.invoke()."""
+    """Phase 88: async. Phase 99: last_agent_result in allen Returns."""
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
-    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
+    response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     content = _extract_json(content)
 
-    if content == "UNSUPPORTED":
-        return {"messages": [AIMessage(content="Diese Aktion wird vom File-Agent nicht unterstuetzt.")]}
+    def _err(msg: str) -> AgentState:
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
 
-    # Phase 75: Natürliche Sprache abfangen
+    if content == "UNSUPPORTED":
+        return _err("Diese Aktion wird vom File-Agent nicht unterstuetzt.")
+
     if not content.strip().startswith("{"):
-        return {"messages": [AIMessage(content=content.strip())]}
+        return _err(content.strip())
 
     try:
         parsed = json.loads(content)
@@ -156,16 +149,16 @@ async def file_agent(state: AgentState) -> AgentState:
         path_str = parsed.get("path", "")
         file_content = parsed.get("content", "")
     except (json.JSONDecodeError, AttributeError) as e:
-        return {"messages": [AIMessage(content=f"Fehler beim Parsen: {e}\nAntwort war: {content[:200]}")]}
+        return _err(f"Fehler beim Parsen: {e}\nAntwort war: {content[:200]}")
 
     if not action or not path_str:
-        return {"messages": [AIMessage(content="Ungueltige Anfrage: action oder path fehlt.")]}
+        return _err("Ungueltige Anfrage: action oder path fehlt.")
 
     path = Path(path_str)
     allowed, reason = is_path_allowed(path)
     if not allowed:
         log_action("file_agent", action, f"blocked: {reason}", state.get("telegram_chat_id"), status="blocked")
-        return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
+        return _err(f"Blockiert: {reason}")
 
     if action == "list":
         return _list_dir(path, state)
@@ -177,17 +170,21 @@ async def file_agent(state: AgentState) -> AgentState:
             "messages": [AIMessage(content=f"{Proto.CONFIRM_FILE_WRITE}{path}::{file_content}")],
             "next_agent": None,
             "_confirm_display": f"Schreibe {preview} nach: {path}",
+            "last_agent_result": None,
+            "last_agent_name": "file_agent",
         }
     else:
-        return {"messages": [AIMessage(content=f"Unbekannte Aktion: {action}")]}
+        return _err(f"Unbekannte Aktion: {action}")
 
 
 def _list_dir(path: Path, state: AgentState) -> AgentState:
     try:
         if not path.exists():
-            return {"messages": [AIMessage(content=f"Verzeichnis nicht gefunden: {path}")]}
+            msg = f"Verzeichnis nicht gefunden: {path}"
+            return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
         if not path.is_dir():
-            return {"messages": [AIMessage(content=f"Kein Verzeichnis: {path}")]}
+            msg = f"Kein Verzeichnis: {path}"
+            return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
         entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
         lines = []
         for e in entries[:50]:
@@ -197,33 +194,36 @@ def _list_dir(path: Path, state: AgentState) -> AgentState:
         if len(entries) > 50:
             result += f"\n... und {len(entries) - 50} weitere"
         log_action("file_agent", "list", str(path), state.get("telegram_chat_id"), status="executed")
-        return {"messages": [AIMessage(content=result)]}
+        return {"messages": [AIMessage(content=result)], "last_agent_result": result, "last_agent_name": "file_agent"}
     except PermissionError:
-        return {"messages": [AIMessage(content=f"Kein Zugriff auf: {path}")]}
+        msg = f"Kein Zugriff auf: {path}"
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
 
 
 def _read_file(path: Path, state: AgentState) -> AgentState:
     try:
         if not path.exists():
-            return {"messages": [AIMessage(content=f"Datei nicht gefunden: {path}")]}
+            msg = f"Datei nicht gefunden: {path}"
+            return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
         if not path.is_file():
-            return {"messages": [AIMessage(content=f"Kein File: {path}")]}
+            msg = f"Kein File: {path}"
+            return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
         if path.stat().st_size > MAX_FILE_SIZE_BYTES:
-            return {"messages": [AIMessage(content="Datei zu gross (max. 1 MB).")]}
+            msg = "Datei zu gross (max. 1 MB)."
+            return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
         text = path.read_text(encoding="utf-8", errors="replace")
         if len(text) > 3000:
             text = text[:3000] + "\n... (Inhalt gekuerzt)"
         log_action("file_agent", "read", f"path={path} size={path.stat().st_size}b",
                    state.get("telegram_chat_id"), status="executed")
-        return {"messages": [AIMessage(content=f"Inhalt von {path.name}:\n\n{text}")]}
+        result = f"Inhalt von {path.name}:\n\n{text}"
+        return {"messages": [AIMessage(content=result)], "last_agent_result": result, "last_agent_name": "file_agent"}
     except PermissionError:
-        return {"messages": [AIMessage(content=f"Kein Zugriff auf: {path}")]}
+        msg = f"Kein Zugriff auf: {path}"
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "file_agent"}
 
 
 def file_agent_write(path: Path, content: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung aufgerufen. Re-validiert vor Ausfuehrung (TOCTOU-Schutz).
-    Phase 88: Symlink- und Tiefencheck greifen über is_path_allowed().
-    """
     allowed, reason = is_path_allowed(path)
     if not allowed:
         log_action("file_agent", "write", f"toctou-blocked: {reason}", chat_id, status="blocked")

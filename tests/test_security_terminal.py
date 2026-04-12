@@ -3453,6 +3453,9 @@ class TestClaudeMdLoader:
 
 
 class TestClaudeMdInChatPrompt:
+    def setup_method(self):
+        from agent.agents.chat_agent import invalidate_chat_cache
+        invalidate_chat_cache()
     """Tests fuer die Integration von claude.md in den chat_agent System-Prompt."""
 
     def test_claude_md_content_in_prompt(self) -> None:
@@ -3809,10 +3812,13 @@ class TestChatAgentDynamicPrompt:
     """Tests fuer den dynamischen Prompt-Build in chat_agent (Phase 63)."""
 
     def setup_method(self) -> None:
+        from agent.agents.chat_agent import invalidate_chat_cache
+        invalidate_chat_cache()
         import agent.claude_md as cmd
         cmd._claude_md_cache = None
-
     def teardown_method(self) -> None:
+        from agent.agents.chat_agent import invalidate_chat_cache
+        invalidate_chat_cache()
         import agent.claude_md as cmd
         cmd._claude_md_cache = None
 
@@ -3823,6 +3829,7 @@ class TestChatAgentDynamicPrompt:
         with patch("agent.claude_md.load_claude_md", return_value="Alte Regel"), \
              patch("agent.profile.get_profile_context_full", return_value=""):
             prompt_before = _build_chat_prompt()
+        from agent.agents.chat_agent import invalidate_chat_cache; invalidate_chat_cache()
 
         with patch("agent.claude_md.load_claude_md", return_value="Alte Regel\n- Neue Regel"), \
              patch("agent.profile.get_profile_context_full", return_value=""):
@@ -5414,6 +5421,9 @@ class TestSessionSummaryPipeline:
 
 class TestChatAgentSessionContext:
     """Tests fuer Session-Summary Integration in chat_agent._build_chat_prompt().
+    def setup_method(self):
+        from agent.agents.chat_agent import invalidate_chat_cache
+        invalidate_chat_cache()
 
     Strategie: load_session_summaries direkt patchen (bot.session_summary Modul).
     _build_chat_prompt importiert es lokal – Patch auf das Original-Modul greift.
@@ -5452,6 +5462,9 @@ class TestChatAgentSessionContext:
         from agent.agents.chat_agent import _build_chat_prompt
 
         with patch("bot.session_summary.load_session_summaries", return_value=""):
+            from agent.agents.chat_agent import invalidate_chat_cache; invalidate_chat_cache()
+            prompt = _build_chat_prompt()
+            from agent.agents.chat_agent import invalidate_chat_cache; invalidate_chat_cache()
             prompt = _build_chat_prompt()
 
         assert "Letzte Sessions" not in prompt
@@ -5462,6 +5475,7 @@ class TestChatAgentSessionContext:
 
         with patch("bot.session_summary.load_session_summaries",
                    side_effect=Exception("Lesefehler")):
+            from agent.agents.chat_agent import invalidate_chat_cache; invalidate_chat_cache()
             prompt = _build_chat_prompt()
 
         # Ph.98: _CHAT_PROMPT_BASE enthält {datetime} als Platzhalter,
@@ -5478,6 +5492,7 @@ class TestChatAgentSessionContext:
             # der outer try-Block nicht fehlschlaegt
             with patch("bot.session_summary.load_session_summaries",
                        return_value="") as mock_load2:
+                from agent.agents.chat_agent import invalidate_chat_cache; invalidate_chat_cache()
                 _build_chat_prompt()
 
         # Einer der beiden Mocks wurde aufgerufen

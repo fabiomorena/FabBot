@@ -60,7 +60,6 @@ Wenn die Anfrage keinen erlaubten Befehl erfordert, antworte mit: UNSUPPORTED
 
 
 def is_command_allowed(command: str) -> tuple[bool, str]:
-    """Prueft ob der Befehl auf der Allowlist steht und keine gefaehrlichen Argumente enthaelt."""
     try:
         parts = shlex.split(command.strip())
     except ValueError as e:
@@ -130,11 +129,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
 
 
 def sanitize_command(command: str) -> str:
-    """
-    Bereinigt einen bereits validierten Befehl vor der Ausfuehrung.
-    Trennung von Validierung (is_command_allowed) und Transformation.
-    Aktuell: df – Pfad-Argumente entfernen, nur Flags behalten.
-    """
     try:
         parts = shlex.split(command.strip())
     except ValueError:
@@ -154,7 +148,6 @@ def sanitize_command(command: str) -> str:
 
 
 def execute_command(command: str) -> str:
-    """Fuehrt einen validierten Befehl sicher aus und gibt den Output zurueck."""
     try:
         parts = shlex.split(command.strip())
         import pathlib
@@ -176,14 +169,14 @@ def execute_command(command: str) -> str:
 
 
 async def terminal_agent(state: AgentState) -> AgentState:
-    """Phase 88: async – verhindert Event-Loop-Blockierung durch sync llm.invoke()."""
+    """Phase 88: async. Phase 99: last_agent_result im Return."""
     llm = get_llm()
     filtered = [m for m in state["messages"] if not (
         hasattr(m, "content") and isinstance(m.content, str)
         and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
     )]
     messages = [SystemMessage(content=PROMPT)] + filtered
-    response = await llm.ainvoke(messages)  # Phase 88: ainvoke statt invoke
+    response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -192,30 +185,45 @@ async def terminal_agent(state: AgentState) -> AgentState:
         command = command[len("__CONFIRM_TERMINAL__:"):]
 
     if command == "UNSUPPORTED":
-        return {"messages": [AIMessage(content="Diese Aktion wird vom Terminal-Agent nicht unterstuetzt.")]}
+        msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "terminal_agent",
+        }
 
-    # Phase 75: Natürliche Sprache abfangen
     try:
         _first = os.path.basename(shlex.split(command)[0]) if command.split() else ""
     except ValueError:
         _first = ""
     if _first not in ALLOWED_COMMANDS:
-        return {"messages": [AIMessage(content=command)]}
+        return {
+            "messages": [AIMessage(content=command)],
+            "last_agent_result": command,
+            "last_agent_name": "terminal_agent",
+        }
 
     allowed, reason = is_command_allowed(command)
     if not allowed:
         log_action("terminal_agent", command[:200], reason,
                    state.get("telegram_chat_id"), status="blocked")
-        return {"messages": [AIMessage(content=f"Blockiert: {reason}")]}
+        msg = f"Blockiert: {reason}"
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "terminal_agent",
+        }
 
+    # HITL – kein last_agent_result (Ergebnis kommt erst nach Bestätigung)
     return {
         "messages": [AIMessage(content=f"{Proto.CONFIRM_TERMINAL}{command}")],
         "next_agent": None,
+        "last_agent_result": None,
+        "last_agent_name": "terminal_agent",
     }
 
 
 def terminal_agent_execute(command: str, chat_id: int) -> str:
-    """Wird nach Benutzerbestaetigung aufgerufen. Re-validiert vor Ausfuehrung (TOCTOU-Schutz)."""
     allowed, reason = is_command_allowed(command)
     if not allowed:
         log_action("terminal_agent", command[:200], f"toctou-blocked: {reason}", chat_id, status="blocked")
@@ -229,7 +237,6 @@ def terminal_agent_execute(command: str, chat_id: int) -> str:
 
 
 def _build_terminal_prompt() -> str:
-    """Terminal-Agent System-Prompt mit aktuellem Datum (Ph.98)."""
+    """Ph.98 Kompatibilitäts-Alias."""
     from agent.utils import get_current_datetime
-    dt = get_current_datetime()
-    return f"[Aktuelles Datum/Uhrzeit: {dt}]"
+    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"
