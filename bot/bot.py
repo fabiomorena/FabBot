@@ -64,6 +64,13 @@ _background_tasks: set[asyncio.Task] = set()
 # deque(maxlen=200): FIFO-Semantik, älteste IDs werden automatisch verdrängt.
 # In-Memory reicht – nach Neustart sind pending Retries irrelevant.
 _processed_message_ids: deque[int] = deque(maxlen=200)
+_dedup_lock: asyncio.Lock | None = None
+
+def _get_dedup_lock() -> asyncio.Lock:
+    global _dedup_lock
+    if _dedup_lock is None:
+        _dedup_lock = asyncio.Lock()
+    return _dedup_lock
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -91,7 +98,7 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
         return img_bytes, mime_type
 
 
-def _is_duplicate(update: Update) -> bool:
+async def _is_duplicate(update: Update) -> bool:
     """Issue #10: Prüft ob diese Message-ID bereits verarbeitet wurde.
 
     Verhindert Doppelverarbeitung bei Telegram-Retries (z.B. nach Timeout).
@@ -101,10 +108,11 @@ def _is_duplicate(update: Update) -> bool:
     if msg is None:
         return False
     msg_id = msg.message_id
-    if msg_id in _processed_message_ids:
-        logger.debug(f"Duplikat ignoriert: message_id={msg_id}")
-        return True
-    _processed_message_ids.append(msg_id)
+    async with _get_dedup_lock():
+        if msg_id in _processed_message_ids:
+            logger.debug(f"Duplikat ignoriert: message_id={msg_id}")
+            return True
+        _processed_message_ids.append(msg_id)
     return False
 
 
@@ -563,7 +571,7 @@ async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if _is_duplicate(update):
+    if await _is_duplicate(update):
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
@@ -596,7 +604,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if _is_duplicate(update):
+    if await _is_duplicate(update):
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
@@ -635,14 +643,14 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if _is_duplicate(update):
+    if await _is_duplicate(update):
         return
     await handle_message_text(update, ctx.bot, update.message.text)
 
 
 @restricted
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if _is_duplicate(update):
+    if await _is_duplicate(update):
         return
     thinking = await update.message.reply_text("Transkribiere...")
     try:
