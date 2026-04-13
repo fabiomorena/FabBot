@@ -156,10 +156,13 @@ def _build_dynamic_prompt_suffix(
     if last_agent_result and last_agent_result.strip():
         agent_label = last_agent_name or "vorheriger Agent"
         parts.append(
-            f"\n## Ergebnis des {agent_label}\n"
+            f"\n## Kontext: Ergebnis des {agent_label}\n"
             f"{last_agent_result.strip()}\n"
-            f"Nutze diese Information als Grundlage für deine Antwort. "
-            f"Beziehe dich darauf wenn der User eine Folgefrage stellt."
+            f"WICHTIG: Wiederhole diese Information NICHT in deiner Antwort. "
+            f"Nutze sie nur als Hintergrundwissen wenn der User explizit "
+            f"eine inhaltliche Folgefrage dazu stellt. "
+            f"Bei kurzen Reaktionen wie 'ok', 'stimmt', 'haha', 'danke' "
+            f"antworte NUR mit 1-2 Saetzen ohne den Kontext zu wiederholen."
         )
 
     return "\n".join(parts)

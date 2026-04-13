@@ -69,7 +69,7 @@ def test_dynamic_suffix_with_agent_result():
     """last_agent_result vorhanden → Injection-Block im Suffix."""
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix
     suffix = _build_dynamic_prompt_suffix("Berlin hat 3,7 Millionen Einwohner.", "web_agent")
-    assert "## Ergebnis des web_agent" in suffix
+    assert "## Kontext: Ergebnis des web_agent" in suffix
     assert "Berlin hat 3,7 Millionen Einwohner." in suffix
 
 
