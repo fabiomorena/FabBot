@@ -1,8 +1,8 @@
-# FabBot – Personal Mac AI Assistant
+# FabBot – AI Companion
 
 ![CI](https://github.com/fabiomorena/FabBot/actions/workflows/test.yml/badge.svg)
 
-A personal AI assistant that runs locally on macOS, controlled via Telegram and a native menubar app. Built with Claude (Anthropic), LangGraph, and a multi-agent architecture.
+A personal AI assistant that runs locally on macOS, controlled via Telegram. Built with Claude (Anthropic), LangGraph, and a multi-agent architecture.
 
 ---
 
@@ -29,7 +29,6 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Content isolation for indirect injection (web/clip agents) |
 | ✅ | Human-in-the-loop confirmation for all destructive actions |
 | ✅ | Tamper-evident audit log |
-| ✅ | macOS menubar app – start/stop bot, audit log |
 | ✅ | Computer Use – screenshot + desktop control with HITL |
 | ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
 | ✅ | Knowledge Clipper – /clip saves articles as Markdown to Obsidian vault |
@@ -73,7 +72,6 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 ```
 FabBot/
 ├── main.py                  # Entrypoint
-├── menubar.py               # macOS menubar app
 ├── personal_profile.yaml    # Personal profile (local only, not in repo)
 ├── requirements.txt         # Direct dependencies
 ├── requirements.lock        # Pinned lock file (pip-compile)
@@ -129,7 +127,6 @@ FabBot/
 - ChromaDB – lokale Vektordatenbank für Second Brain (~/.fabbot/chroma/)
 - aiosqlite – async SQLite for persistent memory
 - Tavily + Brave Search – web search
-- rumps – macOS menubar app
 - cryptography + keyring – At-Rest-Encryption via Fernet
 - Python 3.11+, macOS
 
@@ -163,7 +160,6 @@ cp .env.example .env   # fill in API keys
 
 ```bash
 python main.py        # Bot only
-python menubar.py     # With menubar app
 .venv/bin/python -m pytest tests/ -v      # Run tests (858 tests)
 ```
 
