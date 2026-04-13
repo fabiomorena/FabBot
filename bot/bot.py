@@ -194,14 +194,8 @@ async def _invoke_and_extract(state: dict, config: dict) -> str:
     input_count  = len(state["messages"])
     new_messages = result_state["messages"][input_count:]
     ai_messages  = [m for m in new_messages if isinstance(m, AIMessage)]
-    if not ai_messages:
-        ai_messages = [m for m in result_state["messages"] if isinstance(m, AIMessage)]
+    # Kein Fallback auf alte Messages – verhindert Duplicate Responses (Issue #16)
     response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
-    if len(ai_messages) >= 2:
-        prev_content = _extract_content(ai_messages[-2])
-        if response_msg == prev_content and response_msg:
-            logger.warning("bot.py: Dedup-Sicherheitsnetz – Wiederholung abgefangen.")
-            response_msg = "Noch etwas?"
     return response_msg
 
 

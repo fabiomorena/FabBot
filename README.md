@@ -187,7 +187,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 91–92** ✅ Protocol & Code Quality – MEMORY_VISION_MARKER, is_any_confirm fix, crypto/audit/llm hardening
 - **Phase 93–97** ✅ Refactor & Performance – Profil-Backup, Prompt-Cache TTL 60s, model-validierung beim Start, memory_agent Registry-Pattern, deque dedup
 - **Phase 98** ✅ Enhancement – get_current_datetime() Europe/Berlin, alle Agenten-Prompts, Tests grün
-- **Phase 99** ✅ Bug – State-Transfer zwischen Agents (last_agent_result/last_agent_name, #15), get_current_datetime() Cache-Fix (#12), 858 Tests grün
+- **Phase 99** ✅ Bug – State-Transfer zwischen Agents (#15), get_current_datetime() Cache-Fix (#12), 858 Tests grün
+- **Phase 100** ✅ Bug – Duplicate Responses Fix: _invoke_and_extract Fallback entfernt (#16), 858 Tests grün
 
 ---
 
