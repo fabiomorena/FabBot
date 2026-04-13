@@ -212,7 +212,3 @@ async def close_graph() -> None:
         await _db_conn.close()
         _db_conn = None
 
-def _build_supervisor_prompt() -> str:
-    # Ph.98: Datum fuer Tests
-    from agent.utils import get_current_datetime
-    return '[Aktuelles Datum/Uhrzeit: ' + get_current_datetime() + ']'
