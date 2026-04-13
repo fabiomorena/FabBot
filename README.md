@@ -189,7 +189,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 98** ✅ Enhancement – get_current_datetime() Europe/Berlin, alle Agenten-Prompts, Tests grün
 - **Phase 99** ✅ Bug – State-Transfer zwischen Agents (#15), get_current_datetime() Cache-Fix (#12), 858 Tests grün
 - **Phase 100** ✅ Bug – Duplicate Responses Fix (#16), 858 Tests grün
-- **Phase 101** ✅ Enhancement – Wetter via wttr.in statt Tavily (#11), 858 Tests grün
+- **Phase 101** ✅ Enhancement – Wetter via wttr.in statt Tavily (#11), chat_agent Prompt-Fix (#16 follow-up), 858 Tests grün
+- **Phase 102** ✅ Hardening – tzdata in requirements.txt (#13), chat_agent leerer LLM-Response Fallback (#18), Telegram pool_timeout 5s (#19), tote _build_supervisor_prompt() entfernt (#14), 858 Tests grün
 
 ---
 
