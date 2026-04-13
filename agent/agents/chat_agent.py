@@ -314,6 +314,9 @@ async def chat_agent(state: AgentState) -> AgentState:
         content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
 
     result = content.strip()
+    if not result:
+        logger.warning("chat_agent: leere Antwort vom LLM erhalten.")
+        result = "Keine Antwort erhalten."
 
     # Dedup-Sicherheitsnetz
     prev_ai_messages = [m for m in trimmed_messages if isinstance(m, AIMessage)]
