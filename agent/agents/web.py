@@ -161,6 +161,42 @@ async def _fetch_url(url: str) -> str:
         return text[:MAX_FETCH_SIZE]
 
 
+
+async def _get_weather_berlin() -> str:
+    """Holt aktuelles Berliner Wetter via wttr.in – kein API-Key nötig."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://wttr.in/Berlin?format=j1")
+            resp.raise_for_status()
+            data = resp.json()
+        current = data["current_condition"][0]
+        desc    = current["weatherDesc"][0]["value"]
+        temp_c  = current["temp_C"]
+        feels   = current["FeelsLikeC"]
+        humidity = current["humidity"]
+        wind    = current["windspeedKmph"]
+        forecast = data.get("weather", [{}])[0]
+        max_c   = forecast.get("maxtempC", "?")
+        min_c   = forecast.get("mintempC", "?")
+        return (
+            f"Berlin: {temp_c}°C (gefühlt {feels}°C), {desc}\n"
+            f"Luftfeuchtigkeit: {humidity}%, Wind: {wind} km/h\n"
+            f"Heute: max {max_c}°C / min {min_c}°C"
+        )
+    except Exception as e:
+        logger.warning(f"wttr.in Fehler: {e}")
+        return ""
+
+_WEATHER_KEYWORDS = {
+    "wetter", "temperatur", "weather", "temperature", "grad", "regen",
+    "sonne", "sonnig", "bewölkt", "wind", "kalt", "warm", "draußen",
+    "heute", "morgen früh", "forecast", "vorhersage",
+}
+
+def _is_weather_query(text: str) -> bool:
+    lower = text.lower()
+    return any(kw in lower for kw in _WEATHER_KEYWORDS)
+
 async def _search_tavily(query: str) -> list[dict]:
     if not TAVILY_API_KEY:
         return []
@@ -224,6 +260,18 @@ def _extract_text_result(content) -> str:
 
 async def web_agent(state: AgentState) -> AgentState:
     llm = get_llm()
+
+    # Phase 100: Wetter-Shortcut via wttr.in (Issue #11)
+    human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+    last_human_text = human_msgs[-1].content if human_msgs else ""
+    if _is_weather_query(last_human_text):
+        weather = await _get_weather_berlin()
+        if weather:
+            return {
+                "messages": [AIMessage(content=weather)],
+                "last_agent_result": weather,
+                "last_agent_name": "web_agent",
+            }
 
     human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
     last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
