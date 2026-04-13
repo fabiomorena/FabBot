@@ -375,7 +375,6 @@ rpds-py==0.30.0
     #   referencing
 rubicon-objc==0.5.3
     # via mouseinfo
-rumps==0.4.0
     # via -r requirements.txt
 shellingham==1.5.4
     # via typer
