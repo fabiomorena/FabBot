@@ -146,7 +146,7 @@ packaging==26.0
     # via
     #   langchain-core
     #   langsmith
-pillow==12.1.1
+pillow==12.2.0
 propcache==0.4.1
     # via
     #   aiohttp
