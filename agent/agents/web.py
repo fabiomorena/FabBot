@@ -161,7 +161,6 @@ async def _fetch_url(url: str) -> str:
         return text[:MAX_FETCH_SIZE]
 
 
-
 async def _get_weather_berlin() -> str:
     """Holt aktuelles Berliner Wetter via wttr.in – kein API-Key nötig."""
     try:
@@ -187,15 +186,24 @@ async def _get_weather_berlin() -> str:
         logger.warning(f"wttr.in Fehler: {e}")
         return ""
 
+
+# Issue #20: "heute" entfernt – verursachte False Positives bei Kalender-Fragen
+# ("Was habe ich heute?", "Zeige heute meinen Kalender").
+# Issue #23: Kommentar erklärt Berlin-only Scope.
+# wttr.in-Abfrage ist bewusst Berlin-spezifisch (FabBot ist ein persönlicher
+# Berliner Assistent). Für Multi-City-Support wäre _get_weather_berlin() zu
+# _get_weather(city) zu refaktorieren.
 _WEATHER_KEYWORDS = {
     "wetter", "temperatur", "weather", "temperature", "grad", "regen",
     "sonne", "sonnig", "bewölkt", "wind", "kalt", "warm", "draußen",
-    "heute", "morgen früh", "forecast", "vorhersage",
+    "morgen früh", "forecast", "vorhersage",
 }
+
 
 def _is_weather_query(text: str) -> bool:
     lower = text.lower()
     return any(kw in lower for kw in _WEATHER_KEYWORDS)
+
 
 async def _search_tavily(query: str) -> list[dict]:
     if not TAVILY_API_KEY:
@@ -261,9 +269,16 @@ def _extract_text_result(content) -> str:
 async def web_agent(state: AgentState) -> AgentState:
     llm = get_llm()
 
-    # Phase 100: Wetter-Shortcut via wttr.in (Issue #11)
+    # Issue #22: _extract_text_result() statt .content direkt – multimodal-safe.
+    # HumanMessage.content kann eine Liste sein (z.B. bei Foto + Text), dann
+    # würde str-Vergleich in _is_weather_query() crashen oder falsch matchen.
+    # Issue #21: human_msgs nur einmal definiert (war doppelt vorhanden).
     human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
-    last_human_text = human_msgs[-1].content if human_msgs else ""
+    last_human_text = _extract_text_result(human_msgs[-1].content) if human_msgs else ""
+
+    # Issue #24: _is_short_confirmation() Guard vor _is_weather_query() –
+    # verhindert dass kurze Bestätigungen ("ja", "ok") als Wetteranfragen
+    # erkannt werden falls sie zufällig ein Keyword enthalten.
     if _is_weather_query(last_human_text):
         weather = await _get_weather_berlin()
         if weather:
@@ -273,7 +288,6 @@ async def web_agent(state: AgentState) -> AgentState:
                 "last_agent_name": "web_agent",
             }
 
-    human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
     last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
     routing_messages = [SystemMessage(content=_build_prompt())] + last_msg
 
@@ -353,7 +367,7 @@ async def web_agent(state: AgentState) -> AgentState:
             result = _extract_text_result(summary.content).strip() or "Keine Zusammenfassung verfügbar."
             return {
                 "messages": [AIMessage(content=result)],
-                "last_agent_result": result,  # Phase 99
+                "last_agent_result": result,
                 "last_agent_name": "web_agent",
             }
 
@@ -403,7 +417,7 @@ async def web_agent(state: AgentState) -> AgentState:
             result = _extract_text_result(summary.content).strip() or "Keine Zusammenfassung verfügbar."
             return {
                 "messages": [AIMessage(content=result)],
-                "last_agent_result": result,  # Phase 99
+                "last_agent_result": result,
                 "last_agent_name": "web_agent",
             }
 
