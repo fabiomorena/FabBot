@@ -193,6 +193,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 102** ✅ Hardening – tzdata in requirements.txt (#13), chat_agent leerer LLM-Response Fallback (#18), Telegram pool_timeout 5s (#19), tote _build_supervisor_prompt() entfernt (#14), 858 Tests grün
 - **Phase 103** ✅ Bug – Doppel-Antworten behoben: drop_pending_updates=True + ThrottleInterval 30s (Issue #16), security dependency updates, 858 tests green.
 - **Phase 104** ✅ Bug – Concurrent graph calls per chat_id serialisiert (_invoke_locks), verhindert Race Condition bei schnellem Chatten, 858 tests green.
+- **Phase 105** ✅ Bug/Refactor – web_agent: „heute" aus _WEATHER_KEYWORDS entfernt (#20), doppeltes human_msgs bereinigt (#21), last_human_text multimodal-safe (#22), Berlin-only Kommentar dokumentiert (#23), 858 tests green.
 ---
 
 ## License
