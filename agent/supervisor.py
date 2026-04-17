@@ -60,8 +60,8 @@ Verfuegbare Agenten:
   - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
   - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete)
   - Fragen ueber gespeicherte Notizen, Sessions oder Wissen ("was steht in meinen Sessions", "was habe ich ueber X notiert", "was weisst du ueber mein Projekt")
-  - Smalltalk ohne Faktenbezug ("danke", "ok", "cool")
-  - Hoeflichkeiten und kurze Reaktionen
+  - Smalltalk IMMER chat_agent: "danke", "ok", "cool", "super", "alles klar", "okay danke",
+    kurze Reaktionen, Hoeflichkeiten, Bestaetigungen
   - ALLE Folgefragen zu einem Foto oder Bild
   - NICHT fuer Wetter-Fragen – diese gehen immer an web_agent
   - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
@@ -70,8 +70,9 @@ Verfuegbare Agenten:
   NEIN: Fragen über WhatsApp, allgemeine Kommunikation
 
 Regeln:
-- Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
-- Sonst: waehle den passenden Agenten
+- FINISH NUR wenn die bereitgestellte Nachricht bereits eine vollstaendige Antwort eines Agenten ist
+  (d.h. die Nachricht kommt vom System/Agenten, nicht vom User)
+- Smalltalk, Reaktionen und Hoeflichkeiten des Users: IMMER chat_agent, NIE FINISH
 - Wetter-Fragen (wetter, temperatur, regen, warm, kalt, grad): IMMER web_agent
 - Im Zweifel zwischen web_agent und chat_agent: web_agent – AUSNAHME: reine Datum/Uhrzeit-Fragen ohne Wetterbezug immer chat_agent
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
@@ -111,20 +112,18 @@ def _filter_hitl_messages(messages: list) -> list:
 
 
 async def supervisor_node(state: AgentState) -> AgentState:
+    # Phase 108: Early-Return bei AIMessage entfernt – war zu aggressiv.
+    # Vorher: wenn letzte Message im Checkpoint eine AIMessage war → sofort FINISH.
+    # Problem: nach Wetterantwort kam "danke" → Checkpoint-letzte = AIMessage (Wetter)
+    # → FINISH ohne LLM zu fragen → Bot schwieg auf Smalltalk.
+    # Fix: LLM entscheidet immer selbst anhand der letzten HumanMessage.
     llm = get_fast_llm()
     messages = state["messages"]
-
-    if messages and isinstance(messages[-1], AIMessage):
-        last = messages[-1].content
-        if not last.startswith("__MEMORY__:"):
-            logger.debug(f"supervisor: letzte Nachricht ist AIMessage → FINISH")
-            return {"next_agent": "FINISH"}
 
     clean_messages = _filter_hitl_messages(messages)
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
     routing_messages = [last_human[-1]] if last_human else clean_messages[-1:]
 
-    # Debug: letzte Human-Message loggen
     if last_human:
         last_text = last_human[-1].content
         if isinstance(last_text, list):
@@ -199,10 +198,6 @@ def _build_graph() -> StateGraph:
 
 
 def get_graph() -> CompiledStateGraph:
-    """
-    Gibt den initialisierten CompiledStateGraph zurück.
-    Wirft RuntimeError wenn init_graph() noch nicht abgeschlossen ist.
-    """
     if agent_graph is None:
         raise RuntimeError(
             "LangGraph nicht initialisiert – init_graph() muss zuerst aufgerufen werden. "
