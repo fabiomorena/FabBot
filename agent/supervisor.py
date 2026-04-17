@@ -36,7 +36,9 @@ Verfuegbare Agenten:
   - Fragen ueber reale Personen (lebt X noch? was macht X? wer ist X?)
   - Aktuelle Aemter, Positionen, Rollen (Kanzler, CEO, Praesident, Minister...)
   - Aktuelle Ereignisse, Nachrichten, Politik, Sport, Wirtschaft
-  - Preise, Kurse, Wetter
+  - Preise, Kurse
+  - Wetter-Fragen – IMMER web_agent, auch wenn "heute" vorkommt:
+    "wie wird das wetter?", "wetter heute", "wie warm ist es?", "regnet es?", "wetter berlin"
   - Fragen die mit "was ist", "wer ist", "wie ist", "was denkst du ueber [Person/Ereignis]" beginnen
   - Im Zweifel ob chat oder web: IMMER web_agent waehlen
   - NICHT fuer Fragen zu einem Foto oder Bild
@@ -51,13 +53,14 @@ Verfuegbare Agenten:
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
   NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
   NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen ('was steht in...', 'was habe ich notiert...')
-- chat_agent: Konversationelle Nachrichten, Datum/Uhrzeit-Fragen ('wieviel uhr', 'welches datum', 'was ist heute'), persoenliche Fragen, Smalltalk:
+- chat_agent: Konversationelle Nachrichten, reine Datum/Uhrzeit-Fragen ('wieviel uhr', 'welches datum'), persoenliche Fragen, Smalltalk:
   - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
   - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete)
   - Fragen ueber gespeicherte Notizen, Sessions oder Wissen ("was steht in meinen Sessions", "was habe ich ueber X notiert", "was weisst du ueber mein Projekt")
   - Smalltalk ohne Faktenbezug ("danke", "ok", "cool")
   - Hoeflichkeiten und kurze Reaktionen
   - ALLE Folgefragen zu einem Foto oder Bild
+  - NICHT fuer Wetter-Fragen – diese gehen immer an web_agent
   - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
 - whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte:
   JA: "schick Steffi dass...", "WhatsApp an Amalia: ...", "sende Fabio eine Nachricht"
@@ -66,7 +69,8 @@ Verfuegbare Agenten:
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
 - Sonst: waehle den passenden Agenten
-- Im Zweifel zwischen web_agent und chat_agent: web_agent – AUSNAHME: Datum/Uhrzeit-Fragen immer chat_agent
+- Wetter-Fragen (wetter, temperatur, regen, warm, kalt, grad): IMMER web_agent
+- Im Zweifel zwischen web_agent und chat_agent: web_agent – AUSNAHME: reine Datum/Uhrzeit-Fragen ohne Wetterbezug immer chat_agent
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
 - Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent (nicht memory_agent)
@@ -211,4 +215,3 @@ async def close_graph() -> None:
     if _db_conn:
         await _db_conn.close()
         _db_conn = None
-
