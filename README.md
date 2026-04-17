@@ -195,6 +195,7 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 104** ✅ Bug – Concurrent graph calls per chat_id serialisiert (_invoke_locks), verhindert Race Condition bei schnellem Chatten, 858 tests green.
 - **Phase 105** ✅ Bug/Refactor – web_agent: „heute" aus _WEATHER_KEYWORDS entfernt (#20), doppeltes human_msgs bereinigt (#21), last_human_text multimodal-safe (#22), Berlin-only Kommentar dokumentiert (#23), 858 tests green.
 - **Phase 106** ✅ Bug – Wetter-Routing zu web_agent gefixt (Supervisor-Prompt), Supervisor-Logging hinzugefügt, 858 tests green.
+- **Phase 107** ✅ Bug – _invoke_and_extract: last_human_idx statt input_count verhindert Duplikate bei FINISH, stilles FINISH ohne Fallback-Text, 858 tests green.
 ---
 
 ## License
