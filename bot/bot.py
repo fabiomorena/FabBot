@@ -1,6 +1,13 @@
 """
 bot/bot.py – Telegram Handler für FabBot.
 
+Phase 107: _invoke_and_extract fix – last_human_idx statt input_count.
+- input_count=1 (nur neue HumanMessage im state) aber result_state enthält
+  kompletten LangGraph-Checkpoint → result_state["messages"][1:] liefert
+  alte AIMessages bei FINISH → Duplikate.
+- Fix: letzte HumanMessage als Ankerpunkt – nur AIMessages danach sind neu.
+- _dispatch_response: bei leerem response_msg nichts senden (stilles FINISH).
+
 Phase 104 (Issue #16b): _invoke_locks – serialisiert concurrent Graph-Calls pro chat_id.
 - block=False erlaubt parallele Handler – ohne Lock können zwei schnelle Messages
   gleichzeitig ainvoke() auf denselben thread_id aufrufen → Race Condition im
@@ -15,13 +22,7 @@ Phase 97 (Issue #10): _processed_message_ids deque(maxlen=200)
 - In-Memory reicht, kein SQLite nötig
 
 Phase 95 (Issue #6): validate_models_on_startup() in _post_init() aufgerufen.
-Harte Model-Validierung beim Start – RuntimeError wenn ANTHROPIC_MODEL_SONNET
-oder ANTHROPIC_MODEL_HAIKU einen ungültigen String enthalten.
-
 Phase 92: setup_audit_logger() in _post_init() aufgerufen.
-Vorher: agent.audit öffnete FileHandler beim Import (Module-Level-Seiteneffekt) →
-Tests nicht isoliert. Jetzt: Initialisierung erst in _post_init nach logging.basicConfig().
-
 Phase 91: asyncio.create_task(index_file(...)) in cmd_clip ohne Referenz-Haltung gefixt.
 Phase 84 Änderungen: handle_message_text aufgeteilt, _delete_thinking mit suppress, etc.
 """
@@ -216,23 +217,46 @@ async def _sanitize_and_validate(text: str, user_id: int, update: Update) -> tup
 
 
 async def _invoke_and_extract(state: dict, config: dict) -> str:
+    """Phase 107: last_human_idx als Ankerpunkt statt input_count.
+
+    input_count=1 (nur neue HumanMessage in state["messages"]) aber
+    result_state enthält den kompletten LangGraph-Checkpoint. Bei FINISH
+    gibt es keine neuen AIMessages, aber result_state["messages"][1:]
+    enthält alte AIMessages → Duplikate.
+
+    Fix: letzte HumanMessage im result_state als Ankerpunkt suchen –
+    nur AIMessages danach (ohne __MEMORY__) sind die neue Antwort.
+    """
     result_state = await _invoke_with_retry(state, config)
-    input_count  = len(state["messages"])
-    new_messages = result_state["messages"][input_count:]
-    ai_messages  = [m for m in new_messages if isinstance(m, AIMessage)]
-    # Kein Fallback auf alte Messages – verhindert Duplicate Responses (Issue #16)
-    response_msg = _extract_content(ai_messages[-1]) if ai_messages else "Keine Antwort vom Agent."
+    messages = result_state["messages"]
+
+    last_human_idx = max(
+        (i for i, m in enumerate(messages) if isinstance(m, HumanMessage)),
+        default=-1,
+    )
+    ai_messages = [
+        m for m in messages[last_human_idx + 1:]
+        if isinstance(m, AIMessage)
+        and not str(m.content).startswith("__MEMORY__")
+    ]
+    response_msg = _extract_content(ai_messages[-1]) if ai_messages else ""
+    if not response_msg:
+        logger.debug("_invoke_and_extract: keine neue AI-Antwort (FINISH oder leer)")
     return response_msg
 
 
 async def _dispatch_response(response_msg: str, bot: Bot, chat_id: int, update: Update) -> None:
+    # Phase 107: leere Antwort = FINISH – nichts senden, kein Fallback-Text.
+    if not response_msg:
+        logger.debug("_dispatch_response: leere Antwort – nichts gesendet (FINISH)")
+        return
     for prefix, handler in _RESPONSE_DISPATCH:
         if response_msg.startswith(prefix):
             await handler(response_msg=response_msg, bot=bot, chat_id=chat_id)
             return
     await asyncio.gather(
-        update.message.reply_text(response_msg or "Keine Antwort vom Agent."),
-        speak_and_send(response_msg, bot, chat_id) if response_msg else asyncio.sleep(0),
+        update.message.reply_text(response_msg),
+        speak_and_send(response_msg, bot, chat_id),
     )
 
 
