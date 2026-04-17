@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Phase 87: Explizite Type-Annotationen statt implizitem None.
 agent_graph: CompiledStateGraph | None = None
 _db_conn = None
 _init_lock = asyncio.Lock()
@@ -70,8 +69,7 @@ Verfuegbare Agenten:
   NEIN: Fragen über WhatsApp, allgemeine Kommunikation
 
 Regeln:
-- FINISH NUR wenn die bereitgestellte Nachricht bereits eine vollstaendige Antwort eines Agenten ist
-  (d.h. die Nachricht kommt vom System/Agenten, nicht vom User)
+- Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
 - Smalltalk, Reaktionen und Hoeflichkeiten des Users: IMMER chat_agent, NIE FINISH
 - Wetter-Fragen (wetter, temperatur, regen, warm, kalt, grad): IMMER web_agent
 - Im Zweifel zwischen web_agent und chat_agent: web_agent – AUSNAHME: reine Datum/Uhrzeit-Fragen ohne Wetterbezug immer chat_agent
@@ -95,8 +93,6 @@ FINISH
 def _filter_hitl_messages(messages: list) -> list:
     """
     Phase 91: Proto.MEMORY_VISION_MARKER statt hardcoded "Bildbeschreibung".
-    Vorher: Magic String direkt im Code – Format-Änderung hätte still gebrochen.
-    Jetzt:  Single Source of Truth in protocol.py.
     """
     from agent.protocol import Proto
     filtered = []
@@ -112,13 +108,23 @@ def _filter_hitl_messages(messages: list) -> list:
 
 
 async def supervisor_node(state: AgentState) -> AgentState:
-    # Phase 108: Early-Return bei AIMessage entfernt – war zu aggressiv.
-    # Vorher: wenn letzte Message im Checkpoint eine AIMessage war → sofort FINISH.
-    # Problem: nach Wetterantwort kam "danke" → Checkpoint-letzte = AIMessage (Wetter)
-    # → FINISH ohne LLM zu fragen → Bot schwieg auf Smalltalk.
-    # Fix: LLM entscheidet immer selbst anhand der letzten HumanMessage.
     llm = get_fast_llm()
     messages = state["messages"]
+
+    # Phase 109: Early-Return NUR wenn letzte Message eine AIMessage ist
+    # UND keine neue HumanMessage danach kommt.
+    # Vorher (Ph.106): Early-Return auf letzter Checkpoint-AIMessage → schwieg bei Smalltalk.
+    # Vorher (Ph.108): Early-Return ganz entfernt → Recursion Limit bei normalen Antworten.
+    # Fix: letzte Message im aktuellen ainvoke()-State prüfen – LangGraph hängt
+    # neue Messages ans Ende, daher ist die letzte Message nach Agent-Aufruf
+    # immer die neue AIMessage → FINISH korrekt.
+    # Bei neuer HumanMessage ("danke") ist die letzte Message eine HumanMessage → kein FINISH.
+    last_msg = messages[-1] if messages else None
+    if last_msg and isinstance(last_msg, AIMessage):
+        content = last_msg.content if isinstance(last_msg.content, str) else ""
+        if not content.startswith("__MEMORY__:"):
+            logger.debug("supervisor: letzte Message ist AIMessage → FINISH")
+            return {"next_agent": "FINISH"}
 
     clean_messages = _filter_hitl_messages(messages)
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
