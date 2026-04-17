@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.graph import StateGraph, END
@@ -17,6 +18,8 @@ from agent.agents.reminder_agent import reminder_agent
 from agent.agents.memory_agent import memory_agent
 from agent.agents.vision_agent import vision_agent
 from agent.agents.whatsapp_agent import whatsapp_agent
+
+logger = logging.getLogger(__name__)
 
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
 _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -114,11 +117,20 @@ async def supervisor_node(state: AgentState) -> AgentState:
     if messages and isinstance(messages[-1], AIMessage):
         last = messages[-1].content
         if not last.startswith("__MEMORY__:"):
+            logger.debug(f"supervisor: letzte Nachricht ist AIMessage → FINISH")
             return {"next_agent": "FINISH"}
 
     clean_messages = _filter_hitl_messages(messages)
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
     routing_messages = [last_human[-1]] if last_human else clean_messages[-1:]
+
+    # Debug: letzte Human-Message loggen
+    if last_human:
+        last_text = last_human[-1].content
+        if isinstance(last_text, list):
+            last_text = str(last_text)[:100]
+        logger.info(f"supervisor routing: '{last_text[:100]}' → ?")
+
     all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
     response = await llm.ainvoke(all_messages)
     content = response.content
@@ -132,8 +144,10 @@ async def supervisor_node(state: AgentState) -> AgentState:
         "memory_agent", "chat_agent", "vision_agent", "whatsapp_agent", "FINISH"
     }
     if next_agent not in valid:
+        logger.warning(f"supervisor: ungültiges Routing '{next_agent}' → fallback chat_agent")
         next_agent = "chat_agent"
 
+    logger.info(f"supervisor → {next_agent}")
     return {"next_agent": next_agent}
 
 
