@@ -1,6 +1,13 @@
 """
 bot/bot.py – Telegram Handler für FabBot.
 
+Phase 104 (Issue #16b): _invoke_locks – serialisiert concurrent Graph-Calls pro chat_id.
+- block=False erlaubt parallele Handler – ohne Lock können zwei schnelle Messages
+  gleichzeitig ainvoke() auf denselben thread_id aufrufen → Race Condition im
+  LangGraph SQLite-Checkpointer → doppelte Antworten.
+- _get_invoke_lock(chat_id) gibt pro chat_id einen asyncio.Lock zurück.
+- handle_message_text wraps _invoke_and_extract mit diesem Lock.
+
 Phase 97 (Issue #10): _processed_message_ids deque(maxlen=200)
 - _is_duplicate(update) zentraler Helper
 - Aufruf in on_message, on_voice, on_photo, on_document
@@ -66,11 +73,22 @@ _background_tasks: set[asyncio.Task] = set()
 _processed_message_ids: deque[int] = deque(maxlen=200)
 _dedup_lock: asyncio.Lock | None = None
 
+# Phase 104 (Issue #16b): Pro chat_id ein Lock – verhindert concurrent ainvoke()
+# auf denselben LangGraph thread_id (Race Condition im SQLite-Checkpointer).
+_invoke_locks: dict[int, asyncio.Lock] = {}
+
+
 def _get_dedup_lock() -> asyncio.Lock:
     global _dedup_lock
     if _dedup_lock is None:
         _dedup_lock = asyncio.Lock()
     return _dedup_lock
+
+
+def _get_invoke_lock(chat_id: int) -> asyncio.Lock:
+    if chat_id not in _invoke_locks:
+        _invoke_locks[chat_id] = asyncio.Lock()
+    return _invoke_locks[chat_id]
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -695,7 +713,11 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             "next_agent":       None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
-        response_msg = await _invoke_and_extract(state, config)
+        # Phase 104 (Issue #16b): Lock verhindert concurrent ainvoke() auf denselben
+        # thread_id – bei schnellem Chatten würden sonst zwei Handler gleichzeitig
+        # den LangGraph SQLite-Checkpointer beschreiben → Race Condition → Duplikate.
+        async with _get_invoke_lock(chat_id):
+            response_msg = await _invoke_and_extract(state, config)
         await _delete_thinking(thinking)
         await _dispatch_response(response_msg, bot, chat_id, update)
 
