@@ -367,31 +367,96 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
     elif action == "delete":
         if category == "people":
             name = data.get("name", "").strip().lower()
+            before = len(updated.get("people", []))
             if "people" in updated and isinstance(updated["people"], list):
                 updated["people"] = [p for p in updated["people"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)]
+            after = len(updated.get("people", []))
+            if before == after:
+                logger.warning(f"MemoryAgent delete people: kein Match für '{name}'")
             return updated
         elif category == "project":
             name = data.get("name", "").strip().lower()
+            active_before = updated.get("projects", {}).get("active", []) if isinstance(updated.get("projects"), dict) else []
+            before = len(active_before)
             if "projects" in updated and isinstance(updated["projects"], dict):
                 active = updated["projects"].get("active", [])
                 if isinstance(active, list):
                     updated["projects"]["active"] = [p for p in active if not (isinstance(p, dict) and p.get("name", "").lower() == name)]
+            after = len(updated.get("projects", {}).get("active", []))
+            if before == after:
+                logger.warning(f"MemoryAgent delete project: kein Match für '{name}'")
             return updated
         elif category == "place":
             name = data.get("name", "").strip().lower()
+            before = len(updated.get("places", []))
             if "places" in updated and isinstance(updated["places"], list):
                 updated["places"] = [p for p in updated["places"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)]
+            after = len(updated.get("places", []))
+            if before == after:
+                logger.warning(f"MemoryAgent delete place: kein Match für '{name}'")
             return updated
         elif category == "media":
             title = data.get("title", "").strip().lower()
+            before = len(updated.get("media", []))
             if "media" in updated and isinstance(updated["media"], list):
                 updated["media"] = [m for m in updated["media"] if not (isinstance(m, dict) and m.get("title", "").lower() == title)]
+            after = len(updated.get("media", []))
+            if before == after:
+                logger.warning(f"MemoryAgent delete media: kein Match für '{title}'")
+            return updated
+        elif category == "preference":
+            key = data.get("key", "").strip().lower()
+            if not key:
+                logger.warning("MemoryAgent delete preference: kein 'key' in data")
+                return None
+            if "preferences" in updated and isinstance(updated["preferences"], dict):
+                matched = next((k for k in updated["preferences"] if k.lower() == key), None)
+                if matched:
+                    del updated["preferences"][matched]
+                    logger.info(f"MemoryAgent delete preference: '{matched}' entfernt")
+                else:
+                    logger.warning(f"MemoryAgent delete preference: kein Match für '{key}'")
+            else:
+                logger.warning("MemoryAgent delete preference: keine preferences-Sektion vorhanden")
+            return updated
+        elif category == "location":
+            if "identity" in updated and isinstance(updated["identity"], dict):
+                if "location" in updated["identity"]:
+                    del updated["identity"]["location"]
+                    logger.info("MemoryAgent delete location: location aus identity entfernt")
+                else:
+                    logger.warning("MemoryAgent delete location: kein location-Feld in identity")
+            else:
+                logger.warning("MemoryAgent delete location: keine identity-Sektion vorhanden")
+            return updated
+        elif category == "job":
+            key = data.get("key", "").strip().lower()
+            if "work" in updated and isinstance(updated["work"], dict):
+                if key:
+                    matched = next((k for k in updated["work"] if k.lower() == key), None)
+                    if matched:
+                        del updated["work"][matched]
+                        logger.info(f"MemoryAgent delete job field: '{matched}' entfernt")
+                    else:
+                        logger.warning(f"MemoryAgent delete job: kein Feld '{key}' in work")
+                else:
+                    updated["work"] = {}
+                    logger.info("MemoryAgent delete job: work-Block geleert")
+            else:
+                logger.warning("MemoryAgent delete job: keine work-Sektion vorhanden")
             return updated
         elif category == "custom":
             key = data.get("key", "").strip().lower()
+            before = len(updated.get("custom", []))
             if "custom" in updated and isinstance(updated["custom"], list):
                 updated["custom"] = [item for item in updated["custom"] if not (isinstance(item, dict) and item.get("key", "").lower() == key)]
+            after = len(updated.get("custom", []))
+            if before == after:
+                logger.warning(f"MemoryAgent delete custom: kein Match für '{key}'")
             return updated
+        elif category == "bot_instruction":
+            logger.warning("MemoryAgent delete bot_instruction: nicht via memory_agent löschbar")
+            return None
 
     return None
 
