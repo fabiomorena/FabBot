@@ -10,6 +10,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
+from agent.agents.chat_agent import _is_short_confirmation
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
 
 MAX_FETCH_SIZE = 50_000
-MAX_RESPONSE_LENGTH = 3000
+MAX_RESPONSE_LENGTH = 5000
 TIMEOUT = 15
 _QUERY_MAX_LEN = 200
 _QUERY_MIN_LEN = 2
@@ -277,9 +278,9 @@ async def web_agent(state: AgentState) -> AgentState:
     last_human_text = _extract_text_result(human_msgs[-1].content) if human_msgs else ""
 
     # Issue #24: _is_short_confirmation() Guard vor _is_weather_query() –
-    # verhindert dass kurze Bestätigungen ("ja", "ok") als Wetteranfragen
-    # erkannt werden falls sie zufällig ein Keyword enthalten.
-    if _is_weather_query(last_human_text):
+    # verhindert dass kurze Bestätigungen ("super warm heute!", "ok") als
+    # Wetteranfragen erkannt werden falls sie zufällig ein Keyword enthalten.
+    if not _is_short_confirmation(last_human_text) and _is_weather_query(last_human_text):
         weather = await _get_weather_berlin()
         if weather:
             return {

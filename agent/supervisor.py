@@ -63,7 +63,7 @@ Verfuegbare Agenten:
     kurze Reaktionen, Hoeflichkeiten, Bestaetigungen
   - ALLE Folgefragen zu einem Foto oder Bild
   - NICHT fuer Wetter-Fragen – diese gehen immer an web_agent
-  - vision_agent: Bildanalyse – wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt
+- vision_agent: Bildanalyse von Fotos und Bildern. Wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt – nicht manuell routen.
 - whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte:
   JA: "schick Steffi dass...", "WhatsApp an Amalia: ...", "sende Fabio eine Nachricht"
   NEIN: Fragen über WhatsApp, allgemeine Kommunikation
@@ -123,6 +123,10 @@ async def supervisor_node(state: AgentState) -> AgentState:
     if last_msg and isinstance(last_msg, AIMessage):
         content = last_msg.content if isinstance(last_msg.content, str) else ""
         if not content.startswith("__MEMORY__:"):
+            # __MEMORY__: ist ausgenommen weil memory_agent danach noch chat_agent
+            # routen muss. Andere HITL-Prefixe (__CONFIRM_*, __SCREENSHOT__*,
+            # __VISION_RESULT__*) werden von _filter_hitl_messages() bereits in
+            # "[Aktion wurde ausgefuehrt]" übersetzt → kein Early-Return nötig.
             logger.debug("supervisor: letzte Message ist AIMessage → FINISH")
             return {"next_agent": "FINISH"}
 
