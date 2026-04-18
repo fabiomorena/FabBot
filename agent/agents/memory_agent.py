@@ -182,6 +182,8 @@ Wichtige Regeln:
 
 _REVIEWER_PROMPT = """Du bist ein YAML-Validator. Vergleiche Original- und neues YAML.
 
+Aktion: {action}
+
 Original:
 <original>
 {original}
@@ -193,8 +195,9 @@ Neu:
 </new>
 
 Antworte NUR mit einem einzigen Wort:
-VALID   – YAML-Syntax korrekt, alle Original-Daten erhalten, nur sinnvolle Ergänzungen/Änderungen
-INVALID – YAML kaputt, wichtige Daten fehlen, oder verdächtige Inhalte
+VALID   – Bei save/update: YAML-Syntax korrekt, alle Original-Daten erhalten, nur sinnvolle Ergänzungen/Änderungen.
+          Bei delete: YAML-Syntax korrekt, genau ein Eintrag wurde entfernt, alle anderen Daten erhalten.
+INVALID – YAML kaputt, unerwartete Daten fehlen, oder verdächtige Inhalte.
 
 Nur VALID oder INVALID."""
 
@@ -461,10 +464,11 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
     return None
 
 
-async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
+async def _review_yaml(original_yaml: str, new_yaml: str, action: str = "save") -> bool:
     try:
         llm = get_fast_llm()
         prompt = _REVIEWER_PROMPT.format(
+            action=action,
             original=original_yaml[:2000],
             new=new_yaml[:2000],
         )
@@ -494,7 +498,7 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
         text = data.get("text", "")
         return f"🤖 Bot-Instruktion gespeichert:\n_{text}_\n\nAb sofort aktiv – kein Neustart nötig."
     if action == "delete":
-        name = data.get("name") or data.get("title") or data.get("key", "Eintrag")
+        name = data.get("name") or data.get("title") or data.get("employer") or data.get("key", "Eintrag")
         return f"🗑️ Gelöscht: {name}"
     if category == "place":
         name = data.get("name", "")
@@ -604,7 +608,7 @@ async def memory_agent(state: AgentState) -> AgentState:
         original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
         new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
-        is_valid = await _review_yaml(original_yaml, new_yaml)
+        is_valid = await _review_yaml(original_yaml, new_yaml, action=action)
         if not is_valid:
             logger.warning(f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
             return _make_result("Konnte nicht gespeichert werden – bitte nochmal versuchen.")
