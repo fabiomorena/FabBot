@@ -1,3 +1,4 @@
+import os
 import re
 import socket
 import ipaddress
@@ -8,7 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from agent.audit import log_action
 from agent.llm import get_llm
 
-KNOWLEDGE_DIR = Path.home() / "Documents" / "Wissen"
+KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
 MAX_FETCH_SIZE = 50_000
 TIMEOUT = 15
 

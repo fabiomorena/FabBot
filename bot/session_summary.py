@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Konfiguration
 # ---------------------------------------------------------------------------
 
-SESSIONS_DIR = Path.home() / "Documents" / "Wissen" / "Sessions"
+SESSIONS_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen"))) / "Sessions"
 
 _raw_time = os.getenv("SESSION_SUMMARY_TIME", "23:30")
 try:

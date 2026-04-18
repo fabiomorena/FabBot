@@ -1,8 +1,9 @@
+import os
 import re
 from pathlib import Path
 from datetime import datetime
 
-KNOWLEDGE_DIR = Path.home() / "Documents" / "Wissen"
+KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
 MAX_RESULTS = 5
 
 

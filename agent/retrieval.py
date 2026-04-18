@@ -53,7 +53,7 @@ _MIN_CHUNK_CHARS = 50
 _MAX_DISTANCE = 0.7
 _EMBED_BATCH_SIZE = 100
 
-_WISSEN_DIR = Path.home() / "Documents" / "Wissen"
+_WISSEN_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
 _SESSIONS_DIR = _WISSEN_DIR / "Sessions"
 
 # Semaphore – verhindert parallele ChromaDB-Writes.
