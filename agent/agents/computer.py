@@ -101,6 +101,8 @@ async def computer_agent(state: AgentState) -> AgentState:
     def _err(msg: str) -> AgentState:
         return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "computer_agent"}
 
+    if not content:
+        return _err("Computer-Agent: leere Antwort vom LLM – bitte nochmal versuchen.")
     if content == "UNSUPPORTED":
         return _err("Diese Aktion wird vom Computer-Agent nicht unterstuetzt.")
 
