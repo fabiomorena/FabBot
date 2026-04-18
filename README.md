@@ -197,6 +197,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 106** ✅ Bug – Wetter-Routing zu web_agent gefixt (Supervisor-Prompt), Supervisor-Logging hinzugefügt, 858 tests green.
 - **Phase 107** ✅ Bug – _invoke_and_extract: last_human_idx statt input_count verhindert Duplikate bei FINISH, stilles FINISH ohne Fallback-Text, 858 tests green.
 - **Phase 109** ✅ Bug – Supervisor Early-Return fix: prüft letzte Message im aktuellen State statt Checkpoint, verhindert Recursion Error + stilles Schweigen bei Smalltalk, 858 tests green.
+- **Phase 110** ✅ Bug – memory_agent delete für preference/location/job ergänzt, Logging bei kein Match, Closes #32
+- **Phase 111** ✅ Bug – memory_agent: Reviewer delete-aware, preference/location/job delete ergänzt, Closes #32
 ---
 
 ## License
