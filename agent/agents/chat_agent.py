@@ -237,32 +237,63 @@ def _is_short_confirmation(text: str) -> bool:
     return text.strip().lower().rstrip("!.") in _SHORT_CONFIRMATIONS
 
 
+def _load_all_sessions() -> str:
+    """
+    Hotfix 18.04: Laedt alle Session-Summaries direkt aus SESSIONS_DIR (sortiert nach Datum).
+    Unabhaengig von ChromaDB-Ranking — alle Sessions werden immer geladen.
+    Fail-safe: Bei Fehler leerer String.
+    """
+    try:
+        from agent.retrieval import _SESSIONS_DIR
+        sessions_dir = _SESSIONS_DIR
+        if not sessions_dir.exists():
+            return ""
+        files = sorted(sessions_dir.glob("*.md"))
+        if not files:
+            return ""
+        parts = ["\n## Deine Session-Erinnerungen (alle):"]
+        for f in files:
+            try:
+                content = f.read_text(encoding="utf-8").strip()
+                if content:
+                    parts.append(f"[{f.stem}]\n{content}")
+            except Exception:
+                continue
+        return "\n\n".join(parts) if len(parts) > 1 else ""
+    except Exception as e:
+        logger.debug(f"Session-Load: fehlgeschlagen (ignoriert): {e}")
+        return ""
+
+
 async def _get_retrieval_context(query: str) -> str:
     """
     Phase 77: Holt semantisch relevante Chunks aus der Wissensbasis.
+    Hotfix 18.04: Sessions werden immer vollstaendig vorangestellt (nicht via Ranking).
     Fail-safe: Bei Fehler, Timeout oder chromadb nicht installiert → leerer String.
     """
     if not query or len(query) < 5:
         return ""
+    session_ctx = _load_all_sessions()
     try:
         from agent.retrieval import search
         results = await asyncio.wait_for(search(query, n_results=3), timeout=5.0)
         if not results:
-            return ""
+            return session_ctx
         parts = ["\n## Relevantes aus deiner Wissensbasis:"]
         for r in results:
             label = r.get("label", "Unbekannt")
             doc = r.get("document", "")[:500]
             parts.append(f"[{label}]\n{doc}")
-        return "\n\n".join(parts)
+        knowledge_ctx = "\n\n".join(parts)
+        return session_ctx + "\n" + knowledge_ctx if session_ctx else knowledge_ctx
     except asyncio.TimeoutError:
         logger.debug("Retrieval: Timeout nach 5s – übersprungen")
-        return ""
+        return session_ctx
     except ImportError:
-        return ""
+        return session_ctx
     except Exception as e:
         logger.debug(f"Retrieval: fehlgeschlagen (ignoriert): {e}")
-        return ""
+        return session_ctx
 
 
 async def chat_agent(state: AgentState) -> AgentState:
