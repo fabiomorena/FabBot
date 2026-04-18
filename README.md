@@ -199,7 +199,9 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 109** ✅ Bug – Supervisor Early-Return fix: prüft letzte Message im aktuellen State statt Checkpoint, verhindert Recursion Error + stilles Schweigen bei Smalltalk, 858 tests green.
 - **Phase 110** ✅ Bug – memory_agent delete für preference/location/job ergänzt, Logging bei kein Match, Closes #32
 - **Phase 111** ✅ Bug – memory_agent: Reviewer delete-aware, preference/location/job delete ergänzt, Closes #32
+- **Phase 112** ✅ Bug – computer_agent: leerer Content Guard + Prompt Beispiel-Trigger, Closes #28
 ---
+
 
 ## License
 
