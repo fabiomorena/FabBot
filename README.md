@@ -40,7 +40,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 881 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 891 pytest tests on every push |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -67,6 +67,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | State-Transfer – last_agent_result/last_agent_name zwischen Agents, dynamischer Suffix außerhalb Cache |
 | ✅ | memory_agent delete-aware – _is_valid_delete() strukturelle Subset-Prüfung, alle Kategorien generisch |
 | ✅ | Modell-Validierung – _MODEL_PATTERN optional Datum, claude-sonnet-4-6 + opus-4-7 ohne Suffix valide |
+| ✅ | Screenshot-Kontext – last_agent_result mit Analyse-Text befüllt, _update_memory() in bot.py, chat_agent kennt Screenshot-Kontext bei Follow-ups |
 
 ---
 
@@ -83,7 +84,7 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/test_security_terminal.py  # pytest suite (881 tests)
+├── tests/test_security_terminal.py  # pytest suite (891 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -188,7 +189,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-.venv/bin/python -m pytest tests/ -v      # Run tests (881 tests)
+.venv/bin/python -m pytest tests/ -v      # Run tests (891 tests)
 ```
 
 ### Run as Launch Agent
@@ -329,6 +330,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 81–90** ✅ WhatsApp & Security – WhatsApp Agent (whatsapp-web.js), auth fail-closed, rate limiting, LangSmith telemetry, watchdog fixes
 - **Phase 91–99** ✅ Hardening & Refactor – crypto/audit/llm hardening, GitHub Issues workflow, Prompt-Cache TTL 60s, model-validierung beim Start, memory_agent Registry-Pattern, deque dedup, get_current_datetime() Europe/Berlin, State-Transfer last_agent_result/last_agent_name
 - **Phase 100–116** ✅ Stabilisierung & Bug-Fixes – Duplicate Responses fix, Wetter via wttr.in, drop_pending_updates + ThrottleInterval, _invoke_locks Race Condition, web_agent Wetter-Routing, Supervisor Early-Return, memory_agent delete generisch, computer_agent Regex-Intent-Parse, _review_yaml delete-aware (alle Kategorien), Sonnet-Default auf claude-sonnet-4-6, _MODEL_PATTERN optional Datum; 881 Tests grün
+- **Phase 117** ✅ Bug-Fix – Screenshot-Kontext für chat_agent: `last_agent_result` in `computer.py` mit Analyse-Text befüllt, `_update_memory()` in `bot.py` ergänzt — Follow-up-Fragen nach Screenshots funktionieren korrekt (Closes #45); 891 Tests grün
 
 ---
 
