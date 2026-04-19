@@ -72,6 +72,8 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Nested Preferences – `preferences.<subcategory>.<key>` Struktur, automatische Kategorisierung (entertainment/lifestyle/tech/work), Legacy-Keys kompatibel |
 | ✅ | Profilbewusster Delete-Parser – Parser kennt Profil-Keys, Wert-Match bei Delete ('Vergiss Star Trek' → löscht `lieblingsserie`), Rückfrage bei Ambiguität |
 | ✅ | Deterministisches Supervisor-Pre-Routing – 'vergiss X' / 'merke dir' → memory_agent ohne LLM-Halluzinieren |
+| ✅ | Supervisor-Routing nachhaltig umgebaut – chat_agent als Default-Fallback, web_agent nur bei externen Daten, deterministisches Pre-Routing für Opinion-Trigger |
+| ✅ | Prompt-Leak Fix – web_agent filtert interne Fallback-Texte via `_filter_internal_response()` bevor sie den User erreichen |
 ---
 
 ## Architecture
@@ -336,7 +338,9 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 117** ✅ Bug-Fix – Screenshot-Kontext für chat_agent: `last_agent_result` in `computer.py` mit Analyse-Text befüllt, `_update_memory()` in `bot.py` ergänzt — Follow-up-Fragen nach Screenshots funktionieren korrekt (Closes #45); 891 Tests grün
 - **Phase 118** ✅ Bug-Fix – web_agent AIMessage-Prefill entfernt: `summary_messages` endet jetzt mit `HumanMessage` statt `AIMessage` — behebt Error 400 bei fetch/search mit claude-sonnet-4-6 (Closes #46); 891 Tests grün
 - **Phase 119** ✅ Feature – Nachhaltiges Preferences-System: nested `preferences.<subcategory>.<key>`, Auto-Kategorisierung, profilbewusster Delete-Parser mit Wert-Match + clarify-Action, deterministisches Supervisor-Pre-Routing für Memory-Trigger (Closes #40, #43); 935 Tests grün
+- **Phase 120** ✅ Bug-Fix – Supervisor-Routing nachhaltig umgebaut (chat_agent Default-Fallback, web_agent nur bei externen Daten, Opinion-Trigger → chat_agent), Prompt-Leak in web_agent behoben via `_filter_internal_response()` (Closes #41, #47, #48); 935 Tests grün
 ---
+
 
 ## License
 
