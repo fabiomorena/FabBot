@@ -1,6 +1,8 @@
 """
 Tests für Phase 119 – Nachhaltiges Preferences-System + profilbewusster Delete-Parser.
 Closes #40.
+
+Phase 121: Assertions auf MemoryUpdateResult umgestellt (result.updated_profile statt result[...]).
 """
 
 import pytest
@@ -184,6 +186,7 @@ class TestBuildProfileContextForParser:
 
 # ---------------------------------------------------------------------------
 # _apply_memory_update – save preference nested
+# Phase 121: result.updated_profile statt result[...]
 # ---------------------------------------------------------------------------
 
 class TestApplyMemoryUpdatePreferenceSave:
@@ -193,15 +196,17 @@ class TestApplyMemoryUpdatePreferenceSave:
             profile, "save", "preference",
             {"key": "favorite_fantasy_series", "value": "Star Trek", "subcategory": "entertainment"}
         )
-        assert result["preferences"]["entertainment"]["favorite_fantasy_series"] == "Star Trek"
+        assert result.success is True
+        assert result.updated_profile["preferences"]["entertainment"]["favorite_fantasy_series"] == "Star Trek"
 
     def test_save_infers_subcategory(self):
         profile = {"preferences": {}}
         result = _apply_memory_update(
             profile, "save", "preference",
-            {"key": "sport", "value": "Laufen"}  # kein subcategory → wird inferiert
+            {"key": "sport", "value": "Laufen"}
         )
-        assert result["preferences"]["lifestyle"]["sport"] == "Laufen"
+        assert result.success is True
+        assert result.updated_profile["preferences"]["lifestyle"]["sport"] == "Laufen"
 
     def test_save_adds_to_existing_subcategory(self):
         profile = {
@@ -213,8 +218,9 @@ class TestApplyMemoryUpdatePreferenceSave:
             profile, "save", "preference",
             {"key": "favorite_film", "value": "Inception", "subcategory": "entertainment"}
         )
-        assert result["preferences"]["entertainment"]["favorite_film"] == "Inception"
-        assert result["preferences"]["entertainment"]["favorite_fantasy_series"] == "Star Trek"
+        assert result.success is True
+        assert result.updated_profile["preferences"]["entertainment"]["favorite_film"] == "Inception"
+        assert result.updated_profile["preferences"]["entertainment"]["favorite_fantasy_series"] == "Star Trek"
 
     def test_save_updates_existing_key(self):
         profile = {
@@ -226,7 +232,8 @@ class TestApplyMemoryUpdatePreferenceSave:
             profile, "save", "preference",
             {"key": "favorite_fantasy_series", "value": "Star Wars", "subcategory": "entertainment"}
         )
-        assert result["preferences"]["entertainment"]["favorite_fantasy_series"] == "Star Wars"
+        assert result.success is True
+        assert result.updated_profile["preferences"]["entertainment"]["favorite_fantasy_series"] == "Star Wars"
 
     def test_save_creates_preferences_section(self):
         profile = {}
@@ -234,62 +241,65 @@ class TestApplyMemoryUpdatePreferenceSave:
             profile, "save", "preference",
             {"key": "editor", "value": "Neovim", "subcategory": "tech"}
         )
-        assert result["preferences"]["tech"]["editor"] == "Neovim"
+        assert result.success is True
+        assert result.updated_profile["preferences"]["tech"]["editor"] == "Neovim"
 
-    def test_save_missing_key_returns_none(self):
+    def test_save_missing_key_returns_invalid(self):
         result = _apply_memory_update(
             {}, "save", "preference",
             {"key": "", "value": "test"}
         )
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
-    def test_save_missing_value_returns_none(self):
+    def test_save_missing_value_returns_invalid(self):
         result = _apply_memory_update(
             {}, "save", "preference",
             {"key": "sport", "value": ""}
         )
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
 
 # ---------------------------------------------------------------------------
 # _apply_memory_update – delete preference (Kernfix #40)
+# Phase 121: result.updated_profile statt result[...]
 # ---------------------------------------------------------------------------
 
 class TestApplyMemoryUpdatePreferenceDelete:
     def test_delete_by_exact_key_flat(self, profile_flat):
-        """Exakter Key-Match auf flacher Ebene."""
         result = _apply_memory_update(
             profile_flat, "delete", "preference",
             {"key": "favorite_fantasy_series"}
         )
-        assert "favorite_fantasy_series" not in result["preferences"]
+        assert result.success is True
+        assert "favorite_fantasy_series" not in result.updated_profile["preferences"]
 
     def test_delete_by_exact_key_nested(self, profile_nested):
-        """Exakter Key-Match in nested Subcategory."""
         result = _apply_memory_update(
             profile_nested, "delete", "preference",
             {"key": "favorite_fantasy_series"}
         )
-        assert "favorite_fantasy_series" not in result["preferences"].get("entertainment", {})
+        assert result.success is True
+        assert "favorite_fantasy_series" not in result.updated_profile["preferences"].get("entertainment", {})
 
     def test_delete_by_value_flat(self, profile_flat):
-        """Kernfix #40: Wert 'Star Trek' → löscht favorite_fantasy_series."""
         result = _apply_memory_update(
             profile_flat, "delete", "preference",
-            {"key": "star trek"}  # Parser gibt Wert als key zurück
+            {"key": "star trek"}
         )
-        assert "favorite_fantasy_series" not in result["preferences"]
+        assert result.success is True
+        assert "favorite_fantasy_series" not in result.updated_profile["preferences"]
 
     def test_delete_by_value_nested(self, profile_nested):
-        """Kernfix #40: Wert 'Star Trek' in nested Struktur."""
         result = _apply_memory_update(
             profile_nested, "delete", "preference",
             {"key": "star trek"}
         )
-        assert "favorite_fantasy_series" not in result["preferences"].get("entertainment", {})
+        assert result.success is True
+        assert "favorite_fantasy_series" not in result.updated_profile["preferences"].get("entertainment", {})
 
     def test_delete_cleans_empty_subcategory(self):
-        """Leere Subcategory wird nach Delete aufgeräumt."""
         profile = {
             "preferences": {
                 "entertainment": {"favorite_fantasy_series": "Star Trek"}
@@ -299,50 +309,51 @@ class TestApplyMemoryUpdatePreferenceDelete:
             profile, "delete", "preference",
             {"key": "favorite_fantasy_series"}
         )
-        assert "entertainment" not in result["preferences"]
+        assert result.success is True
+        assert "entertainment" not in result.updated_profile["preferences"]
 
     def test_delete_keeps_other_keys_in_subcategory(self, profile_nested):
-        """Andere Keys in derselben Subcategory bleiben erhalten."""
         result = _apply_memory_update(
             profile_nested, "delete", "preference",
             {"key": "favorite_fantasy_series"}
         )
-        assert result["preferences"]["entertainment"]["favorite_film"] == "Inception"
+        assert result.success is True
+        assert result.updated_profile["preferences"]["entertainment"]["favorite_film"] == "Inception"
 
-    def test_delete_no_match_returns_updated_unchanged(self, profile_flat):
-        """Kein Match → gibt profile zurück (unverändert, kein None)."""
+    def test_delete_no_match_returns_ok_unchanged(self, profile_flat):
         import copy
         original = copy.deepcopy(profile_flat)
         result = _apply_memory_update(
             profile_flat, "delete", "preference",
             {"key": "nonexistent_key_xyz"}
         )
-        assert result is not None
-        assert result["preferences"] == original["preferences"]
+        assert result.success is True
+        assert result.updated_profile["preferences"] == original["preferences"]
 
-    def test_delete_empty_key_returns_none(self, profile_flat):
+    def test_delete_empty_key_returns_invalid(self, profile_flat):
         result = _apply_memory_update(
             profile_flat, "delete", "preference",
             {"key": ""}
         )
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
     def test_delete_case_insensitive(self, profile_flat):
-        """Delete ist case-insensitive."""
         result = _apply_memory_update(
             profile_flat, "delete", "preference",
             {"key": "SPORT"}
         )
-        assert "sport" not in result["preferences"]
+        assert result.success is True
+        assert "sport" not in result.updated_profile["preferences"]
 
 
 # ---------------------------------------------------------------------------
 # _apply_memory_update – delete project early return fix (#43)
+# Phase 121: leerer name → _reject (allow_fallback=False)
 # ---------------------------------------------------------------------------
 
 class TestDeleteProjectEmptyName:
-    def test_delete_project_empty_name_returns_none(self):
-        """Phase 119 / Fix #43: leerer name → None statt silent fail."""
+    def test_delete_project_empty_name_returns_reject(self):
         profile = {
             "projects": {"active": [{"name": "FabBot", "priority": "high"}]}
         }
@@ -350,7 +361,9 @@ class TestDeleteProjectEmptyName:
             profile, "delete", "project",
             {"name": ""}
         )
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is False
+        assert result.user_message is not None
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +394,6 @@ class TestBuildClarifyMessage:
             "options": [f"option_{i}" for i in range(10)]
         }
         msg = _build_clarify_message(data)
-        # Nur max 5 options
         assert msg.count("•") <= 5
 
     def test_fallback_without_options(self):
@@ -402,7 +414,6 @@ class TestBuildClarifyMessage:
 class TestMemoryAgentClarifyFlow:
     @pytest.mark.asyncio
     async def test_clarify_action_returns_question(self):
-        """clarify-Action → Rückfrage ohne Profil-Schreibzugriff."""
         messages = [HumanMessage(content="Lösche Star Trek")]
 
         clarify_response = {
@@ -421,16 +432,12 @@ class TestMemoryAgentClarifyFlow:
             from agent.agents.memory_agent import memory_agent
             result = await memory_agent({"messages": messages})
 
-            # Profil wurde NICHT geschrieben
             mock_write.assert_not_called()
-
-            # Rückfrage wurde gesendet
             msg = result["messages"][-1].content
             assert "Meinst du" in msg or "?" in msg
 
     @pytest.mark.asyncio
     async def test_save_preference_nested_written_to_profile(self):
-        """save preference → nested ins Profil geschrieben."""
         messages = [HumanMessage(content="Merke dir: Meine Lieblings-Serie ist The Wire")]
 
         save_response = {

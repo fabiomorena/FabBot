@@ -799,50 +799,52 @@ class TestApplyMemoryUpdatePerson:
         """Neue Person wird korrekt gespeichert."""
         profile = self._base_profile()
         result = _apply_memory_update(profile, "save", "people", {"name": "Marco Müller", "context": "Kollege"})
-        assert result is not None
-        assert any(p["name"] == "Marco Müller" for p in result["people"])
+        assert result.success is True
+        assert any(p["name"] == "Marco Müller" for p in result.updated_profile["people"])
 
     def test_save_person_creates_people_list(self) -> None:
         """people-Liste wird angelegt wenn nicht vorhanden."""
         profile = {"identity": {"name": "Fabio"}}
         result = _apply_memory_update(profile, "save", "people", {"name": "Anna", "context": "Freundin"})
-        assert result is not None
-        assert "people" in result
-        assert len(result["people"]) == 1
+        assert result.success is True
+        assert "people" in result.updated_profile
+        assert len(result.updated_profile["people"]) == 1
 
     def test_update_existing_person(self) -> None:
         """Bestehende Person wird aktualisiert, kein Duplikat."""
         profile = {"people": [{"name": "Marco", "context": "Kollege"}]}
         result = _apply_memory_update(profile, "update", "people", {"name": "Marco", "context": "Vorgesetzter"})
-        assert result is not None
-        assert len(result["people"]) == 1
-        assert result["people"][0]["context"] == "Vorgesetzter"
+        assert result.success is True
+        assert len(result.updated_profile["people"]) == 1
+        assert result.updated_profile["people"][0]["context"] == "Vorgesetzter"
 
     def test_update_person_case_insensitive(self) -> None:
         """Namensvergleich ist case-insensitive."""
         profile = {"people": [{"name": "marco", "context": "Kollege"}]}
         result = _apply_memory_update(profile, "update", "people", {"name": "Marco", "context": "Chef"})
-        assert result is not None
-        assert len(result["people"]) == 1
+        assert result.success is True
+        assert len(result.updated_profile["people"]) == 1
 
     def test_save_person_missing_name_returns_none(self) -> None:
         """Fehlender Name → None."""
         profile = {"people": []}
         result = _apply_memory_update(profile, "save", "people", {"name": "", "context": "?"})
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
     def test_delete_person(self) -> None:
         """Person wird korrekt gelöscht."""
         profile = {"people": [{"name": "Marco", "context": "Kollege"}, {"name": "Anna", "context": "Freundin"}]}
         result = _apply_memory_update(profile, "delete", "people", {"name": "Marco"})
-        assert result is not None
-        assert len(result["people"]) == 1
-        assert result["people"][0]["name"] == "Anna"
+        assert result.success is True
+        assert len(result.updated_profile["people"]) == 1
+        assert result.updated_profile["people"][0]["name"] == "Anna"
 
     def test_original_not_modified(self) -> None:
         """Original-Dict wird nicht verändert (deepcopy)."""
         profile = {"people": []}
         result = _apply_memory_update(profile, "save", "people", {"name": "Test", "context": "x"})
+        assert result.success is True
         assert profile["people"] == []  # Original unverändert
 
 
@@ -855,10 +857,10 @@ class TestApplyMemoryUpdatePlace:
             "name": "Saporito", "type": "restaurant",
             "location": "Friedrichshain, Berlin", "context": "Lieblings-Italiener"
         })
-        assert result is not None
-        assert "places" in result
-        assert result["places"][0]["name"] == "Saporito"
-        assert result["places"][0]["type"] == "restaurant"
+        assert result.success is True
+        assert "places" in result.updated_profile
+        assert result.updated_profile["places"][0]["name"] == "Saporito"
+        assert result.updated_profile["places"][0]["type"] == "restaurant"
 
     def test_save_duplicate_place_updates_existing(self) -> None:
         """Duplikat-Ort → bestehender Eintrag wird aktualisiert, kein zweiter Eintrag."""
@@ -866,29 +868,30 @@ class TestApplyMemoryUpdatePlace:
         result = _apply_memory_update(profile, "save", "place", {
             "name": "Saporito", "type": "restaurant", "context": "Lieblings-Italiener"
         })
-        assert result is not None
-        assert len(result["places"]) == 1  # Kein Duplikat
-        assert result["places"][0]["context"] == "Lieblings-Italiener"  # Update
+        assert result.success is True
+        assert len(result.updated_profile["places"]) == 1  # Kein Duplikat
+        assert result.updated_profile["places"][0]["context"] == "Lieblings-Italiener"  # Update
 
     def test_save_place_case_insensitive_duplicate(self) -> None:
         """Duplikat-Check ist case-insensitive – kein zweiter Eintrag."""
         profile = {"places": [{"name": "saporito", "context": "alt"}]}
         result = _apply_memory_update(profile, "save", "place", {"name": "Saporito", "context": "neu"})
-        assert result is not None
-        assert len(result["places"]) == 1  # Kein Duplikat
+        assert result.success is True
+        assert len(result.updated_profile["places"]) == 1  # Kein Duplikat
 
     def test_delete_place(self) -> None:
         """Ort wird korrekt gelöscht."""
         profile = {"places": [{"name": "Saporito"}, {"name": "Zur Linde"}]}
         result = _apply_memory_update(profile, "delete", "place", {"name": "Saporito"})
-        assert result is not None
-        assert len(result["places"]) == 1
-        assert result["places"][0]["name"] == "Zur Linde"
+        assert result.success is True
+        assert len(result.updated_profile["places"]) == 1
+        assert result.updated_profile["places"][0]["name"] == "Zur Linde"
 
     def test_save_place_missing_name_returns_none(self) -> None:
         """Fehlender Name → None."""
         result = _apply_memory_update({}, "save", "place", {"name": "", "type": "restaurant"})
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
 
 class TestApplyMemoryUpdateProject:
@@ -899,8 +902,8 @@ class TestApplyMemoryUpdateProject:
         result = _apply_memory_update(profile, "save", "project", {
             "name": "NeueApp", "description": "Test", "priority": "high"
         })
-        assert result is not None
-        assert any(p["name"] == "NeueApp" for p in result["projects"]["active"])
+        assert result.success is True
+        assert any(p["name"] == "NeueApp" for p in result.updated_profile["projects"]["active"])
 
     def test_save_duplicate_project_updates_existing(self) -> None:
         """Duplikat-Projekt → bestehender Eintrag wird aktualisiert, kein zweiter."""
@@ -908,16 +911,16 @@ class TestApplyMemoryUpdateProject:
         result = _apply_memory_update(profile, "save", "project", {
             "name": "FabBot", "description": "Neues Feature", "priority": "high"
         })
-        assert result is not None
-        assert len(result["projects"]["active"]) == 1  # Kein Duplikat
-        assert result["projects"]["active"][0]["description"] == "Neues Feature"
+        assert result.success is True
+        assert len(result.updated_profile["projects"]["active"]) == 1  # Kein Duplikat
+        assert result.updated_profile["projects"]["active"][0]["description"] == "Neues Feature"
 
     def test_delete_project(self) -> None:
         """Projekt wird korrekt gelöscht."""
         profile = {"projects": {"active": [{"name": "Bonial"}, {"name": "FabBot"}]}}
         result = _apply_memory_update(profile, "delete", "project", {"name": "Bonial"})
-        assert result is not None
-        names = [p["name"] for p in result["projects"]["active"]]
+        assert result.success is True
+        names = [p["name"] for p in result.updated_profile["projects"]["active"]]
         assert "Bonial" not in names
         assert "FabBot" in names
 
@@ -928,15 +931,16 @@ class TestApplyMemoryUpdateJob:
         """Job wird in work-Sektion gespeichert."""
         profile = {"work": {"focus": "KI"}}
         result = _apply_memory_update(profile, "save", "job", {"employer": "Google", "role": "Engineer"})
-        assert result is not None
-        assert result["work"]["employer"] == "Google"
-        assert result["work"]["role"] == "Engineer"
-        assert result["work"]["focus"] == "KI"  # Bestehende Felder erhalten
+        assert result.success is True
+        assert result.updated_profile["work"]["employer"] == "Google"
+        assert result.updated_profile["work"]["role"] == "Engineer"
+        assert result.updated_profile["work"]["focus"] == "KI"  # Bestehende Felder erhalten
 
     def test_save_job_missing_employer_returns_none(self) -> None:
         """Fehlender Arbeitgeber → None."""
         result = _apply_memory_update({}, "save", "job", {"employer": "", "role": "Dev"})
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
 
 class TestApplyMemoryUpdateCustom:
@@ -945,30 +949,31 @@ class TestApplyMemoryUpdateCustom:
         """Custom-Eintrag wird gespeichert."""
         profile = {}
         result = _apply_memory_update(profile, "save", "custom", {"key": "hobby_yoga", "value": "macht Yoga"})
-        assert result is not None
-        assert "custom" in result
-        assert result["custom"][0] == {"key": "hobby_yoga", "value": "macht Yoga"}
+        assert result.success is True
+        assert "custom" in result.updated_profile
+        assert result.updated_profile["custom"][0] == {"key": "hobby_yoga", "value": "macht Yoga"}
 
     def test_save_duplicate_custom_updates_existing(self) -> None:
         """Duplikat-Custom → bestehender Wert wird aktualisiert, kein zweiter Eintrag."""
         profile = {"custom": [{"key": "hobby_yoga", "value": "macht Yoga"}]}
         result = _apply_memory_update(profile, "save", "custom", {"key": "hobby_yoga", "value": "macht täglich Yoga"})
-        assert result is not None
-        assert len(result["custom"]) == 1  # Kein Duplikat
-        assert result["custom"][0]["value"] == "macht täglich Yoga"  # Update
+        assert result.success is True
+        assert len(result.updated_profile["custom"]) == 1  # Kein Duplikat
+        assert result.updated_profile["custom"][0]["value"] == "macht täglich Yoga"  # Update
 
     def test_delete_custom(self) -> None:
         """Custom-Eintrag wird gelöscht."""
         profile = {"custom": [{"key": "hobby_yoga", "value": "macht Yoga"}, {"key": "sport", "value": "läuft"}]}
         result = _apply_memory_update(profile, "delete", "custom", {"key": "hobby_yoga"})
-        assert result is not None
-        assert len(result["custom"]) == 1
-        assert result["custom"][0]["key"] == "sport"
+        assert result.success is True
+        assert len(result.updated_profile["custom"]) == 1
+        assert result.updated_profile["custom"][0]["key"] == "sport"
 
     def test_save_custom_missing_key_returns_none(self) -> None:
         """Fehlender Key → None."""
         result = _apply_memory_update({}, "save", "custom", {"key": "", "value": "test"})
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
 
 class TestApplyMemoryUpdateLocation:
@@ -977,14 +982,15 @@ class TestApplyMemoryUpdateLocation:
         """Standort wird in identity gespeichert."""
         profile = {"identity": {"name": "Fabio", "location": "Berlin"}}
         result = _apply_memory_update(profile, "save", "location", {"location": "München, Deutschland"})
-        assert result is not None
-        assert result["identity"]["location"] == "München, Deutschland"
-        assert result["identity"]["name"] == "Fabio"  # Name erhalten
+        assert result.success is True
+        assert result.updated_profile["identity"]["location"] == "München, Deutschland"
+        assert result.updated_profile["identity"]["name"] == "Fabio"  # Name erhalten
 
     def test_save_location_missing_returns_none(self) -> None:
         """Fehlender Standort → None."""
         result = _apply_memory_update({}, "save", "location", {"location": ""})
-        assert result is None
+        assert result.success is False
+        assert result.allow_fallback is True
 
 
 # ---------------------------------------------------------------------------

@@ -339,6 +339,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 118** ✅ Bug-Fix – web_agent AIMessage-Prefill entfernt: `summary_messages` endet jetzt mit `HumanMessage` statt `AIMessage` — behebt Error 400 bei fetch/search mit claude-sonnet-4-6 (Closes #46); 891 Tests grün
 - **Phase 119** ✅ Feature – Nachhaltiges Preferences-System: nested `preferences.<subcategory>.<key>`, Auto-Kategorisierung, profilbewusster Delete-Parser mit Wert-Match + clarify-Action, deterministisches Supervisor-Pre-Routing für Memory-Trigger (Closes #40, #43); 935 Tests grün
 - **Phase 120** ✅ Bug-Fix – Supervisor-Routing nachhaltig umgebaut (chat_agent Default-Fallback, web_agent nur bei externen Daten, Opinion-Trigger → chat_agent), Prompt-Leak in web_agent behoben via `_filter_internal_response()` (Closes #41, #47, #48); 935 Tests grün
+- **Phase 121** ✅ Refactor – `MemoryUpdateResult`: typisiertes Result-Objekt ersetzt `dict | None` in `_apply_memory_update` — `bot_instruction` delete gibt `_reject()` zurück (kein Fallback-Save, kein falsches 🗑️-Feedback), `project` delete mit leerem Name ebenfalls `_reject()`, bestehende Tests auf neues API umgestellt (Closes #44); 964 Tests grün
 ---
 
 
