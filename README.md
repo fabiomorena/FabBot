@@ -68,6 +68,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | memory_agent delete-aware – _is_valid_delete() strukturelle Subset-Prüfung, alle Kategorien generisch |
 | ✅ | Modell-Validierung – _MODEL_PATTERN optional Datum, claude-sonnet-4-6 + opus-4-7 ohne Suffix valide |
 | ✅ | Screenshot-Kontext – last_agent_result mit Analyse-Text befüllt, _update_memory() in bot.py, chat_agent kennt Screenshot-Kontext bei Follow-ups |
+| ✅ | web_agent Prefill-Fix – summary_messages enden mit HumanMessage statt AIMessage, kompatibel mit claude-sonnet-4-6 |
 
 ---
 
@@ -331,6 +332,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 91–99** ✅ Hardening & Refactor – crypto/audit/llm hardening, GitHub Issues workflow, Prompt-Cache TTL 60s, model-validierung beim Start, memory_agent Registry-Pattern, deque dedup, get_current_datetime() Europe/Berlin, State-Transfer last_agent_result/last_agent_name
 - **Phase 100–116** ✅ Stabilisierung & Bug-Fixes – Duplicate Responses fix, Wetter via wttr.in, drop_pending_updates + ThrottleInterval, _invoke_locks Race Condition, web_agent Wetter-Routing, Supervisor Early-Return, memory_agent delete generisch, computer_agent Regex-Intent-Parse, _review_yaml delete-aware (alle Kategorien), Sonnet-Default auf claude-sonnet-4-6, _MODEL_PATTERN optional Datum; 881 Tests grün
 - **Phase 117** ✅ Bug-Fix – Screenshot-Kontext für chat_agent: `last_agent_result` in `computer.py` mit Analyse-Text befüllt, `_update_memory()` in `bot.py` ergänzt — Follow-up-Fragen nach Screenshots funktionieren korrekt (Closes #45); 891 Tests grün
+- **Phase 118** ✅ Bug-Fix – web_agent AIMessage-Prefill entfernt: `summary_messages` endet jetzt mit `HumanMessage` statt `AIMessage` — behebt Error 400 bei fetch/search mit claude-sonnet-4-6 (Closes #46); 891 Tests grün
 
 ---
 
