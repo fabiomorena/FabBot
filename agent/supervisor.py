@@ -141,6 +141,37 @@ async def supervisor_node(state: AgentState) -> AgentState:
             last_text = str(last_text)[:100]
         logger.info(f"supervisor routing: '{last_text[:100]}' → ?")
 
+    # Phase 119c: Deterministisches Pre-Routing für Memory-Delete-Trigger.
+    # Verhindert dass der LLM 'vergiss X' fälschlicherweise zu chat_agent routet.
+    if routing_messages:
+        last_content = routing_messages[-1].content if hasattr(routing_messages[-1], "content") else ""
+        if isinstance(last_content, list):
+            last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
+        last_lower = last_content.strip().lower()
+        _MEMORY_DELETE_PREFIXES = (
+            "vergiss ",
+            "vergiss,",
+            "lösche aus dem profil",
+            "entferne aus dem profil",
+            "aus dem profil löschen",
+            "aus meinem profil löschen",
+            "profil eintrag löschen",
+        )
+        _MEMORY_SAVE_PREFIXES = (
+            "merke dir dass",
+            "merke dir:",
+            "speichere dass",
+            "füge hinzu:",
+            "merke dir grundsätzlich",
+            "von jetzt an sollst du",
+        )
+        if any(last_lower.startswith(p) or p in last_lower for p in _MEMORY_DELETE_PREFIXES):
+            logger.info(f"supervisor: Pre-Routing → memory_agent (delete-trigger: '{last_lower[:60]}')")
+            return {"next_agent": "memory_agent"}
+        if any(last_lower.startswith(p) for p in _MEMORY_SAVE_PREFIXES):
+            logger.info(f"supervisor: Pre-Routing → memory_agent (save-trigger: '{last_lower[:60]}')")
+            return {"next_agent": "memory_agent"}
+
     all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
     response = await llm.ainvoke(all_messages)
     content = response.content
