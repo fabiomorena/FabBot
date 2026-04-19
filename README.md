@@ -25,7 +25,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | File – read, write, list files |
 | ✅ | Web – search (Tavily + Brave) and fetch URLs |
 | ✅ | Calendar – read and create events (Apple Calendar) |
-| ✅ | Two-stage prompt injection guard (pattern + LLM-Guard via Haiku) |
+| ✅ | Two-stage prompt injection guard (pattern + LLM-Guard via Haiku, fail-closed) |
 | ✅ | Content isolation for indirect injection (web/clip agents) |
 | ✅ | Human-in-the-loop confirmation for all destructive actions |
 | ✅ | Tamper-evident audit log |
@@ -36,23 +36,37 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
 | ✅ | Persistent Conversation Memory – SQLite via AsyncSqliteSaver, survives restarts |
 | ✅ | Chat Agent – answers follow-up questions directly from conversation history |
-| ✅ | Text-to-Speech – responses spoken via Mac speaker + Telegram voice message |
+| ✅ | Text-to-Speech – OpenAI TTS (primär) + edge-tts (Fallback), Mac speaker + Telegram voice |
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 329 pytest tests on every push |
-| ✅ | Code Quality – `__SUSPICIOUS__`-Präfix entfernt, Double-Init Guard, YAML Lock, Rate-Limit Eviction |
-| ✅ | Security Hardening – FORBIDDEN_ARGS per-Token, `echo` entfernt, `sanitize_command()`, `cwd=home` |
-| ✅ | Test suite – 329 pytest tests |
+| ✅ | GitHub Actions CI – runs 881 pytest tests on every push |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
 | ✅ | 529 Retry – exponential backoff (2s/4s/8s) on Anthropic overload |
-| ✅ | Memory Agent – explicit profile updates via natural language (places, people, projects, custom) |
+| ✅ | Memory Agent – explicit profile updates via natural language |
 | ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` + `media` |
 | ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
-| ✅ | Health Check – daily 06:00 system status report (Terminal, API, Web, Calendar, Profile, DB) |
-| ✅ | Vision Agent – photo analysis via Claude Sonnet Vision with HITL (objects, OCR, scene description) |
+| ✅ | Health Check – daily 06:00 system status report (6 components) |
+| ✅ | Vision Agent – photo analysis via Claude Sonnet Vision (objects, OCR, scene description) |
+| ✅ | At-Rest-Encryption – personal_profile.yaml via Fernet, Key im macOS Keychain |
+| ✅ | Context Trim – chat_agent limits LLM-Call to CHAT_CONTEXT_WINDOW messages (default 40) |
+| ✅ | Weekend Party Report – jeden Mittwoch 20:00, 7 Berliner Clubs, Tavily + Homepage-Fetch |
+| ✅ | Dedup-Fix – chat_agent never repeats answers on short confirmations (Genau, Ok, Danke) |
+| ✅ | claude.md – persistente Bot-Instruktionen, in chat_agent System-Prompt injiziert, überlebt Context Trim |
+| ✅ | Bot-Instruktionen lernbar – "Merke dir grundsätzlich..." schreibt direkt in claude.md, sofort aktiv |
+| ✅ | "Merke dir das" – Bot formuliert aus vorheriger Aussage eine Bot-Instruktion → claude.md |
+| ✅ | OpenAI TTS – primärer Provider (nova/shimmer/...), edge-tts Fallback |
+| ✅ | Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU konfigurierbar, lazy singleton |
+| ✅ | Session Summary – tägliche Konversationszusammenfassung (23:30), Cross-Session-Kontext im chat_agent |
+| ✅ | Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval aus Notizen/Sessions/Profil |
+| ✅ | WhatsApp Agent – Nachrichten senden via whatsapp-web.js Node.js Service (Whitelist-gesichert, HITL, QR via Telegram) |
+| ✅ | Prompt-Cache – chat_agent cached claude.md + Sessions + Profil (TTL 60s), invalidate_chat_cache() |
+| ✅ | Datetime-Awareness – get_current_datetime() Europe/Berlin, alle Agenten-Prompts |
+| ✅ | State-Transfer – last_agent_result/last_agent_name zwischen Agents, dynamischer Suffix außerhalb Cache |
+| ✅ | memory_agent delete-aware – _is_valid_delete() strukturelle Subset-Prüfung, alle Kategorien generisch |
+| ✅ | Modell-Validierung – _MODEL_PATTERN optional Datum, claude-sonnet-4-6 + opus-4-7 ohne Suffix valide |
 
 ---
 
@@ -68,53 +82,57 @@ FabBot/
 ├── requirements-ci.txt      # CI dependencies (no macOS-only packages)
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
-├── .github/
-│   └── workflows/
-│       └── test.yml         # GitHub Actions CI – pip cache + pytest
-├── tests/
-│   └── test_security_terminal.py  # pytest suite (329 tests)
+├── .github/workflows/test.yml
+├── tests/test_security_terminal.py  # pytest suite (881 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
 │   ├── llm.py               # get_llm() Sonnet + get_fast_llm() Haiku
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
-│   ├── security.py          # Two-stage injection guard, rate limiting, homoglyph normalization
-│   ├── audit.py             # Tamper-evident audit log
-│   ├── profile.py           # Personal context loader (YAML → agent prompts)
-│   ├── profile_learner.py   # Auto-learning pipeline (Detector/Writer/Reviewer)
+│   ├── security.py          # Two-stage injection guard, rate limiting, fail-closed
+│   ├── audit.py             # Tamper-evident audit log (setup_audit_logger)
+│   ├── profile.py           # Personal context loader
+│   ├── profile_learner.py   # Auto-learning pipeline
+│   ├── retrieval.py         # Second Brain – ChromaDB + OpenAI Embeddings
 │   └── agents/
-│       ├── chat_agent.py    # Context-aware conversation agent (no tools)
-│       ├── memory_agent.py  # Explicit profile updates (places, people, custom, delete)
+│       ├── chat_agent.py    # Dynamic prompt, claude.md + sessions + profile + retrieval per call
+│       ├── memory_agent.py  # Explicit profile updates, delete-aware _review_yaml
 │       ├── vision_agent.py  # Photo analysis via Claude Sonnet Vision
-│       ├── computer.py      # Desktop control (validated input)
-│       ├── terminal.py      # Shell command execution, German date format
+│       ├── computer.py      # Desktop control
+│       ├── terminal.py      # Shell command execution
 │       ├── file.py          # File operations
-│       ├── web.py           # Web search & fetch with content isolation
+│       ├── web.py           # Web search & fetch
 │       ├── calendar.py      # Calendar management
-│       ├── reminder_agent.py # SQLite-based reminders, natural language
-│       └── clip_agent.py    # URL clipper with content isolation
+│       ├── reminder_agent.py
+│       └── clip_agent.py
 └── bot/
-    ├── bot.py               # Telegram handlers, HITL TTS, post_init/post_shutdown hooks
+    ├── bot.py               # Telegram handlers, HITL, sanitize_input_async im try/except
     ├── auth.py              # User whitelist (cached at startup, RuntimeError if empty)
-    ├── confirm.py           # Human-in-the-loop confirmation (full UUID)
-    ├── transcribe.py        # Local Whisper transcription (voice → text)
-    ├── tts.py               # Text-to-Speech (edge-tts + afplay + send_voice + stop)
+    ├── confirm.py           # HITL confirmation (full UUID)
+    ├── transcribe.py        # Local Whisper transcription
+    ├── tts.py               # OpenAI TTS (primär) + edge-tts (Fallback)
     ├── search.py            # Local knowledge base search
-    ├── briefing.py          # Morning briefing scheduler (07:30 daily)
+    ├── briefing.py          # Morning briefing scheduler (07:30)
     ├── reminders.py         # Reminder storage + proactive delivery
-    └── health_check.py      # Daily health check scheduler (06:00, 6 components)
+    ├── health_check.py      # Daily health check scheduler (06:00)
+    ├── session_summary.py   # Daily session summary (23:30), TOCTOU-sicher
+    └── party_report.py      # Weekend Party Report (Mittwoch 20:00)
 ```
 
 **Stack:**
-- [Claude Sonnet 4](https://anthropic.com) – AI backbone for all agents (`claude-sonnet-4-20250514`)
-- [Claude Haiku 4.5](https://anthropic.com) – supervisor routing + LLM-Guard (`claude-haiku-4-5-20251001`)
-- [LangGraph](https://github.com/langchain-ai/langgraph) – multi-agent state machine with AsyncSqliteSaver
-- [python-telegram-bot](https://python-telegram-bot.org) – Telegram interface
-- [Whisper](https://github.com/openai/whisper) – local voice transcription (openai-whisper)
-- [edge-tts](https://github.com/rany2/edge-tts) – text-to-speech via Microsoft Neural Voices
-- [aiosqlite](https://github.com/omnilib/aiosqlite) – async SQLite for persistent memory
-- [Tavily](https://tavily.com) + [Brave Search](https://brave.com/search/api/) – web search
-- [rumps](https://github.com/jaredks/rumps) – macOS menubar app
+- Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-6`)
+- Claude Haiku – supervisor routing + LLM-Guard (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`, default: `claude-haiku-4-5-20251001`)
+- LangGraph – multi-agent state machine with AsyncSqliteSaver
+- python-telegram-bot – Telegram interface
+- Whisper – local voice transcription
+- OpenAI TTS – primary TTS (nova, konfigurierbar via OPENAI_TTS_VOICE)
+- OpenAI Embeddings – text-embedding-3-small für Second Brain Retrieval
+- edge-tts – TTS fallback (de-DE-KatjaNeural)
+- ChromaDB – lokale Vektordatenbank für Second Brain (~/.fabbot/chroma/)
+- aiosqlite – async SQLite for persistent memory
+- Tavily + Brave Search – web search
+- cryptography + keyring – At-Rest-Encryption via Fernet
+- rumps – macOS menubar app
 - Python 3.11+, macOS
 
 ---
@@ -123,7 +141,7 @@ FabBot/
 
 ### Prerequisites
 
-- Python 3.11+, Anthropic API key, Telegram bot token, ffmpeg
+- Python 3.11+, Anthropic API key, OpenAI API key, Telegram bot token, ffmpeg
 
 ### Installation
 
@@ -133,6 +151,7 @@ cd FabBot
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.lock
+pip install chromadb
 brew install ffmpeg
 ```
 
@@ -169,24 +188,16 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-pytest tests/ -v      # Run tests (329 tests)
+.venv/bin/python -m pytest tests/ -v      # Run tests (881 tests)
 ```
 
-### Run as Launch Agent (auto-start on login)
+### Run as Launch Agent
 
 ```bash
-# Install
 cp com.fabbot.agent.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.fabbot.agent.plist
-
-# Control
 launchctl start com.fabbot.agent
-launchctl stop com.fabbot.agent
-
-# Logs
 tail -f ~/.fabbot/fabbot.log
-./review_log.sh          # daily summary
-./review_log.sh 2026-03-25  # specific date
 ```
 
 ---
@@ -270,14 +281,11 @@ Writes a timestamped note to `personal_profile.yaml`, active immediately without
 
 **Stage 1 – Pattern check (free, instant):** Known patterns hard-blocked. Softer patterns increase suspicion score.
 
-**Stage 2 – LLM-Guard via Haiku (only when score > 0):** Returns `SAFE` or `INJECTION`. Fail-open: Guard errors never block legitimate messages.
+**Stage 2 – LLM-Guard via Haiku (only when score > 0):** Returns `SAFE` or `INJECTION`. Fail-closed: Guard errors never block legitimate messages.
 
 ### Content isolation
 
 Fetched web content is wrapped in `<document>` tags before LLM processing. HTML comments stripped. Explicit instruction to ignore content inside document tags.
-
-### Vision Agent security
-Photo captions are sanitized through the full injection guard pipeline before analysis. No identification of private individuals. Audit log records metadata only (no image data).
 
 ### Additional layers
 User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist · Shell operator blocking · Path traversal guard · SSRF protection · TOCTOU re-validation · HITL confirmation · Audit log
@@ -290,20 +298,10 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 |---|---|---|
 | Supervisor (routing) | claude-haiku-4-5 | ~4x faster, simple classification |
 | LLM-Guard (security) | claude-haiku-4-5 | fast, cost-efficient screening |
-| All agents (answers) | claude-sonnet-4 | full quality for responses |
-| Vision Agent | claude-sonnet-4 | multimodal vision capability |
+| All agents (answers) | claude-sonnet-4-6 | full quality for responses |
+| Vision Agent | claude-sonnet-4-6 | multimodal vision capability |
 
 ~40% faster response time vs. Sonnet-only.
-
----
-
-## Testing
-
-```bash
-pytest tests/ -v   # 329 tests
-```
-
-Coverage: security patterns · rate limiting · terminal allowlist · TTS · HITL filtering · memory prefix · _is_safe_output_path · _invoke_with_retry 529 · memory_agent · profile context · SSRF (web+clip) · sanitize_input_async LLM-Guard · calendar · reminders DB · auth decorator · synthesize · file path validation · computer input validation · web search format · slugify · execute_command · search/briefing · profile_learner _detect_new_info · confirm.py callback + timeout · health_check
 
 ---
 
@@ -321,48 +319,16 @@ tail -f ~/.fabbot/fabbot.log      # live log
 
 ## Roadmap
 
-- **Phase 1–9** ✅ Foundation, agents, security hardening
-- **Phase 10–11** ✅ Engineering & code quality
-- **Phase 12** ✅ Conversation memory (AsyncSqliteSaver)
-- **Phase 13** ✅ Text-to-Speech (edge-tts, Mac speaker + Telegram)
-- **Phase 14** ✅ TTS polish – toggle, /stop, tests
-- **Phase 15** ✅ Persistent memory, clean shutdown, German date format
-- **Phase 16** ✅ GitHub Actions CI
-- **Phase 17** ✅ Performance – Haiku supervisor, ~40% faster
-- **Phase 18** ✅ Security – two-stage LLM-Guard + content isolation
-- **Phase 19** ✅ stop_speaking() tests, precise suspicious patterns
-- **Phase 20** ✅ Bug fixes – AIMessage echo fix, HITL context isolation
-- **Phase 21** ✅ Supervisor routing fix – last HumanMessage only, Launch Agent setup
-- **Phase 22** ✅ Persistent logging – TimedRotatingFileHandler, 7-day rotation, review_log.sh
-- **Phase 23** ✅ macOS permissions – Full Disk Access for Launch Agent, caffeinate docs
-- **Phase 24** ✅ Bug fixes – terminal HITL prefix, web_agent JSON logging, _filter_hitl_messages tests, review_log.sh precise API count
-- **Phase 25** ✅ UX fixes – TTS interrupt on new message, df path blocking, supervisor routing precision
-- **Phase 26** ✅ Local CD – post-merge Git Hook auto-restarts Launch Agent after git pull
-- **Phase 27** ✅ Bug fixes – web_agent robust JSON parsing, calendar macOS permissions, df path argument blocking
-- **Phase 28** ✅ CI fixes – langgraph-checkpoint-sqlite + aiosqlite in requirements-ci.txt, actions v5
-- **Phase 29** ✅ Stability – moved project to internal SSD (no more SIGBUS crashes), emoji filter in TTS
-- **Phase 30** ✅ Quality – 84 tests, emoji-stripping tests, df /System fix, TTS emoji filter
-- **Phase 31** ✅ HITL memory fix – __MEMORY__ prefix prevents old results leaking into confirmation flow
-- **Phase 32** ✅ Async – supervisor_node fully async (ainvoke), all agents now non-blocking
-- **Phase 33** ✅ Morning Briefing – daily 07:30 Uhr, Wetter + Kalender + News + TTS
-- **Phase 34** ✅ Quality – 88 tests, MEMORY filter tests, briefing TTS fix, BRIEFING_TIME validation
-- **Phase 35** ✅ Reminder Agent – SQLite-based reminders, natural language, proactive delivery
-- **Phase 36** ✅ Calendar fix – last HumanMessage only prevents list/create confusion
-- **Phase 37** ✅ Reminder Agent fixes – correct time calculation, last HumanMessage only
-- **Phase 38** ✅ Personal Context Layer – personal_profile.yaml, agent/profile.py, short+full context injection
-- **Phase 39** ✅ /remember command – live note-saving to profile from Telegram, instant activation
-- **Phase 40** ✅ Bug fixes – chat_agent profile priority, terminal last HumanMessage only, people section in context
-- **Phase 41** ✅ Security tests – 11 Tests für _is_safe_output_path() Path-Traversal-Validierung
-- **Phase 42** ✅ 529 Retry-Mechanismus – exponential backoff (2s/4s/8s), 3 Versuche, 6 Tests
-- **Phase 43** ✅ Auto-Learning Pipeline – Haiku Detector + Python Writer + Haiku Reviewer + Fallback zu Note
-- **Phase 44** ✅ Bug fix – web_agent last HumanMessage only, verhindert Natural-Language statt JSON
-- **Phase 45** ✅ Memory Agent – explizite Profil-Updates via Sprache, Hybrid-Struktur (places/custom), 140 Tests
-- **Phase 46** ✅ Media-Kategorie – Lieder/Filme/Podcasts/Bücher korrekt als `media` speichern
-- **Phase 47** ✅ Supervisor Fix – memory_agent False-Positives mit JA/NEIN-Beispielen und Fallback-Regel
-- **Phase 48** ✅ Health Check – täglich 06:00 Uhr, 6 Komponenten parallel geprüft, Telegram-Report
-- **Phase 49** ✅ Stabilität + Code Quality – 329 Tests, security fixes, asyncio.Lock YAML, Rate-Limit Eviction, Round-Trip Check
-- **Phase 50** ✅ Security Hardening – FORBIDDEN_ARGS per-Token, echo entfernt, sanitize_command(), cwd=home, Reviewer YAML 8000, filter-then-slice
-- **Phase 51** ✅ Vision Agent – Foto-Analyse via Claude Sonnet Vision mit HITL, Objekterkennung, OCR, Szenenbeschreibung + Bug fixes (Briefing Kalender, auth RuntimeError, task refs, profile lock)
+- **Phase 1–19** ✅ Foundation – Telegram bot, multi-agent supervisor, terminal/file/web/calendar agents, security guard, audit log, menubar app, CI, TTS, persistent memory
+- **Phase 20–30** ✅ Hardening – async fixes, morning briefing, HITL improvements, code quality, watchdog
+- **Phase 31–40** ✅ Personal Context – personal_profile.yaml, /remember, auto-learning pipeline, 529 retry
+- **Phase 41–50** ✅ Security & Memory – security test suite, memory agent, media tracking, at-rest encryption
+- **Phase 51–60** ✅ Vision & TTS – Vision Agent, session summary, ElevenLabs→OpenAI TTS migration, weekend party report, dedup fix
+- **Phase 61–70** ✅ claude.md & TTS – persistente Bot-Instruktionen, lernbar via "Merke dir das", TTS hardening, model via .env
+- **Phase 71–80** ✅ Routing & Knowledge – supervisor routing fix, Second Brain (ChromaDB), natural language passthrough, morning briefing fix, stability fixes
+- **Phase 81–90** ✅ WhatsApp & Security – WhatsApp Agent (whatsapp-web.js), auth fail-closed, rate limiting, LangSmith telemetry, watchdog fixes
+- **Phase 91–99** ✅ Hardening & Refactor – crypto/audit/llm hardening, GitHub Issues workflow, Prompt-Cache TTL 60s, model-validierung beim Start, memory_agent Registry-Pattern, deque dedup, get_current_datetime() Europe/Berlin, State-Transfer last_agent_result/last_agent_name
+- **Phase 100–116** ✅ Stabilisierung & Bug-Fixes – Duplicate Responses fix, Wetter via wttr.in, drop_pending_updates + ThrottleInterval, _invoke_locks Race Condition, web_agent Wetter-Routing, Supervisor Early-Return, memory_agent delete generisch, computer_agent Regex-Intent-Parse, _review_yaml delete-aware (alle Kategorien), Sonnet-Default auf claude-sonnet-4-6, _MODEL_PATTERN optional Datum; 881 Tests grün
 
 ---
 
