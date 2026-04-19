@@ -49,7 +49,8 @@ Verfuegbare Agenten:
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
 - memory_agent: Persoenliche Informationen oder Bot-Instruktionen speichern, aktualisieren oder loeschen.
   NUR bei expliziten Speicher-Befehlen:
-  JA: 'merke dir dass...', 'speichere...', 'füge ... hinzu', 'vergiss den Eintrag...'
+  JA: 'merke dir dass...', 'speichere...', 'füge ... hinzu'
+  JA: 'vergiss X', 'vergiss den X', 'vergiss den Eintrag X', 'lösche X aus dem Profil'
   JA: 'merke dir grundsaetzlich...', 'von jetzt an sollst du...', 'du sollst immer...'
   JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
