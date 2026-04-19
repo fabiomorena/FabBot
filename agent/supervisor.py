@@ -63,6 +63,7 @@ Verfuegbare Agenten:
   JA: 'vergiss X', 'vergiss den X', 'vergiss den Eintrag X', 'loesche X aus dem Profil'
   JA: 'merke dir grundsaetzlich...', 'von jetzt an sollst du...', 'du sollst immer...'
   JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
+  JA: 'vergiss die instruktion', 'loesch die instruktion', 'alle instruktionen loeschen'
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
   NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
   NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen
@@ -97,10 +98,13 @@ chat_agent
 FINISH
 """
 
-# Phase 120: Deterministisches Pre-Routing – Modul-Konstanten (Fix #48).
-# Werden einmal beim Import angelegt, nicht bei jedem supervisor_node()-Aufruf.
+# ---------------------------------------------------------------------------
+# Deterministisches Pre-Routing – Modul-Konstanten
+# Phase 119c/120: Opinion + Memory-Delete/Save
+# Phase 122 (Issue #52): Bot-Instruktion-Delete als eigener Block
+# ---------------------------------------------------------------------------
 
-# Opinion-Trigger → sofort chat_agent (Fix #41/#47: nachhaltig statt Keyword-Patch)
+# Opinion-Trigger → sofort chat_agent (Fix #41/#47)
 _OPINION_PREFIXES = (
     "was hälst du",
     "was haelst du",
@@ -113,6 +117,27 @@ _OPINION_PREFIXES = (
     "deine meinung",
     "dein urteil",
     "was ist deine meinung",
+)
+
+# Bot-Instruktion-Delete-Trigger → sofort memory_agent (Phase 122, Issue #52)
+# Muss VOR _MEMORY_DELETE_PREFIXES geprüft werden, da "vergiss die instruktion"
+# spezifischer ist als das generische "vergiss " (mit Leerzeichen).
+_BOT_INSTRUCTION_DELETE_PREFIXES = (
+    "vergiss die instruktion",
+    "vergiss alle instruktionen",
+    "lösch die instruktion",
+    "loesch die instruktion",
+    "lösche die instruktion",
+    "loesche die instruktion",
+    "entferne die instruktion",
+    "alle instruktionen löschen",
+    "alle instruktionen loeschen",
+    "instruktionen zurücksetzen",
+    "instruktionen zuruecksetzen",
+    "instruktion löschen",
+    "instruktion loeschen",
+    "setze instruktionen zurück",
+    "setze instruktionen zurueck",
 )
 
 # Memory-Delete-Trigger → sofort memory_agent (Phase 119c)
@@ -183,9 +208,10 @@ async def supervisor_node(state: AgentState) -> AgentState:
             last_text = str(last_text)[:100]
         logger.info(f"supervisor routing: '{last_text[:100]}' → ?")
 
-    # Phase 119c/120: Deterministisches Pre-Routing vor dem LLM-Call.
-    # Verhindert LLM-Halluzinieren bei eindeutigen Intents.
-    # Fix #47: nur startswith() – kein 'p in last_lower' mehr (False-Positive-Gefahr).
+    # ---------------------------------------------------------------------------
+    # Deterministisches Pre-Routing vor dem LLM-Call
+    # Reihenfolge: spezifischer vor generischem (Bot-Instruktion vor Memory-Delete)
+    # ---------------------------------------------------------------------------
     if routing_messages:
         last_content = routing_messages[-1].content if hasattr(routing_messages[-1], "content") else ""
         if isinstance(last_content, list):
@@ -196,6 +222,12 @@ async def supervisor_node(state: AgentState) -> AgentState:
         if any(last_lower.startswith(p) for p in _OPINION_PREFIXES):
             logger.info(f"supervisor: Pre-Routing → chat_agent (opinion-trigger: '{last_lower[:60]}')")
             return {"next_agent": "chat_agent"}
+
+        # Bot-Instruktion-Delete-Trigger → memory_agent (Phase 122, Fix #52)
+        # Vor _MEMORY_DELETE_PREFIXES, da spezifischer.
+        if any(last_lower.startswith(p) for p in _BOT_INSTRUCTION_DELETE_PREFIXES):
+            logger.info(f"supervisor: Pre-Routing → memory_agent (bot-instruction-delete-trigger: '{last_lower[:60]}')")
+            return {"next_agent": "memory_agent"}
 
         # Memory-Delete-Trigger → memory_agent (Phase 119c, Fix #47)
         if any(last_lower.startswith(p) for p in _MEMORY_DELETE_PREFIXES):
