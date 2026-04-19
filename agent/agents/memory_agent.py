@@ -1,7 +1,9 @@
 """
-Memory Agent fuer FabBot – Phase 45/46/63/64/65/89/99.
+Memory Agent fuer FabBot – Phase 45/46/63/64/65/89/99/115.
 
-Phase 99: last_agent_result + last_agent_name in allen memory_agent() Returns.
+Phase 115: _review_yaml generisch delete-aware – strukturelle Subset-Vorprüfung
+           für alle Kategorien (people, places, media, preference, job, location, custom).
+           Closes #39.
 """
 
 import copy
@@ -196,8 +198,9 @@ Neu:
 
 Antworte NUR mit einem einzigen Wort:
 VALID   – Bei save/update: YAML-Syntax korrekt, alle Original-Daten erhalten, nur sinnvolle Ergänzungen/Änderungen.
-          Bei delete: YAML-Syntax korrekt, genau ein Eintrag wurde entfernt, alle anderen Daten erhalten.
-INVALID – YAML kaputt, unerwartete Daten fehlen, oder verdächtige Inhalte.
+          Bei delete: YAML-Syntax korrekt, mindestens ein Eintrag/Feld/Wert wurde entfernt oder ein Block
+          wurde geleert, alle nicht betroffenen Daten sind unverändert erhalten.
+INVALID – YAML kaputt, unerwartete Daten fehlen (bei save/update), oder verdächtige Inhalte.
 
 Nur VALID oder INVALID."""
 
@@ -226,6 +229,101 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"MemoryAgent Parser Fehler: {e}")
         return {"action": "error"}
+
+
+def _is_valid_delete(original: dict, updated: dict) -> bool:
+    """
+    Phase 115: Strukturelle Subset-Prüfung für delete-Operationen.
+
+    Prüft ob:
+    1. Das neue YAML syntaktisch valide ist (bereits als dict vorhanden)
+    2. Keine Daten hinzugekommen sind (updated ist echtes Subset von original)
+    3. Mindestens eine Änderung vorliegt (nicht identisch)
+
+    Gibt True zurück wenn der Delete strukturell korrekt ist.
+    Gibt False zurück wenn Daten hinzugekommen sind oder keine Änderung vorliegt.
+    """
+    try:
+        original_str = yaml.dump(original, allow_unicode=True, sort_keys=True)
+        updated_str = yaml.dump(updated, allow_unicode=True, sort_keys=True)
+
+        # Keine Änderung → kein valider Delete
+        if original_str == updated_str:
+            logger.warning("MemoryAgent _is_valid_delete: original == updated, kein Eintrag entfernt")
+            return False
+
+        # Rekursive Subset-Prüfung: alle Schlüssel/Werte in updated müssen in original vorhanden sein
+        def is_subset(new: Any, orig: Any) -> bool:
+            if isinstance(new, dict) and isinstance(orig, dict):
+                for k, v in new.items():
+                    if k not in orig:
+                        return False
+                    if not is_subset(v, orig[k]):
+                        return False
+                return True
+            elif isinstance(new, list) and isinstance(orig, list):
+                # Jedes Element in new muss in orig vorhanden sein
+                for item in new:
+                    if item not in orig:
+                        return False
+                return True
+            else:
+                # Skalare: Wert darf sich nicht geändert haben (nur Entfernen erlaubt)
+                return new == orig
+
+        result = is_subset(updated, original)
+        if not result:
+            logger.warning("MemoryAgent _is_valid_delete: neue Daten gefunden – kein valider Delete")
+        return result
+
+    except Exception as e:
+        logger.error(f"MemoryAgent _is_valid_delete: Fehler bei Subset-Prüfung: {e}")
+        return False
+
+
+async def _review_yaml(original_yaml: str, new_yaml: str, action: str = "save") -> bool:
+    """
+    Phase 115: Bei delete → strukturelle Subset-Vorprüfung ohne LLM-Call.
+    Bei save/update → LLM-Reviewer wie bisher.
+    """
+    try:
+        # Phase 115: Delete-Pfad – strukturelle Prüfung statt LLM
+        if action == "delete":
+            try:
+                original_dict = yaml.safe_load(original_yaml)
+                updated_dict = yaml.safe_load(new_yaml)
+            except yaml.YAMLError as e:
+                logger.error(f"MemoryAgent _review_yaml delete: YAML-Parse-Fehler: {e}")
+                return False
+
+            if not isinstance(original_dict, dict) or not isinstance(updated_dict, dict):
+                logger.error("MemoryAgent _review_yaml delete: kein dict nach YAML-Parse")
+                return False
+
+            result = _is_valid_delete(original_dict, updated_dict)
+            logger.info(f"MemoryAgent _review_yaml delete: strukturelle Prüfung → {'VALID' if result else 'INVALID'}")
+            return result
+
+        # Save/Update-Pfad: LLM-Reviewer wie bisher
+        llm = get_fast_llm()
+        prompt = _REVIEWER_PROMPT.format(
+            action=action,
+            original=original_yaml[:2000],
+            new=new_yaml[:2000],
+        )
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        verdict = content.strip().upper()
+        is_valid = verdict == "VALID"
+        if not is_valid:
+            logger.warning(f"MemoryAgent Reviewer: INVALID – verdict='{verdict}'")
+        return is_valid
+
+    except Exception as e:
+        logger.error(f"MemoryAgent Reviewer Fehler: {e}")
+        return False
 
 
 def _apply_memory_update(profile: dict, action: str, category: str, data: dict) -> dict | None:
@@ -464,28 +562,6 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
     return None
 
 
-async def _review_yaml(original_yaml: str, new_yaml: str, action: str = "save") -> bool:
-    try:
-        llm = get_fast_llm()
-        prompt = _REVIEWER_PROMPT.format(
-            action=action,
-            original=original_yaml[:2000],
-            new=new_yaml[:2000],
-        )
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        content = response.content
-        if isinstance(content, list):
-            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        verdict = content.strip().upper()
-        is_valid = verdict == "VALID"
-        if not is_valid:
-            logger.warning(f"MemoryAgent Reviewer: INVALID – verdict='{verdict}'")
-        return is_valid
-    except Exception as e:
-        logger.error(f"MemoryAgent Reviewer Fehler: {e}")
-        return False
-
-
 def _build_confirmation(action: str, category: str, data: dict) -> str:
     icons = {
         "people": "👤", "project": "🚀", "place": "📍",
@@ -547,6 +623,7 @@ async def memory_agent(state: AgentState) -> AgentState:
     """
     Vollständige Memory-Pipeline.
     Phase 99: last_agent_result + last_agent_name in allen Returns.
+    Phase 115: _review_yaml generisch delete-aware (Closes #39).
     """
     try:
         current_human = _get_current_human_message(state["messages"])
