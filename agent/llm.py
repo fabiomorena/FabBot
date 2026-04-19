@@ -5,18 +5,25 @@ Zentraler LLM-Client fuer FabBot.
 - get_fast_llm()  → Haiku  (Geschwindigkeit, fuer Supervisor-Routing)
 
 Phase 71: Modelle via .env konfigurierbar.
-ANTHROPIC_MODEL_SONNET – default: claude-sonnet-4-20250514
+ANTHROPIC_MODEL_SONNET – default: claude-sonnet-4-6
 ANTHROPIC_MODEL_HAIKU  – default: claude-haiku-4-5-20251001
 
 Phase 92: _warn_if_unusual() loggt eine Warning bei ungewöhnlichem Modell-String.
 Kein hard crash – dokumentierte Tech-Debt bleibt bestehen, aber ein Tippfehler
 in .env fällt jetzt beim Start auf statt erst beim ersten API-Call.
-Format: claude-<name>-<version(s)>-<YYYYMMDD>
+Format: claude-<name>[-<YYYYMMDD>]
+Beispiele mit Datum:    claude-haiku-4-5-20251001
+Beispiele ohne Datum:   claude-sonnet-4-6, claude-opus-4-7
 
 Phase 95 (Issue #6): validate_models_on_startup() – harte Validierung beim Start.
 Wird in _post_init() aufgerufen. RuntimeError wenn der Model-String komplett
-ungültig ist (leer, kein 'claude-' Prefix, keine 8-stellige Zahl am Ende).
+ungültig ist (leer, kein 'claude-' Prefix).
 _warn_if_unusual() bleibt als zweite Schicht für Laufzeit-Änderungen via .env.
+
+Phase 116: _DEFAULT_SONNET auf claude-sonnet-4-6 aktualisiert (claude-sonnet-4-20250514
+deprecated seit 14.04.2026, Retirement 15.06.2026).
+_MODEL_PATTERN erweitert: optionales YYYYMMDD-Suffix (neue Modelle wie sonnet-4-6
+und opus-4-7 haben kein Datums-Suffix mehr).
 """
 import logging
 import os
@@ -25,17 +32,17 @@ from langchain_anthropic import ChatAnthropic
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SONNET = "claude-sonnet-4-20250514"
+_DEFAULT_SONNET = "claude-sonnet-4-6"
 _DEFAULT_HAIKU  = "claude-haiku-4-5-20251001"
 
 _llm: ChatAnthropic | None = None
 _fast_llm: ChatAnthropic | None = None
 
-# Phase 92: Einfaches Pattern – erkennt offensichtliche Tippfehler.
-# claude-<nicht-leer>-<8-stellige-Zahl>
-# Gültig: claude-sonnet-4-20250514, claude-haiku-4-5-20251001
-# Ungültig: claud-sonnet-4-20250514, claude-sonnet, "" (leer)
-_MODEL_PATTERN = re.compile(r"^claude-.+-\d{8}$")
+# Phase 92/116: Pattern erkennt offensichtliche Tippfehler.
+# Optionales YYYYMMDD-Suffix – neue Modelle (sonnet-4-6, opus-4-7) haben keins mehr.
+# Gültig:   claude-sonnet-4-6, claude-opus-4-7, claude-haiku-4-5-20251001
+# Ungültig:  claud-sonnet-4-6, "" (leer), claude- (kein Name)
+_MODEL_PATTERN = re.compile(r"^claude-.+(-\d{8})?$")
 
 
 def _warn_if_unusual(model: str) -> None:
@@ -48,8 +55,8 @@ def _warn_if_unusual(model: str) -> None:
         logger.warning(
             f"llm.py: Ungewöhnlicher Modell-String '{model}' – "
             "Tippfehler in ANTHROPIC_MODEL_SONNET/HAIKU? "
-            f"Erwartetes Format: claude-<name>-<YYYYMMDD> "
-            f"(Beispiel: {_DEFAULT_SONNET})"
+            f"Erwartetes Format: claude-<name>[-<YYYYMMDD>] "
+            f"(Beispiele: {_DEFAULT_SONNET}, {_DEFAULT_HAIKU})"
         )
 
 
@@ -71,7 +78,7 @@ def validate_models_on_startup() -> None:
     Wirft RuntimeError wenn ein Model-String:
     - leer ist
     - nicht mit 'claude-' beginnt
-    - nicht mit einer 8-stelligen Zahl endet (YYYYMMDD)
+    - nicht dem Pattern claude-<name>[-<YYYYMMDD>] entspricht
 
     Warum RuntimeError statt Warning:
     Ein ungültiger Model-String macht den Bot komplett unbrauchbar –
@@ -93,8 +100,8 @@ def validate_models_on_startup() -> None:
         elif not _MODEL_PATTERN.match(model):
             errors.append(
                 f"{name}='{model}' ist ungültig – "
-                f"Erwartetes Format: claude-<name>-<YYYYMMDD> "
-                f"(Beispiel: {_DEFAULT_SONNET if 'SONNET' in name else _DEFAULT_HAIKU})"
+                f"Erwartetes Format: claude-<name>[-<YYYYMMDD>] "
+                f"(Beispiele: {_DEFAULT_SONNET}, {_DEFAULT_HAIKU})"
             )
 
     if errors:

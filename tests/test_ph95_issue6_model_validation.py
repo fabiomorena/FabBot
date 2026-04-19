@@ -7,7 +7,8 @@ Testet:
 3. Leerer SONNET-String → RuntimeError
 4. Leerer HAIKU-String → RuntimeError
 5. Tippfehler im Prefix (claud- statt claude-) → RuntimeError
-6. Fehlende Datumszahl → RuntimeError
+6. Fehlender claude-Prefix → RuntimeError
+   (Phase 116: Datumssuffix optional – claude-haiku ohne Datum ist valide)
 7. Beide ungültig → RuntimeError mit beiden Fehlern im Text
 8. Fehlermeldung enthält den ungültigen String
 9. Nach Fehler: _warn_if_unusual() wird NICHT zusätzlich aufgerufen (RuntimeError kommt zuerst)
@@ -32,7 +33,7 @@ def _run_validate(sonnet=None, haiku=None):
 
     # Defaults wenn nicht gesetzt
     defaults = {
-        "ANTHROPIC_MODEL_SONNET": "claude-sonnet-4-20250514",
+        "ANTHROPIC_MODEL_SONNET": "claude-sonnet-4-6",
         "ANTHROPIC_MODEL_HAIKU":  "claude-haiku-4-5-20251001",
     }
     for k, v in defaults.items():
@@ -60,10 +61,20 @@ def test_valid_defaults():
 # ---------------------------------------------------------------------------
 
 def test_valid_custom_models():
-    """Valide Custom-Strings passieren ohne Fehler."""
+    """Valide Custom-Strings passieren ohne Fehler.
+    Phase 116: auch Models ohne Datumssuffix sind valide.
+    """
     _run_validate(
         sonnet="claude-opus-4-20260101",
         haiku="claude-haiku-4-5-20251001",
+    )
+
+
+def test_valid_models_without_date():
+    """Phase 116: Models ohne Datumssuffix sind valide (sonnet-4-6, opus-4-7)."""
+    _run_validate(
+        sonnet="claude-sonnet-4-6",
+        haiku="claude-opus-4-7",
     )
 
 
@@ -98,13 +109,17 @@ def test_typo_prefix_raises():
 
 
 # ---------------------------------------------------------------------------
-# 6. Fehlende Datumszahl
+# 6. Fehlender claude-Prefix → RuntimeError
 # ---------------------------------------------------------------------------
 
-def test_missing_date_raises():
-    """'claude-sonnet' ohne Datum → RuntimeError."""
+def test_missing_claude_prefix_raises():
+    """String ohne 'claude-' Prefix → RuntimeError.
+
+    Phase 116: Datumssuffix ist optional – 'claude-haiku' wäre valide.
+    Echter ungültiger String: 'haiku-4-5-20251001' (kein claude-Prefix).
+    """
     with pytest.raises(RuntimeError, match="ANTHROPIC_MODEL_HAIKU"):
-        _run_validate(haiku="claude-haiku")
+        _run_validate(haiku="haiku-4-5-20251001")
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +152,9 @@ def test_error_message_contains_invalid_string():
 # ---------------------------------------------------------------------------
 
 def test_warn_if_unusual_valid_no_warning(caplog):
-    """Valide Model-Strings erzeugen keine Warning."""
+    """Valide Model-Strings erzeugen keine Warning.
+    Phase 116: auch Models ohne Datumssuffix sind valide.
+    """
     import logging
     import importlib
     import agent.llm as llm_mod
@@ -146,6 +163,8 @@ def test_warn_if_unusual_valid_no_warning(caplog):
     with caplog.at_level(logging.WARNING, logger="agent.llm"):
         llm_mod._warn_if_unusual("claude-sonnet-4-20250514")
         llm_mod._warn_if_unusual("claude-haiku-4-5-20251001")
+        llm_mod._warn_if_unusual("claude-sonnet-4-6")
+        llm_mod._warn_if_unusual("claude-opus-4-7")
 
     assert not caplog.records, f"Unerwartete Warnings: {[r.message for r in caplog.records]}"
 

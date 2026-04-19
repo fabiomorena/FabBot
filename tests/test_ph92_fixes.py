@@ -248,7 +248,7 @@ class TestLlmModelValidation:
         assert callable(_warn_if_unusual)
 
     def test_valid_sonnet_model_no_warning(self, caplog) -> None:
-        """Gültiger Sonnet-String → keine Warning."""
+        """Gültiger Sonnet-String mit Datum → keine Warning."""
         from agent.llm import _warn_if_unusual
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claude-sonnet-4-20250514")
@@ -259,6 +259,16 @@ class TestLlmModelValidation:
         from agent.llm import _warn_if_unusual
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claude-haiku-4-5-20251001")
+        assert not any("Ungewöhnlicher" in r.message for r in caplog.records)
+
+    def test_valid_sonnet_model_without_date_no_warning(self, caplog) -> None:
+        """Phase 116: Sonnet/Opus ohne Datumssuffix ist valide → keine Warning.
+        Neue Modelle wie claude-sonnet-4-6, claude-opus-4-7 haben kein YYYYMMDD-Suffix.
+        """
+        from agent.llm import _warn_if_unusual
+        with caplog.at_level(logging.WARNING, logger="agent.llm"):
+            _warn_if_unusual("claude-sonnet-4-6")
+            _warn_if_unusual("claude-opus-4-7")
         assert not any("Ungewöhnlicher" in r.message for r in caplog.records)
 
     def test_typo_triggers_warning(self, caplog) -> None:
@@ -275,11 +285,13 @@ class TestLlmModelValidation:
             _warn_if_unusual("")
         assert any("Ungewöhnlicher" in r.message for r in caplog.records)
 
-    def test_missing_date_triggers_warning(self, caplog) -> None:
-        """String ohne 8-stellige Zahl am Ende → Warning."""
+    def test_missing_claude_prefix_triggers_warning(self, caplog) -> None:
+        """Phase 116: String ohne 'claude-' Prefix → Warning.
+        (Ersetzt test_missing_date_triggers_warning: Datumssuffix ist seit Phase 116 optional.)
+        """
         from agent.llm import _warn_if_unusual
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
-            _warn_if_unusual("claude-sonnet")
+            _warn_if_unusual("claud-sonnet")
         assert any("Ungewöhnlicher" in r.message for r in caplog.records)
 
     def test_warning_contains_model_string(self, caplog) -> None:
