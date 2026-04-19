@@ -90,17 +90,22 @@ def is_path_allowed(path: Path) -> tuple[bool, str]:
     if ".." in path.parts:
         return False, "Path-Traversal nicht erlaubt."
 
-    if path.is_symlink():
-        symlink_target_allowed = False
+    # Alle Pfad-Komponenten auf Symlinks prüfen (nicht nur finale)
+    for i in range(1, len(path.parts) + 1):
+        partial = Path(*path.parts[:i])
+        if not partial.is_symlink():
+            continue
+        partial_resolved = partial.resolve()
+        symlink_allowed = False
         for base in ALLOWED_BASE_PATHS:
             try:
-                resolved.relative_to(base.resolve())
-                symlink_target_allowed = True
+                partial_resolved.relative_to(base.resolve())
+                symlink_allowed = True
                 break
             except ValueError:
                 continue
-        if not symlink_target_allowed:
-            return False, f"Symlink-Ziel liegt außerhalb der erlaubten Pfade: {resolved}"
+        if not symlink_allowed:
+            return False, f"Symlink-Ziel liegt außerhalb der erlaubten Pfade: {partial_resolved}"
 
     for blocked in EXPLICITLY_BLOCKED_PATHS:
         try:

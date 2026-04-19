@@ -75,6 +75,10 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Supervisor-Routing nachhaltig umgebaut – chat_agent als Default-Fallback, web_agent nur bei externen Daten, deterministisches Pre-Routing für Opinion-Trigger |
 | ✅ | Prompt-Leak Fix – web_agent filtert interne Fallback-Texte via `_filter_internal_response()` bevor sie den User erreichen |
 | ✅ | bot_instruction delete Pre-Routing – `_BOT_INSTRUCTION_DELETE_PREFIXES` in supervisor, `_reject()` mit `claude.md`-Hinweis statt falsches 🗑️ |
+| ✅ | Security: SSL-Zertifikatsprüfung global re-aktiviert – globales `ssl._create_unverified_context` in transcribe.py entfernt |
+| ✅ | Security: Symlink-Traversal-Fix – file_agent prüft alle Pfad-Komponenten auf Symlinks, nicht nur die finale |
+| ✅ | Security: Path-Traversal-Fix (terminal) – `..`-Check via `Path.parts` statt Substring, vermeidet False-Positives auf `..hidden` |
+| ✅ | Bugfix: Prompt-Cache-Split – `agent/chat_agent.py` ist jetzt Re-Export von `agent/agents/chat_agent.py`, ein einziger `_prompt_cache`-Global |
 ---
 
 ## Architecture

@@ -289,7 +289,7 @@ async def append_to_claude_md(text: str) -> bool:
         # Phase 95: Prompt-Cache von chat_agent invalidieren – außerhalb des
         # _write_lock (kein Deadlock-Risiko, da verschiedene Locks).
         try:
-            from agent.chat_agent import invalidate_chat_cache
+            from agent.agents.chat_agent import invalidate_chat_cache
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (append_to_claude_md) fehlgeschlagen (ignoriert): {e}")

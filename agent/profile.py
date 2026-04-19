@@ -179,7 +179,7 @@ async def add_note_to_profile(text: str) -> bool:
         # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
         # liest das aktualisierte Profil neu ein.
         try:
-            from agent.chat_agent import invalidate_chat_cache
+            from agent.agents.chat_agent import invalidate_chat_cache
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (add_note) fehlgeschlagen (ignoriert): {e}")
@@ -222,7 +222,7 @@ async def write_profile(profile: dict[str, Any]) -> bool:
         # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
         # liest das aktualisierte Profil neu ein.
         try:
-            from agent.chat_agent import invalidate_chat_cache
+            from agent.agents.chat_agent import invalidate_chat_cache
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (write_profile) fehlgeschlagen (ignoriert): {e}")

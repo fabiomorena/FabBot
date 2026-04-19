@@ -274,7 +274,7 @@ async def summarize_session(
     # Phase 95: Prompt-Cache invalidieren – außerhalb des _summary_write_lock.
     if success:
         try:
-            from agent.chat_agent import invalidate_chat_cache
+            from agent.agents.chat_agent import invalidate_chat_cache
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (summarize_session) fehlgeschlagen (ignoriert): {e}")

@@ -35,7 +35,7 @@ def _make_state(text="Hallo"):
 
 def test_cache_hit_no_disk_read():
     """Nach erstem Build wird der Cache genutzt – load_claude_md etc. nur einmal."""
-    import agent.chat_agent as ca
+    import agent.agents.chat_agent as ca
     ca._prompt_cache = None  # Reset
 
     call_count = {"n": 0}
@@ -62,7 +62,7 @@ def test_cache_hit_no_disk_read():
 
 def test_cache_miss_after_ttl():
     """Nach TTL-Ablauf wird der Cache neu gebaut."""
-    import agent.chat_agent as ca
+    import agent.agents.chat_agent as ca
     ca._prompt_cache = None
 
     call_count = {"n": 0}
@@ -90,7 +90,7 @@ def test_cache_miss_after_ttl():
 
 def test_cache_miss_after_invalidate():
     """Nach invalidate_chat_cache() wird beim nächsten Aufruf neu gebaut."""
-    import agent.chat_agent as ca
+    import agent.agents.chat_agent as ca
     ca._prompt_cache = None
 
     call_count = {"n": 0}
@@ -120,9 +120,9 @@ def test_cache_miss_after_invalidate():
 @pytest.mark.asyncio
 async def test_write_profile_invalidates_cache():
     """write_profile() ruft invalidate_chat_cache() auf nach erfolgreichem Schreiben."""
-    import agent.chat_agent as ca
+    import agent.agents.chat_agent as ca
     # Cache vorbelegen
-    from agent.chat_agent import _CachedPrompt
+    from agent.agents.chat_agent import _CachedPrompt
     ca._prompt_cache = _CachedPrompt(value="alter Prompt")
 
     mock_profile = {"identity": {"name": "Fabio"}}
@@ -153,8 +153,8 @@ async def test_write_profile_invalidates_cache():
 @pytest.mark.asyncio
 async def test_add_note_invalidates_cache():
     """add_note_to_profile() ruft invalidate_chat_cache() auf."""
-    import agent.chat_agent as ca
-    from agent.chat_agent import _CachedPrompt
+    import agent.agents.chat_agent as ca
+    from agent.agents.chat_agent import _CachedPrompt
     ca._prompt_cache = _CachedPrompt(value="alter Prompt")
 
     with patch("agent.profile._PROFILE_PATH") as mock_path, \
@@ -183,8 +183,8 @@ async def test_add_note_invalidates_cache():
 @pytest.mark.asyncio
 async def test_append_claude_md_invalidates_cache():
     """append_to_claude_md() ruft invalidate_chat_cache() auf."""
-    import agent.chat_agent as ca
-    from agent.chat_agent import _CachedPrompt
+    import agent.agents.chat_agent as ca
+    from agent.agents.chat_agent import _CachedPrompt
     ca._prompt_cache = _CachedPrompt(value="alter Prompt")
 
     with patch("agent.claude_md._CLAUDE_MD_PATH") as mock_path:
@@ -206,8 +206,8 @@ async def test_append_claude_md_invalidates_cache():
 @pytest.mark.asyncio
 async def test_summarize_session_invalidates_cache():
     """summarize_session() ruft invalidate_chat_cache() nach erfolgreichem Schreiben auf."""
-    import agent.chat_agent as ca
-    from agent.chat_agent import _CachedPrompt
+    import agent.agents.chat_agent as ca
+    from agent.agents.chat_agent import _CachedPrompt
     ca._prompt_cache = _CachedPrompt(value="alter Prompt")
 
     from langchain_core.messages import HumanMessage, AIMessage
@@ -235,7 +235,7 @@ async def test_summarize_session_invalidates_cache():
 
 def test_cached_prompt_is_valid_after_ttl():
     """_CachedPrompt.is_valid() gibt False zurück wenn TTL abgelaufen."""
-    import agent.chat_agent as ca
+    import agent.agents.chat_agent as ca
 
     prompt = ca._CachedPrompt(value="Test")
     assert prompt.is_valid() is True  # frisch erstellt
@@ -258,7 +258,7 @@ async def test_invalidate_error_doesnt_break_write():
          patch("agent.profile.reload_profile"), \
          patch("agent.profile._write_profile_bytes"), \
          patch("agent.crypto.encrypt", return_value=b"encrypted"), \
-         patch("agent.chat_agent.invalidate_chat_cache", side_effect=RuntimeError("Test-Fehler")):
+         patch("agent.agents.chat_agent.invalidate_chat_cache", side_effect=RuntimeError("Test-Fehler")):
 
         mock_path.exists.return_value = True
 
@@ -281,7 +281,7 @@ async def test_invalidate_error_doesnt_break_write():
 
 def test_none_cache_always_rebuilds():
     """Wenn _prompt_cache None ist, wird immer neu gebaut."""
-    import agent.chat_agent as ca
+    import agent.agents.chat_agent as ca
     ca._prompt_cache = None
 
     call_count = {"n": 0}

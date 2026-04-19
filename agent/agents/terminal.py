@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shlex
+from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.audit import log_action
@@ -85,7 +86,7 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
             return False, f"Argument `{forbidden}` ist nicht erlaubt."
 
     for part in args:
-        if ".." in part:
+        if ".." in Path(os.path.expanduser(part)).parts:
             return False, "Path-Traversal (..) in Argumenten nicht erlaubt."
 
     for part in args:
