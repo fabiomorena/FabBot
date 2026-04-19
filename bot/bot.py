@@ -271,6 +271,11 @@ async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> 
         await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
     else:
         await bot.send_message(chat_id=chat_id, text=f"Screenshot-Analyse:\n{analysis}")
+    # Phase 117 (Issue #45): Analyse in Memory schreiben damit chat_agent
+    # bei Follow-up-Fragen den Screenshot-Kontext kennt.
+    await _update_memory(chat_id, f"Screenshot erstellt und analysiert:\n{analysis}")
+    # Phase 117 (Issue #45): Analyse in Memory schreiben damit chat_agent
+    # bei Follow-up-Fragen den Screenshot-Kontext kennt.
 
 
 async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **_) -> None:

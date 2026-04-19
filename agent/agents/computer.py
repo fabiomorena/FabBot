@@ -78,7 +78,10 @@ def _validate_app_name(app: str) -> tuple[bool, str]:
 
 
 async def computer_agent(state: AgentState) -> AgentState:
-    """Phase 88: ainvoke. Phase 99: last_agent_result. Phase 114: Regex-Intent-Parse."""
+    """Phase 88: ainvoke. Phase 99: last_agent_result. Phase 114: Regex-Intent-Parse.
+    Phase 117 (Issue #45): last_agent_result mit Screenshot-Analyse befüllt –
+    chat_agent kann damit im Kontext weiterreden.
+    """
     llm = get_llm()
 
     def _err(msg: str) -> AgentState:
@@ -115,10 +118,13 @@ async def computer_agent(state: AgentState) -> AgentState:
         analysis = analysis_response.content
         if isinstance(analysis, list):
             analysis = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in analysis)
+        analysis = analysis.strip()
+        # Phase 117 (Issue #45): last_agent_result mit Analyse befüllen damit
+        # chat_agent bei Follow-up-Fragen den Screenshot-Kontext kennt.
         return {
-            "messages": [AIMessage(content=f"{Proto.SCREENSHOT}{analysis.strip()}")],
+            "messages": [AIMessage(content=f"{Proto.SCREENSHOT}{analysis}")],
             "next_agent": None,
-            "last_agent_result": None,
+            "last_agent_result": analysis,
             "last_agent_name": "computer_agent",
         }
 
