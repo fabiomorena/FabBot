@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 import asyncio
 
@@ -31,52 +30,59 @@ _init_lock = asyncio.Lock()
 SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, eine der folgenden Antworten zurueckzugeben.
 
 Verfuegbare Agenten:
-- file_agent: Dateien und Ordner lesen, auflisten oder schreiben
-- terminal_agent: Shell-Befehle, Speicher, CPU, Prozesse – NUR technische Systemabfragen, NICHT fuer Datum/Uhrzeit-Fragen
-- web_agent: STANDARD-AGENT fuer alle Fragen ueber die Welt, Personen, Ereignisse, Fakten.
-  Nutze web_agent IMMER bei:
-  - Fragen ueber reale Personen (lebt X noch? was macht X? wer ist X?)
-  - Aktuelle Aemter, Positionen, Rollen (Kanzler, CEO, Praesident, Minister...)
-  - Aktuelle Ereignisse, Nachrichten, Politik, Sport, Wirtschaft
-  - Preise, Kurse
-  - Wetter-Fragen – IMMER web_agent, auch wenn "heute" vorkommt:
-    "wie wird das wetter?", "wetter heute", "wie warm ist es?", "regnet es?", "wetter berlin"
-  - Fragen die mit "was ist", "wer ist", "wie ist", "was denkst du ueber [Person/Ereignis]" beginnen
-  - Im Zweifel ob chat oder web: IMMER web_agent waehlen
+
+- chat_agent: STANDARD-FALLBACK fuer alles was das LLM aus sich selbst beantworten kann.
+  Nutze chat_agent bei:
+  - Meinungsfragen ("was haelst du von X", "wie findest du Y", "magst du Z")
+  - Erklaerungen und Definitionen von stabilen Konzepten ("was ist Philosophie", "erklaer mir Quantenmechanik auf Grundschulniveau")
+  - Smalltalk, Reaktionen, Hoeflichkeiten ("danke", "ok", "cool", "super", "alles klar")
+  - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
+  - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete, Praeferenzen)
+  - Fragen ueber gespeicherte Notizen, Sessions oder Wissen
+  - Statische Fakten die sich nie aendern ("wer hat die Relativitaetstheorie entwickelt")
+  - Reine Datum/Uhrzeit-Fragen ("wieviel uhr", "welches datum")
+  - ALLE Folgefragen zu einem Foto oder Bild
+  - Im Zweifel: chat_agent ist der sichere Fallback
+
+- web_agent: NUR wenn externe oder aktuelle Daten benoetigt werden – Daten die das LLM
+  nicht zuverlaessig aus sich selbst beantworten kann.
+  Nutze web_agent EXPLIZIT bei:
+  - Aktuellen Nachrichten, Ereignissen, Politik, Sport, Wirtschaft
+  - Wetter-Fragen ("wetter heute", "wie warm ist es", "regnet es", "wetter berlin", "forecast")
+  - Preise, Kurse, Boerse
+  - Aktuellem Status von Personen (lebt X noch? aktuelles Amt, aktuelle Rolle, CEO, Kanzler, Minister)
+  - Schnell aendernden Fakten (aktuelle Rekorde, aktuelle Zahlen, aktuelle Ranglisten)
+  - Erklaerungen zu aktuellen oder sich schnell entwickelnden Themen (KI-Fortschritt, neue Technologien)
+  - NICHT fuer Meinungsfragen, Erklaerungen stabiler Konzepte, Smalltalk oder Konversation
   - NICHT fuer Fragen zu einem Foto oder Bild
-- calendar_agent: Kalendertermine lesen oder erstellen
-- computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
-- reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr', 'Was sind meine Erinnerungen?')
+
 - memory_agent: Persoenliche Informationen oder Bot-Instruktionen speichern, aktualisieren oder loeschen.
   NUR bei expliziten Speicher-Befehlen:
-  JA: 'merke dir dass...', 'speichere...', 'füge ... hinzu'
-  JA: 'vergiss X', 'vergiss den X', 'vergiss den Eintrag X', 'lösche X aus dem Profil'
+  JA: 'merke dir dass...', 'speichere...', 'fuge ... hinzu'
+  JA: 'vergiss X', 'vergiss den X', 'vergiss den Eintrag X', 'loesche X aus dem Profil'
   JA: 'merke dir grundsaetzlich...', 'von jetzt an sollst du...', 'du sollst immer...'
   JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
   NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
   NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
-  NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen ('was steht in...', 'was habe ich notiert...')
-- chat_agent: Konversationelle Nachrichten, reine Datum/Uhrzeit-Fragen ('wieviel uhr', 'welches datum'), persoenliche Fragen, Smalltalk:
-  - Folgefragen zum bisherigen Gespraech ("fass das zusammen", "erklaer das nochmal")
-  - Persoenliche Fragen ueber den User aus dem Profil (Projekte, Standort, Geraete)
-  - Fragen ueber gespeicherte Notizen, Sessions oder Wissen ("was steht in meinen Sessions", "was habe ich ueber X notiert", "was weisst du ueber mein Projekt")
-  - Smalltalk IMMER chat_agent: "danke", "ok", "cool", "super", "alles klar", "okay danke",
-    kurze Reaktionen, Hoeflichkeiten, Bestaetigungen
-  - ALLE Folgefragen zu einem Foto oder Bild
-  - NICHT fuer Wetter-Fragen – diese gehen immer an web_agent
-- vision_agent: Bildanalyse von Fotos und Bildern. Wird automatisch geroutet wenn die Nachricht mit [FOTO] beginnt – nicht manuell routen.
-- whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte:
-  JA: "schick Steffi dass...", "WhatsApp an Amalia: ...", "sende Fabio eine Nachricht"
-  NEIN: Fragen über WhatsApp, allgemeine Kommunikation
+  NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen
+
+- calendar_agent: Kalendertermine lesen oder erstellen
+- reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr')
+- file_agent: Dateien und Ordner lesen, auflisten oder schreiben
+- terminal_agent: Shell-Befehle, Speicher, CPU, Prozesse – NUR technische Systemabfragen, NICHT fuer Datum/Uhrzeit
+- computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
+- vision_agent: Bildanalyse von Fotos. Wird automatisch geroutet wenn Nachricht mit [FOTO] beginnt.
+- whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte.
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
-- Smalltalk, Reaktionen und Hoeflichkeiten des Users: IMMER chat_agent, NIE FINISH
-- Wetter-Fragen (wetter, temperatur, regen, warm, kalt, grad): IMMER web_agent
-- Im Zweifel zwischen web_agent und chat_agent: web_agent – AUSNAHME: reine Datum/Uhrzeit-Fragen ohne Wetterbezug immer chat_agent
+- Smalltalk, Reaktionen, Hoeflichkeiten: IMMER chat_agent, NIE FINISH
+- Wetter-Fragen: IMMER web_agent
+- Meinungsfragen ("was haelst du", "wie findest du", "deine meinung"): IMMER chat_agent
+- Im Zweifel zwischen web_agent und chat_agent: chat_agent waehlen
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
-- Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent (nicht memory_agent)
+- Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent
 
 WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes):
 computer_agent
@@ -89,6 +95,51 @@ memory_agent
 chat_agent
 FINISH
 """
+
+# Phase 120: Deterministisches Pre-Routing – Modul-Konstanten (Fix #48).
+# Werden einmal beim Import angelegt, nicht bei jedem supervisor_node()-Aufruf.
+
+# Opinion-Trigger → sofort chat_agent (Fix #41/#47: nachhaltig statt Keyword-Patch)
+_OPINION_PREFIXES = (
+    "was hälst du",
+    "was haelst du",
+    "was denkst du",
+    "was findest du",
+    "wie findest du",
+    "magst du",
+    "gefällt dir",
+    "gefaellt dir",
+    "deine meinung",
+    "dein urteil",
+    "was ist deine meinung",
+)
+
+# Memory-Delete-Trigger → sofort memory_agent (Phase 119c)
+_MEMORY_DELETE_PREFIXES = (
+    "vergiss ",
+    "vergiss,",
+    "lösche aus dem profil",
+    "loesche aus dem profil",
+    "entferne aus dem profil",
+    "aus dem profil löschen",
+    "aus dem profil loeschen",
+    "aus meinem profil löschen",
+    "aus meinem profil loeschen",
+    "profil eintrag löschen",
+    "profil eintrag loeschen",
+)
+
+# Memory-Save-Trigger → sofort memory_agent (Phase 119c)
+_MEMORY_SAVE_PREFIXES = (
+    "merke dir dass",
+    "merke dir:",
+    "speichere dass",
+    "füge hinzu:",
+    "fuege hinzu:",
+    "merke dir grundsätzlich",
+    "merke dir grundsaetzlich",
+    "von jetzt an sollst du",
+)
 
 
 def _filter_hitl_messages(messages: list) -> list:
@@ -114,20 +165,10 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     # Phase 109: Early-Return NUR wenn letzte Message eine AIMessage ist
     # UND keine neue HumanMessage danach kommt.
-    # Vorher (Ph.106): Early-Return auf letzter Checkpoint-AIMessage → schwieg bei Smalltalk.
-    # Vorher (Ph.108): Early-Return ganz entfernt → Recursion Limit bei normalen Antworten.
-    # Fix: letzte Message im aktuellen ainvoke()-State prüfen – LangGraph hängt
-    # neue Messages ans Ende, daher ist die letzte Message nach Agent-Aufruf
-    # immer die neue AIMessage → FINISH korrekt.
-    # Bei neuer HumanMessage ("danke") ist die letzte Message eine HumanMessage → kein FINISH.
     last_msg = messages[-1] if messages else None
     if last_msg and isinstance(last_msg, AIMessage):
         content = last_msg.content if isinstance(last_msg.content, str) else ""
         if not content.startswith("__MEMORY__:"):
-            # __MEMORY__: ist ausgenommen weil memory_agent danach noch chat_agent
-            # routen muss. Andere HITL-Prefixe (__CONFIRM_*, __SCREENSHOT__*,
-            # __VISION_RESULT__*) werden von _filter_hitl_messages() bereits in
-            # "[Aktion wurde ausgefuehrt]" übersetzt → kein Early-Return nötig.
             logger.debug("supervisor: letzte Message ist AIMessage → FINISH")
             return {"next_agent": "FINISH"}
 
@@ -141,33 +182,26 @@ async def supervisor_node(state: AgentState) -> AgentState:
             last_text = str(last_text)[:100]
         logger.info(f"supervisor routing: '{last_text[:100]}' → ?")
 
-    # Phase 119c: Deterministisches Pre-Routing für Memory-Delete-Trigger.
-    # Verhindert dass der LLM 'vergiss X' fälschlicherweise zu chat_agent routet.
+    # Phase 119c/120: Deterministisches Pre-Routing vor dem LLM-Call.
+    # Verhindert LLM-Halluzinieren bei eindeutigen Intents.
+    # Fix #47: nur startswith() – kein 'p in last_lower' mehr (False-Positive-Gefahr).
     if routing_messages:
         last_content = routing_messages[-1].content if hasattr(routing_messages[-1], "content") else ""
         if isinstance(last_content, list):
             last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
         last_lower = last_content.strip().lower()
-        _MEMORY_DELETE_PREFIXES = (
-            "vergiss ",
-            "vergiss,",
-            "lösche aus dem profil",
-            "entferne aus dem profil",
-            "aus dem profil löschen",
-            "aus meinem profil löschen",
-            "profil eintrag löschen",
-        )
-        _MEMORY_SAVE_PREFIXES = (
-            "merke dir dass",
-            "merke dir:",
-            "speichere dass",
-            "füge hinzu:",
-            "merke dir grundsätzlich",
-            "von jetzt an sollst du",
-        )
-        if any(last_lower.startswith(p) or p in last_lower for p in _MEMORY_DELETE_PREFIXES):
+
+        # Opinion-Trigger → chat_agent (Phase 120, Fix #41)
+        if any(last_lower.startswith(p) for p in _OPINION_PREFIXES):
+            logger.info(f"supervisor: Pre-Routing → chat_agent (opinion-trigger: '{last_lower[:60]}')")
+            return {"next_agent": "chat_agent"}
+
+        # Memory-Delete-Trigger → memory_agent (Phase 119c, Fix #47)
+        if any(last_lower.startswith(p) for p in _MEMORY_DELETE_PREFIXES):
             logger.info(f"supervisor: Pre-Routing → memory_agent (delete-trigger: '{last_lower[:60]}')")
             return {"next_agent": "memory_agent"}
+
+        # Memory-Save-Trigger → memory_agent (Phase 119c)
         if any(last_lower.startswith(p) for p in _MEMORY_SAVE_PREFIXES):
             logger.info(f"supervisor: Pre-Routing → memory_agent (save-trigger: '{last_lower[:60]}')")
             return {"next_agent": "memory_agent"}
