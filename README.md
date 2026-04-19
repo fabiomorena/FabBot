@@ -346,3 +346,4 @@ tail -f ~/.fabbot/fabbot.log      # live log
 ## License
 
 Private project – not licensed for public use.
+- **Phase 122** ✅ Bug-Fix – `bot_instruction` delete Pre-Routing: `supervisor.py` erkennt Instruktions-Delete-Trigger deterministisch via `_BOT_INSTRUCTION_DELETE_PREFIXES`, `memory_agent.py` gibt `_reject()` mit `claude.md`-Hinweis statt falsches `🗑️ Gelöscht` (Closes #52); 972 Tests grün
