@@ -200,6 +200,8 @@ tail -f ~/.fabbot/fabbot.log
 - **Phase 110** ✅ Bug – memory_agent delete für preference/location/job ergänzt, Logging bei kein Match, Closes #32
 - **Phase 111** ✅ Bug – memory_agent: Reviewer delete-aware, preference/location/job delete ergänzt, Closes #32
 - **Phase 112** ✅ Bug – computer_agent: leerer Content Guard + Prompt Beispiel-Trigger, Closes #28
+- **Phase 113** ✅ Bundle – #24 short-confirmation Guard, #25 MAX_RESPONSE_LENGTH 5000, #26 Supervisor-Kommentar, #27 vision_agent dokumentiert
+- **Phase 114** ✅ Fix – computer_agent: Regex-Intent-Parse ersetzt LLM-Call, kein JSONDecodeError möglich, Screenshot auch bei gesperrtem Laptop
 ---
 
 

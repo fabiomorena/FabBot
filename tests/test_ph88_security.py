@@ -354,5 +354,6 @@ class TestAgentAsyncConversion:
         with patch("agent.agents.computer.get_llm", return_value=mock_llm):
             await computer_agent(state)
 
-        mock_llm.ainvoke.assert_called_once()
+        # Phase 114: kein LLM-Call für Intent-Parse – ainvoke nur bei Screenshot
+        mock_llm.ainvoke.assert_not_called()
         mock_llm.invoke.assert_not_called()

@@ -1,9 +1,8 @@
-import json
 import re
 import base64
 import subprocess
 from pathlib import Path
-from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
@@ -17,31 +16,22 @@ TYPEWRITE_ALLOWED_PATTERN = re.compile(r'^[\x20-\x7E\s]+$')
 APP_NAME_PATTERN = re.compile(r'^[A-Za-z0-9\s\-\.]+$')
 APP_NAME_MAX_LENGTH = 64
 
-PROMPT = """Du bist ein spezialisierter Computer-Use-Agent auf einem Mac.
 
-Du kannst folgende Aktionen ausfuehren:
-- screenshot: Einen Screenshot machen und analysieren
-- click: An einer Position klicken (x, y Koordinaten)
-- type: Text tippen
-- open_app: Eine App per Name oeffnen
-
-Analysiere die Anfrage und antworte NUR mit JSON:
-{
-  "action": "screenshot|click|type|open_app",
-  "x": 100,
-  "y": 200,
-  "text": "Text zum Tippen",
-  "app": "App-Name"
-}
-
-Fuer 'screenshot': nur {"action": "screenshot"}
-Fuer 'click': {"action": "click", "x": X, "y": Y}
-Fuer 'type': {"action": "type", "text": "..."}
-Fuer 'open_app': {"action": "open_app", "app": "Safari"}
-
-Kein Markdown, kein Text – nur reines JSON.
-Wenn nicht unterstuetzt: UNSUPPORTED
-"""
+def _parse_intent(text: str) -> dict | None:
+    """Phase 114: Intent-Parse via Regex – kein LLM-Call, kein JSONDecodeError möglich."""
+    t = text.lower().strip()
+    if re.search(r'screenshot|bildschirm.aufnahme|screen.shot', t):
+        return {"action": "screenshot"}
+    m = re.search(r'(?:öffne|oeffne|starte|mach\s+auf|launch)\s+([A-Za-z0-9\s\-\.]+?)(?:\s+app)?$', t)
+    if m:
+        return {"action": "open_app", "app": m.group(1).strip().title()}
+    m = re.search(r'(?:tippe|schreibe|type|write)\s+(.+)', t)
+    if m:
+        return {"action": "type", "text": m.group(1).strip()}
+    m = re.search(r'(?:klick|click)(?:\s+auf)?\s+(\d+)[,\s]+(\d+)', t)
+    if m:
+        return {"action": "click", "x": int(m.group(1)), "y": int(m.group(2))}
+    return None
 
 
 def _take_screenshot() -> str | None:
@@ -49,6 +39,8 @@ def _take_screenshot() -> str | None:
         import pyautogui
         screenshot = pyautogui.screenshot()
         screenshot.save(str(SCREENSHOT_PATH))
+        if not SCREENSHOT_PATH.exists() or SCREENSHOT_PATH.stat().st_size == 0:
+            return None
         with open(SCREENSHOT_PATH, "rb") as f:
             return base64.standard_b64encode(f.read()).decode("utf-8")
     except Exception:
@@ -86,39 +78,27 @@ def _validate_app_name(app: str) -> tuple[bool, str]:
 
 
 async def computer_agent(state: AgentState) -> AgentState:
-    """Phase 88: ainvoke. Phase 99: last_agent_result in allen Returns."""
+    """Phase 88: ainvoke. Phase 99: last_agent_result. Phase 114: Regex-Intent-Parse."""
     llm = get_llm()
-    messages = [SystemMessage(content=PROMPT)] + state["messages"]
-    response = await llm.ainvoke(messages)
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-
-    content = content.strip()
-    content = re.sub(r"^```(?:json)?\s*", "", content)
-    content = re.sub(r"\s*```$", "", content).strip()
 
     def _err(msg: str) -> AgentState:
         return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "computer_agent"}
 
-    if not content:
-        return _err("Computer-Agent: leere Antwort vom LLM – bitte nochmal versuchen.")
-    if content == "UNSUPPORTED":
+    # Phase 114: Intent via Regex parsen – kein LLM-Call, kein JSONDecodeError möglich
+    last_msg = state["messages"][-1].content if state.get("messages") else ""
+    if isinstance(last_msg, list):
+        last_msg = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_msg)
+    parsed = _parse_intent(str(last_msg))
+    if parsed is None:
         return _err("Diese Aktion wird vom Computer-Agent nicht unterstuetzt.")
-
-    try:
-        parsed = json.loads(content)
-        action = parsed.get("action")
-    except (json.JSONDecodeError, AttributeError) as e:
-        return _err(f"Fehler beim Parsen: {e}")
+    action = parsed.get("action")
 
     if action == "screenshot":
         log_action("computer_agent", "screenshot", "taking screenshot",
                    state.get("telegram_chat_id"), status="executed")
         img_b64 = _take_screenshot()
         if not img_b64:
-            return _err("Fehler beim Erstellen des Screenshots.")
-
+            return _err("❌ Screenshot nicht möglich – ist der Bildschirm gesperrt oder der Laptop im Ruhezustand?")
         analysis_response = await llm.ainvoke([
             HumanMessage(content=[
                 {
@@ -135,7 +115,6 @@ async def computer_agent(state: AgentState) -> AgentState:
         analysis = analysis_response.content
         if isinstance(analysis, list):
             analysis = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in analysis)
-
         return {
             "messages": [AIMessage(content=f"{Proto.SCREENSHOT}{analysis.strip()}")],
             "next_agent": None,
