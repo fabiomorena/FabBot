@@ -355,7 +355,8 @@ Nur VALID oder INVALID."""
 
 async def _parse_memory_intent(messages: list, profile: dict | None = None) -> dict[str, Any]:
     """
-    Phase 119: Parser bekommt optionalen Profil-Kontext für profilbewusste Deletes.
+    Phase 119d: Profil-Kontext als HumanMessage statt im System-Prompt.
+    Verhindert JSON-Truncation wenn Prompt mit profile_context endet.
     """
     try:
         llm = get_llm()
@@ -367,32 +368,31 @@ async def _parse_memory_intent(messages: list, profile: dict | None = None) -> d
             all_filtered.append(m)
         context_msgs = all_filtered[-6:]
 
-        # Phase 119: Profil-Kontext für Parser
+        system_prompt = f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]\n" + _PARSER_PROMPT_BASE
+
+        # Phase 119d: Profil-Kontext als eigene HumanMessage VOR den echten Messages.
+        # NICHT im System-Prompt – verhindert dass LLM JSON abbricht wenn
+        # Prompt mit profile_context endet (kein abschließendes JSON-Signal).
+        extra_msgs = []
         if profile is not None:
             profile_context = _build_profile_context_for_parser(profile)
             if profile_context.strip():
-                system_prompt = (
-                    f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]\n"
-                    + _PARSER_PROMPT_WITH_PROFILE.format(profile_context=profile_context)
-                )
-            else:
-                system_prompt = f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]\n" + _PARSER_PROMPT_BASE
-        else:
-            system_prompt = f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]\n" + _PARSER_PROMPT_BASE
+                extra_msgs = [HumanMessage(content=f"[Profil-Kontext für diesen Request]\n{profile_context}")]
 
-        response = await llm.ainvoke([SystemMessage(content=system_prompt)] + context_msgs)
+        response = await llm.ainvoke([SystemMessage(content=system_prompt)] + extra_msgs + context_msgs)
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
         content = content.strip()
         content = re.sub(r"^```(?:json)?\s*", "", content)
         content = re.sub(r"\s*```$", "", content).strip()
+        logger.debug(f"MemoryAgent Parser raw: {content[:120]}")
         parsed = json.loads(content)
         if not isinstance(parsed, dict) or "action" not in parsed:
             return {"action": "error"}
         return parsed
     except Exception as e:
-        logger.error(f"MemoryAgent Parser Fehler: {e}")
+        logger.error(f"MemoryAgent Parser Fehler: {e!r} | raw={locals().get('content', 'N/A')[:80]}")
         return {"action": "error"}
 
 
