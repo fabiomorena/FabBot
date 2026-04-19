@@ -40,7 +40,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 891 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 972 pytest tests on every push |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -74,6 +74,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Deterministisches Supervisor-Pre-Routing – 'vergiss X' / 'merke dir' → memory_agent ohne LLM-Halluzinieren |
 | ✅ | Supervisor-Routing nachhaltig umgebaut – chat_agent als Default-Fallback, web_agent nur bei externen Daten, deterministisches Pre-Routing für Opinion-Trigger |
 | ✅ | Prompt-Leak Fix – web_agent filtert interne Fallback-Texte via `_filter_internal_response()` bevor sie den User erreichen |
+| ✅ | bot_instruction delete Pre-Routing – `_BOT_INSTRUCTION_DELETE_PREFIXES` in supervisor, `_reject()` mit `claude.md`-Hinweis statt falsches 🗑️ |
 ---
 
 ## Architecture
@@ -89,7 +90,7 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/test_security_terminal.py  # pytest suite (891 tests)
+├── tests/test_security_terminal.py  # pytest suite (972 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
 │   ├── state.py             # LangGraph AgentState
@@ -194,7 +195,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ```bash
 python main.py        # Bot only
 python menubar.py     # With menubar app
-.venv/bin/python -m pytest tests/ -v      # Run tests (891 tests)
+.venv/bin/python -m pytest tests/ -v      # Run tests (972 tests)
 ```
 
 ### Run as Launch Agent
@@ -340,10 +341,10 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 119** ✅ Feature – Nachhaltiges Preferences-System: nested `preferences.<subcategory>.<key>`, Auto-Kategorisierung, profilbewusster Delete-Parser mit Wert-Match + clarify-Action, deterministisches Supervisor-Pre-Routing für Memory-Trigger (Closes #40, #43); 935 Tests grün
 - **Phase 120** ✅ Bug-Fix – Supervisor-Routing nachhaltig umgebaut (chat_agent Default-Fallback, web_agent nur bei externen Daten, Opinion-Trigger → chat_agent), Prompt-Leak in web_agent behoben via `_filter_internal_response()` (Closes #41, #47, #48); 935 Tests grün
 - **Phase 121** ✅ Refactor – `MemoryUpdateResult`: typisiertes Result-Objekt ersetzt `dict | None` in `_apply_memory_update` — `bot_instruction` delete gibt `_reject()` zurück (kein Fallback-Save, kein falsches 🗑️-Feedback), `project` delete mit leerem Name ebenfalls `_reject()`, bestehende Tests auf neues API umgestellt (Closes #44); 964 Tests grün
----
+- **Phase 122** ✅ Bug-Fix – `bot_instruction` delete Pre-Routing: `supervisor.py` erkennt Instruktions-Delete-Trigger deterministisch via `_BOT_INSTRUCTION_DELETE_PREFIXES`, `memory_agent.py` gibt `_reject()` mit `claude.md`-Hinweis statt falsches `🗑️ Gelöscht` (Closes #52); 972 Tests grün
 
+---
 
 ## License
 
 Private project – not licensed for public use.
-- **Phase 122** ✅ Bug-Fix – `bot_instruction` delete Pre-Routing: `supervisor.py` erkennt Instruktions-Delete-Trigger deterministisch via `_BOT_INSTRUCTION_DELETE_PREFIXES`, `memory_agent.py` gibt `_reject()` mit `claude.md`-Hinweis statt falsches `🗑️ Gelöscht` (Closes #52); 972 Tests grün
