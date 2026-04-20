@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_prompt() -> str:
-    from agent.utils import get_current_datetime
+    from agent.utils import get_current_datetime, extract_llm_text
     now = datetime.now()
     today = date.today().isoformat()
     time_str = now.strftime("%H:%M")
@@ -88,9 +88,7 @@ async def reminder_agent(state: AgentState) -> AgentState:
     last_msg = [human_msgs[-1]] if human_msgs else filtered[-1:]
     messages = [SystemMessage(content=_build_prompt())] + last_msg
     response = await llm.ainvoke(messages)
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    content = extract_llm_text(response.content)
     content = _extract_json(content)
 
     if content == "UNSUPPORTED":
@@ -143,9 +141,3 @@ async def reminder_agent(state: AgentState) -> AgentState:
             return _make_result(f"Erinnerung #{reminder_id} nicht gefunden.")
 
     return _make_result("Unbekannte Aktion.")
-
-
-def _build_reminder_prompt() -> str:
-    """Ph.98 Kompatibilitäts-Alias."""
-    from agent.utils import get_current_datetime
-    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"

@@ -105,9 +105,3 @@ async def vision_agent(state: AgentState) -> AgentState:
         "last_agent_result": msg,
         "last_agent_name": "vision_agent",
     }
-
-
-def _build_vision_prompt() -> str:
-    """Ph.98 Kompatibilitäts-Alias."""
-    from agent.utils import get_current_datetime
-    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"

@@ -8,6 +8,7 @@ import asyncio
 
 from agent.state import AgentState, AgentName
 from agent.llm import get_fast_llm
+from agent.utils import extract_llm_text
 from agent.agents.computer import computer_agent
 from agent.agents.terminal import terminal_agent
 from agent.agents.file import file_agent
@@ -241,9 +242,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
     response = await llm.ainvoke(all_messages)
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    content = extract_llm_text(response.content)
     next_agent = content.strip()
 
     valid = {

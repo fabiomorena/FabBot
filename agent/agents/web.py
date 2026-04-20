@@ -482,8 +482,3 @@ async def web_agent(state: AgentState) -> AgentState:
             "last_agent_result": msg,
             "last_agent_name": "web_agent",
         }
-
-
-def _build_web_prompt() -> str:
-    """Ph.98 Kompatibilitäts-Alias – Ph.99: ersetzt durch _build_prompt()."""
-    return _build_prompt()

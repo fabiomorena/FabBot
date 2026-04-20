@@ -7,6 +7,7 @@ from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
+from agent.utils import extract_llm_text
 
 
 def _build_prompt() -> str:
@@ -151,9 +152,7 @@ async def calendar_agent(state: AgentState) -> AgentState:
     last_msg = [human_msgs[-1]] if human_msgs else state["messages"][-1:]
     messages = [SystemMessage(content=_build_prompt())] + last_msg
     response = await llm.ainvoke(messages)
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    content = extract_llm_text(response.content)
     content = _extract_json(content)
 
     def _err(msg: str) -> AgentState:

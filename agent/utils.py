@@ -21,6 +21,15 @@ _WEEKDAYS_DE = {
 }
 
 
+def extract_llm_text(content) -> str:
+    """Normalisiert LLM-Response-Content zu einem einzelnen String.
+    Claude gibt manchmal list[dict] statt str zurück (bei extended thinking o.ä.).
+    """
+    if isinstance(content, list):
+        return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    return content if isinstance(content, str) else str(content)
+
+
 def get_current_datetime() -> str:
     """Gibt das aktuelle Datum und die Uhrzeit in der Zeitzone Europe/Berlin zurück.
 

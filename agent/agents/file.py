@@ -7,6 +7,7 @@ from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
+from agent.utils import extract_llm_text
 
 MAX_PATH_DEPTH = 5
 
@@ -134,9 +135,7 @@ async def file_agent(state: AgentState) -> AgentState:
     llm = get_llm()
     messages = [SystemMessage(content=PROMPT)] + state["messages"]
     response = await llm.ainvoke(messages)
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    content = extract_llm_text(response.content)
     content = _extract_json(content)
 
     def _err(msg: str) -> AgentState:

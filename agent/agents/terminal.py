@@ -7,6 +7,7 @@ from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
+from agent.utils import extract_llm_text
 
 ALLOWED_COMMANDS = {
     "ls", "pwd", "cat", "head", "tail", "grep",
@@ -178,9 +179,7 @@ async def terminal_agent(state: AgentState) -> AgentState:
     )]
     messages = [SystemMessage(content=PROMPT)] + filtered
     response = await llm.ainvoke(messages)
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    content = extract_llm_text(response.content)
     command = content.strip().strip("`")
     if command.startswith("__CONFIRM_TERMINAL__:"):
         command = command[len("__CONFIRM_TERMINAL__:"):]
@@ -235,9 +234,3 @@ def terminal_agent_execute(command: str, chat_id: int) -> str:
     output = execute_command(command)
     log_action("terminal_agent", command[:200], f"done, {len(output)}b output", chat_id, status="executed")
     return output
-
-
-def _build_terminal_prompt() -> str:
-    """Ph.98 Kompatibilitäts-Alias."""
-    from agent.utils import get_current_datetime
-    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"

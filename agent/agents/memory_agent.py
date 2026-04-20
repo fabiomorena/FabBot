@@ -1007,9 +1007,3 @@ async def memory_agent(state: AgentState) -> AgentState:
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")
         return _make_result("Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es nochmal.")
-
-
-def _build_memory_prompt() -> str:
-    """Ph.98 Kompatibilitäts-Alias – Ph.99: get_current_datetime() direkt in _parse_memory_intent()."""
-    from agent.utils import get_current_datetime
-    return f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"
