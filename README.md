@@ -352,6 +352,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 120** ✅ Bug-Fix – Supervisor-Routing nachhaltig umgebaut (chat_agent Default-Fallback, web_agent nur bei externen Daten, Opinion-Trigger → chat_agent), Prompt-Leak in web_agent behoben via `_filter_internal_response()` (Closes #41, #47, #48); 935 Tests grün
 - **Phase 121** ✅ Refactor – `MemoryUpdateResult`: typisiertes Result-Objekt ersetzt `dict | None` in `_apply_memory_update` — `bot_instruction` delete gibt `_reject()` zurück (kein Fallback-Save, kein falsches 🗑️-Feedback), `project` delete mit leerem Name ebenfalls `_reject()`, bestehende Tests auf neues API umgestellt (Closes #44); 964 Tests grün
 - **Phase 122** ✅ Bug-Fix – `bot_instruction` delete Pre-Routing: `supervisor.py` erkennt Instruktions-Delete-Trigger deterministisch via `_BOT_INSTRUCTION_DELETE_PREFIXES`, `memory_agent.py` gibt `_reject()` mit `claude.md`-Hinweis statt falsches `🗑️ Gelöscht` (Closes #52); 972 Tests grün
+- **Phase 123** ✅ Bug-Fix – memory_agent: _build_clarify_message robuster gegen fehlendes question-Feld (Closes #54)
 
 ---
 
