@@ -27,11 +27,13 @@ _audit_initialized = False
 
 # Patterns die niemals ins Log duerfen
 _SENSITIVE_PATTERNS = [
-    r"sk-ant-[A-Za-z0-9\-]+",       # Anthropic API Keys
+    r"sk-[A-Za-z0-9\-_]{20,}",      # Anthropic + OpenAI API Keys (sk-ant-..., sk-proj-...)
     r"ghp_[A-Za-z0-9]+",            # GitHub Tokens
+    r"tvly-[A-Za-z0-9\-]+",         # Tavily API Keys
     r"password\s*[=:]\s*\S+",       # Passwoerter
+    r"api[_\-]?key\s*[=:]\s*\S+",   # Generische API Keys (OPENAI_API_KEY=..., BRAVE_API_KEY=...)
     r"token\s*[=:]\s*\S+",          # Tokens
-    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",  # E-Mail Adressen
+    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",  # E-Mail Adressen (Regex-Bug: [A-Z|a-z] → [A-Za-z])
 ]
 
 
