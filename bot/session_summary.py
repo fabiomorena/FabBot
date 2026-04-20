@@ -77,12 +77,18 @@ _summary_write_lock = asyncio.Lock()
 _SUMMARY_PROMPT = """Du bist ein Session-Zusammenfasser für FabBot.
 Analysiere die folgende Konversation und erstelle eine kompakte Zusammenfassung auf Deutsch.
 
+WICHTIG – Deduplication:
+Dir werden bekannte Fakten aus früheren Sessions und dem Profil mitgegeben.
+Schreibe NUR Informationen die dort NICHT bereits stehen.
+Wiederholungen von bekannten Fakten (Personen, Orte, Events die schon dokumentiert sind) weglassen.
+Falls die Session ausschließlich bereits bekannte Fakten enthält: schreibe nur "Keine neuen Informationen."
+
 Format (exakt einhalten):
 ## Zusammenfassung
-[2-3 Sätze was besprochen wurde]
+[2-3 Sätze was NEU besprochen wurde]
 
 ## Themen & Aktionen
-- [konkrete Themen, Dateinamen, Phasennummern exakt übernehmen]
+- [nur neue konkrete Themen, Dateinamen, Phasennummern exakt übernehmen]
 
 ## Offene Punkte
 - [nur wenn explizit erwähnt, sonst die gesamte Sektion weglassen]
@@ -161,26 +167,47 @@ def _format_for_summary(messages: list) -> str:
     return "\n\n".join(lines)
 
 
+def _load_known_context() -> str:
+    """Lädt bisherige Sessions + Profil-Kurzkontext als Deduplication-Referenz."""
+    parts = []
+    try:
+        from agent.profile import get_profile_context_short
+        profile = get_profile_context_short()
+        if profile:
+            parts.append(f"<profil>\n{profile}\n</profil>")
+    except Exception:
+        pass
+    try:
+        sessions = load_session_summaries(n=MAX_SESSIONS_LOAD)
+        if sessions:
+            parts.append(f"<bisherige_sessions>\n{sessions}\n</bisherige_sessions>")
+    except Exception:
+        pass
+    return "\n\n".join(parts)
+
+
 async def _generate_summary(dialog_text: str) -> str | None:
     try:
         from agent.llm import get_llm
+        from agent.utils import extract_llm_text
         from langchain_core.messages import HumanMessage, SystemMessage
+
+        known_context = _load_known_context()
+        known_block = f"\n\n<bekannte_fakten>\n{known_context}\n</bekannte_fakten>" if known_context else ""
 
         llm = get_llm()
         response = await asyncio.wait_for(
             llm.ainvoke([
                 SystemMessage(content=_SUMMARY_PROMPT),
-                HumanMessage(content=f"<conversation>\n{dialog_text[:6000]}\n</conversation>\n\nErstelle die Zusammenfassung."),
+                HumanMessage(content=(
+                    f"<conversation>\n{dialog_text[:6000]}\n</conversation>"
+                    f"{known_block}\n\n"
+                    "Erstelle die Zusammenfassung. Schreibe nur neue Informationen."
+                )),
             ]),
             timeout=60,
         )
-        content = response.content
-        if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") if isinstance(b, dict) else str(b)
-                for b in content
-            )
-        return content.strip() or None
+        return extract_llm_text(response.content).strip() or None
     except asyncio.TimeoutError:
         logger.error("SessionSummary: Sonnet Timeout nach 60s")
         return None
