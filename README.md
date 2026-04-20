@@ -79,6 +79,12 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Security: Symlink-Traversal-Fix – file_agent prüft alle Pfad-Komponenten auf Symlinks, nicht nur die finale |
 | ✅ | Security: Path-Traversal-Fix (terminal) – `..`-Check via `Path.parts` statt Substring, vermeidet False-Positives auf `..hidden` |
 | ✅ | Bugfix: Prompt-Cache-Split – `agent/chat_agent.py` ist jetzt Re-Export von `agent/agents/chat_agent.py`, ein einziger `_prompt_cache`-Global |
+| ✅ | Security: Audit-Log Sanitization – OpenAI/Tavily/Brave API-Keys + E-Mail-Regex-Bug behoben |
+| ✅ | Security: WhatsApp Token chmod(0o600) auch auf existierende Dateien |
+| ✅ | Perf: Whisper-Modell beim Bot-Start vorladen – keine 2-3s Verzögerung bei erster Voice-Message |
+| ✅ | Perf: `_load_all_sessions()` mit mtime-Cache – kein Disk-Read wenn Sessions unverändert |
+| ✅ | Bugfix: `_get_invoke_lock` via `setdefault()` – atomarer Dict-Zugriff |
+| ✅ | Refactor: `extract_llm_text()` in `agent/utils.py` – zentralisiert LLM-Content-Normalisierung, Ph.98 Dead-Code-Aliases entfernt |
 ---
 
 ## Architecture
