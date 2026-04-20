@@ -797,17 +797,17 @@ async def _post_init(app: Application) -> None:
     from agent.telemetry import setup_telemetry
     setup_telemetry()
 
-    # Whisper-Modell vorladen damit die erste Voice-Message keine 2-3s Verzögerung hat.
-    import asyncio
-    loop = asyncio.get_event_loop()
-    def _warmup_whisper():
+    # Whisper-Modell vorladen – verzögert damit ChromaDB-Init abgeschlossen ist.
+    async def _warmup_whisper_delayed():
+        await asyncio.sleep(10)
         try:
+            loop = asyncio.get_event_loop()
             from bot.transcribe import _get_model
-            _get_model()
+            await loop.run_in_executor(None, _get_model)
             logger.info("Whisper-Modell vorgeladen.")
         except Exception as e:
             logger.warning(f"Whisper-Warmup fehlgeschlagen (ignoriert): {e}")
-    loop.run_in_executor(None, _warmup_whisper)
+    asyncio.create_task(_warmup_whisper_delayed())
 
     chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if not chat_id_str:
