@@ -87,9 +87,7 @@ def _get_dedup_lock() -> asyncio.Lock:
 
 
 def _get_invoke_lock(chat_id: int) -> asyncio.Lock:
-    if chat_id not in _invoke_locks:
-        _invoke_locks[chat_id] = asyncio.Lock()
-    return _invoke_locks[chat_id]
+    return _invoke_locks.setdefault(chat_id, asyncio.Lock())
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:

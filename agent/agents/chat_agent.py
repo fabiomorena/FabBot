@@ -237,12 +237,16 @@ def _is_short_confirmation(text: str) -> bool:
     return text.strip().lower().rstrip("!.") in _SHORT_CONFIRMATIONS
 
 
+_sessions_cache: tuple[float, str] | None = None  # (max_mtime, result)
+
+
 def _load_all_sessions() -> str:
     """
-    Hotfix 18.04: Laedt alle Session-Summaries direkt aus SESSIONS_DIR (sortiert nach Datum).
-    Unabhaengig von ChromaDB-Ranking — alle Sessions werden immer geladen.
+    Laedt alle Session-Summaries direkt aus SESSIONS_DIR (sortiert nach Datum).
+    mtime-Cache: neu lesen nur wenn sich Dateien geaendert haben.
     Fail-safe: Bei Fehler leerer String.
     """
+    global _sessions_cache
     try:
         from agent.retrieval import _SESSIONS_DIR
         sessions_dir = _SESSIONS_DIR
@@ -251,6 +255,9 @@ def _load_all_sessions() -> str:
         files = sorted(sessions_dir.glob("*.md"))
         if not files:
             return ""
+        max_mtime = max(f.stat().st_mtime for f in files)
+        if _sessions_cache is not None and _sessions_cache[0] == max_mtime:
+            return _sessions_cache[1]
         parts = ["\n## Deine Session-Erinnerungen (alle):"]
         for f in files:
             try:
@@ -259,7 +266,9 @@ def _load_all_sessions() -> str:
                     parts.append(f"[{f.stem}]\n{content}")
             except Exception:
                 continue
-        return "\n\n".join(parts) if len(parts) > 1 else ""
+        result = "\n\n".join(parts) if len(parts) > 1 else ""
+        _sessions_cache = (max_mtime, result)
+        return result
     except Exception as e:
         logger.debug(f"Session-Load: fehlgeschlagen (ignoriert): {e}")
         return ""

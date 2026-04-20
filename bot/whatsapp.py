@@ -58,6 +58,7 @@ _service_process: subprocess.Popen | None = None
 
 def _get_or_create_token() -> str:
     if _TOKEN_PATH.exists():
+        _TOKEN_PATH.chmod(0o600)
         return _TOKEN_PATH.read_text(encoding="utf-8").strip()
     token = secrets.token_urlsafe(32)
     _TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
