@@ -1,7 +1,10 @@
+import logging
 import os
 import re
 import json
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.audit import log_action
