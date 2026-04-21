@@ -353,6 +353,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 121** ✅ Refactor – `MemoryUpdateResult`: typisiertes Result-Objekt ersetzt `dict | None` in `_apply_memory_update` — `bot_instruction` delete gibt `_reject()` zurück (kein Fallback-Save, kein falsches 🗑️-Feedback), `project` delete mit leerem Name ebenfalls `_reject()`, bestehende Tests auf neues API umgestellt (Closes #44); 964 Tests grün
 - **Phase 122** ✅ Bug-Fix – `bot_instruction` delete Pre-Routing: `supervisor.py` erkennt Instruktions-Delete-Trigger deterministisch via `_BOT_INSTRUCTION_DELETE_PREFIXES`, `memory_agent.py` gibt `_reject()` mit `claude.md`-Hinweis statt falsches `🗑️ Gelöscht` (Closes #52); 972 Tests grün
 - **Phase 123** ✅ Bug-Fix – memory_agent: _build_clarify_message robuster gegen fehlendes question-Feld (Closes #54)
+- **Phase 124** ✅ fix: Duplicate-Scheduler durch Orphan-Prozesse behoben (launchd/caffeinate)
 
 ---
 
