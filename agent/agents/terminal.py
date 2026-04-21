@@ -47,7 +47,7 @@ TERMINAL_MAX_OUTPUT = 3000
 PROMPT = """Du bist ein spezialisierter Terminal-Agent auf einem Mac.
 
 Deine Aufgabe: Analysiere die Anfrage und antworte mit einem einzigen, sicheren Shell-Befehl.
-Antworte NUR mit dem Befehl - keine Erklaerung, kein Markdown, keine Backticks.
+Antworte AUSSCHLIESSLICH mit dem Befehl oder UNSUPPORTED – kein Text, keine Erklaerung, kein Markdown, keine Backticks.
 
 Erlaubte Befehle: ls, pwd, cat, head, tail, grep, df, du, top, ps, uname,
 whoami, date, find, wc, sort, uniq, uptime, sw_vers, diskutil, system_profiler
@@ -58,6 +58,7 @@ Wichtige Regeln fuer bestimmte Befehle:
 - Fuer Festplattenplatz IMMER nur: df -h (NIEMALS mit Pfad-Argument wie /System)
 
 Wenn die Anfrage keinen erlaubten Befehl erfordert, antworte mit: UNSUPPORTED
+Jede andere Antwort ausser einem gueltigen Befehl oder UNSUPPORTED ist ein Fehler.
 """
 
 
@@ -197,9 +198,10 @@ async def terminal_agent(state: AgentState) -> AgentState:
     except ValueError:
         _first = ""
     if _first not in ALLOWED_COMMANDS:
+        msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
         return {
-            "messages": [AIMessage(content=command)],
-            "last_agent_result": command,
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
             "last_agent_name": "terminal_agent",
         }
 
