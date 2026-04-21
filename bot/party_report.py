@@ -281,10 +281,10 @@ async def _extract_events(club_name: str, raw_results: str, friday: date, saturd
         return "Keine Events gefunden."
 
     try:
-        from agent.llm import get_llm
+        from agent.llm import get_fast_llm
         from langchain_core.messages import HumanMessage
 
-        llm = get_llm()
+        llm = get_fast_llm()
 
         fr_str = friday.strftime("%d.%m.%Y")
         sa_str = saturday.strftime("%d.%m.%Y")
