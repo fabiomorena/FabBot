@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 from dotenv import load_dotenv
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    # Verhindert Mac-Sleep solange der Bot läuft (ersetzt caffeinate als plist-Parent).
+    _caff = subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())])
+
     # Phase 70: TTS-Konfiguration validieren NACHDEM Logger konfiguriert ist
     from bot.tts import _validate_tts_config
     _validate_tts_config()
