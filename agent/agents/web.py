@@ -84,19 +84,27 @@ Nenne am Ende die Quellen (URLs) der verwendeten Informationen.
 """
 
 
+_NO_INFO_SIGNALS = (
+    "keine relevanten informationen",
+    "keine aktuellen informationen",
+    "keine informationen gefunden",
+    "keine passenden informationen",
+    "enthalten keine relevanten",
+)
+
+
 def _filter_internal_response(result: str) -> str:
     """
     Phase 120: Fängt interne Fallback-Texte ab die vom LLM durchgereicht werden
-    und ersetzt sie durch eine neutrale User-Antwort (Fix #41).
-    Verhindert dass interne Prompt-Instruktionen den User erreichen.
+    und ersetzt sie durch eine neutrale User-Antwort (Fix #41/#50).
+    Substring-Match auf kurze Responses fängt LLM-Varianten ("Leider keine...",
+    "Es wurden keine...") ab ohne false positives in langen Antworten.
     """
     if not result:
         return _NO_RESULTS_USER
-    # Exakter Match auf den alten internen Satz (für Altlasten im LLM-Output)
-    if result.strip() == _NO_RESULTS_INTERNAL:
-        return _NO_RESULTS_USER
-    # Neuer Fallback-Satz aus dem aktualisierten Prompt
-    if result.strip() == "Keine relevanten Informationen gefunden.":
+    stripped = result.strip()
+    lower = stripped.lower()
+    if len(stripped) < 150 and any(s in lower for s in _NO_INFO_SIGNALS):
         return _NO_RESULTS_USER
     return result
 

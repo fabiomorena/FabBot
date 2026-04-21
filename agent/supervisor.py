@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langgraph.graph import StateGraph, END
@@ -169,6 +170,30 @@ _MEMORY_SAVE_PREFIXES = (
 )
 
 
+_MAX_ROUTING_LEN = 500
+
+_INJECTION_RE = re.compile(
+    r'(?i)'
+    r'(ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?))'
+    r'|(you\s+are\s+now\s+\w+)'
+    r'|(system\s*:\s)'
+    r'|(<\s*/?\s*system\s*>)'
+    r'|(\[system\])'
+)
+
+
+def _sanitize_routing_content(content):
+    if isinstance(content, str):
+        return _INJECTION_RE.sub("[X]", content[:_MAX_ROUTING_LEN])
+    if isinstance(content, list):
+        return [
+            {**b, "text": _INJECTION_RE.sub("[X]", b["text"][:_MAX_ROUTING_LEN])}
+            if isinstance(b, dict) and "text" in b else b
+            for b in content
+        ]
+    return content
+
+
 def _filter_hitl_messages(messages: list) -> list:
     """
     Phase 91: Proto.MEMORY_VISION_MARKER statt hardcoded "Bildbeschreibung".
@@ -240,7 +265,11 @@ async def supervisor_node(state: AgentState) -> AgentState:
             logger.info(f"supervisor: Pre-Routing → memory_agent (save-trigger: '{last_lower[:60]}')")
             return {"next_agent": "memory_agent"}
 
-    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + routing_messages
+    sanitized = [
+        HumanMessage(content=_sanitize_routing_content(m.content)) if isinstance(m, HumanMessage) else m
+        for m in routing_messages
+    ]
+    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + sanitized
     response = await llm.ainvoke(all_messages)
     content = extract_llm_text(response.content)
     next_agent = content.strip()

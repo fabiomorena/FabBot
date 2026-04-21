@@ -809,6 +809,18 @@ async def _post_init(app: Application) -> None:
             logger.warning(f"Whisper-Warmup fehlgeschlagen (ignoriert): {e}")
     asyncio.create_task(_warmup_whisper_delayed())
 
+    async def _warmup_profile():
+        try:
+            loop = asyncio.get_running_loop()
+            from agent.profile import load_profile
+            await asyncio.wait_for(loop.run_in_executor(None, load_profile), timeout=5.0)
+            logger.info("Profil vorgeladen (Keychain-Zugriff abgeschlossen).")
+        except asyncio.TimeoutError:
+            logger.warning("Profil-Warmup Timeout (5s) – Keychain möglicherweise gesperrt. Profil wird beim ersten Aufruf erneut versucht.")
+        except Exception as e:
+            logger.warning(f"Profil-Warmup fehlgeschlagen (ignoriert): {e}")
+    asyncio.create_task(_warmup_profile())
+
     chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if not chat_id_str:
         fallback_raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
