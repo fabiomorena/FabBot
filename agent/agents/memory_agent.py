@@ -354,10 +354,10 @@ Neu:
 </new>
 
 Antworte NUR mit einem einzigen Wort:
-VALID   – Bei save/update: YAML-Syntax korrekt, alle Original-Daten erhalten, nur sinnvolle Ergänzungen/Änderungen.
+VALID   – Bei save/update: YAML-Syntax korrekt, alle bestehenden Daten erhalten, neue Felder oder Werte hinzugefügt.
           Bei delete: YAML-Syntax korrekt, mindestens ein Eintrag/Feld/Wert wurde entfernt oder ein Block
           wurde geleert, alle nicht betroffenen Daten sind unverändert erhalten.
-INVALID – YAML kaputt, unerwartete Daten fehlen (bei save/update), oder verdächtige Inhalte.
+INVALID – YAML-Syntax kaputt, oder bestehende Daten fehlen/wurden unbeabsichtigt geändert (bei save/update).
 
 Nur VALID oder INVALID."""
 
