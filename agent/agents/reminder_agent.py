@@ -9,12 +9,12 @@ from datetime import datetime, date, timedelta
 from langchain_core.messages import SystemMessage, AIMessage
 from agent.state import AgentState
 from agent.llm import get_llm
+from agent.utils import get_current_datetime, extract_llm_text
 
 logger = logging.getLogger(__name__)
 
 
 def _build_prompt() -> str:
-    from agent.utils import get_current_datetime, extract_llm_text
     now = datetime.now()
     today = date.today().isoformat()
     time_str = now.strftime("%H:%M")
