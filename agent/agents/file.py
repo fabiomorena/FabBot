@@ -158,7 +158,7 @@ async def file_agent(state: AgentState) -> AgentState:
     if not action or not path_str:
         return _err("Ungueltige Anfrage: action oder path fehlt.")
 
-    path = Path(path_str)
+    path = Path(path_str).expanduser()
     allowed, reason = is_path_allowed(path)
     if not allowed:
         log_action("file_agent", action, f"blocked: {reason}", state.get("telegram_chat_id"), status="blocked")
