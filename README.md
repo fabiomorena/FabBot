@@ -40,7 +40,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
 | ✅ | TTS Stop – `/stop` kills running afplay immediately |
 | ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 972 pytest tests on every push |
+| ✅ | GitHub Actions CI – runs 969 pytest tests on every push |
 | ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
 | ✅ | `/remember` – save personal notes to profile live from Telegram |
 | ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
@@ -85,6 +85,16 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | Perf: `_load_all_sessions()` mit mtime-Cache – kein Disk-Read wenn Sessions unverändert |
 | ✅ | Bugfix: `_get_invoke_lock` via `setdefault()` – atomarer Dict-Zugriff |
 | ✅ | Refactor: `extract_llm_text()` in `agent/utils.py` – zentralisiert LLM-Content-Normalisierung, Ph.98 Dead-Code-Aliases entfernt |
+| ✅ | file_agent – `expanduser()` für `~/`-Pfade, HOME-Fix unter launchd |
+| ✅ | terminal_agent – LLM-Freitext blockiert, nur strukturierte JSON-Antworten akzeptiert |
+| ✅ | YAML-Reviewer – nur noch Struktur-Validierung, keine inhaltliche LLM-Bewertung |
+| ✅ | party_report – `get_fast_llm()` statt `get_llm()` für Event-Extraktion |
+| ✅ | GraphRecursionError explizit abgefangen – User-Meldung statt generischer Fehler |
+| ✅ | Scheduler done_callback – alle 5 Scheduler-Tasks loggen silent crashes |
+| ✅ | Checkpoint-Bereinigung – `cleanup_checkpoints()` beim Start, letzte 200 pro thread_id |
+| ✅ | `_extract_json()` – nested JSON via `json.loads` + Brace-Matching (kein Regex) |
+| ✅ | retrieval.py – PID-Lockfile-Warnung bei Multi-Prozess-Zugriff auf ChromaDB |
+| ✅ | crypto.py – `logger.warning` bei neuem Fernet-Key (potentieller Keychain-Backend-Wechsel) |
 ---
 
 ## Architecture
@@ -354,6 +364,9 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 122** ✅ Bug-Fix – `bot_instruction` delete Pre-Routing: `supervisor.py` erkennt Instruktions-Delete-Trigger deterministisch via `_BOT_INSTRUCTION_DELETE_PREFIXES`, `memory_agent.py` gibt `_reject()` mit `claude.md`-Hinweis statt falsches `🗑️ Gelöscht` (Closes #52); 972 Tests grün
 - **Phase 123** ✅ Bug-Fix – memory_agent: _build_clarify_message robuster gegen fehlendes question-Feld (Closes #54)
 - **Phase 124** ✅ fix: Duplicate-Scheduler durch Orphan-Prozesse behoben (launchd/caffeinate)
+- **Phase 125** ✅ Code-Review Block 1 – file_agent `expanduser()` + launchd HOME-Fix, terminal_agent Freitext-Block, YAML-Reviewer Struktur-only, party_report `get_fast_llm()`, extract_llm_text Modul-Import-Fix; 969 Tests grün
+- **Phase 126** ✅ Code-Review Block 2 – GraphRecursionError abgefangen, Scheduler done_callbacks, Checkpoint-Bereinigung beim Start, `_extract_json()` nested JSON, PID-Lockfile-Warnung retrieval.py, crypto.py Key-Rotation-Warnung (Closes #56/#59/#60/#69/#70/#73)
+- **Phase 127** ✅ Chore – `*.bak` aus Repo entfernt, `.gitignore` generalisiert; Issues #42/#49/#68 als bereits erledigt geschlossen (Closes #72)
 
 ---
 
