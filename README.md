@@ -95,6 +95,12 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 | ✅ | `_extract_json()` – nested JSON via `json.loads` + Brace-Matching (kein Regex) |
 | ✅ | retrieval.py – PID-Lockfile-Warnung bei Multi-Prozess-Zugriff auf ChromaDB |
 | ✅ | crypto.py – `logger.warning` bei neuem Fernet-Key (potentieller Keychain-Backend-Wechsel) |
+| ✅ | Security: web.py – `</document>`-Tag in fetch/search-Inhalt escaped (Prompt Injection) |
+| ✅ | Security: terminal.py – subprocess erbt keine API-Keys mehr (gefilterte Env) |
+| ✅ | watchdog.py – `state.get()` statt `state[]` – kein KeyError bei korruptem State |
+| ✅ | cmd_auditlog – `deque(maxlen=10)` statt `read_text()` – speichereffizient |
+| ✅ | file_agent_write – Größenlimit 1 MB vor dem Schreiben geprüft |
+| ✅ | web.py – Wetter-Standort aus `identity.location` im Profil, Fallback Berlin |
 ---
 
 ## Architecture
@@ -367,6 +373,8 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 125** ✅ Code-Review Block 1 – file_agent `expanduser()` + launchd HOME-Fix, terminal_agent Freitext-Block, YAML-Reviewer Struktur-only, party_report `get_fast_llm()`, extract_llm_text Modul-Import-Fix; 969 Tests grün
 - **Phase 126** ✅ Code-Review Block 2 – GraphRecursionError abgefangen, Scheduler done_callbacks, Checkpoint-Bereinigung beim Start, `_extract_json()` nested JSON, PID-Lockfile-Warnung retrieval.py, crypto.py Key-Rotation-Warnung (Closes #56/#59/#60/#69/#70/#73)
 - **Phase 127** ✅ Chore – `*.bak` aus Repo entfernt, `.gitignore` generalisiert; Issues #42/#49/#68 als bereits erledigt geschlossen (Closes #72)
+- **Phase 128** ✅ Security – web.py `</document>`-Tag-Escaping gegen Prompt Injection, terminal.py subprocess mit gefilterter Env (API-Keys nicht an child-Prozesse) (Closes #74 #75)
+- **Phase 129** ✅ Stabilisierung – watchdog.py `state.get()` gegen KeyError, cmd_auditlog auf `deque(maxlen=10)`, file_agent_write Größenlimit (1 MB), Wetter-Standort aus Profil statt hardcoded Berlin (Closes #71 #76 #77 #81)
 
 ---
 
