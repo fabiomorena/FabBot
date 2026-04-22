@@ -44,6 +44,18 @@ ALLOWED_SYSTEM_PROFILER_TYPES = {
 TIMEOUT_SECONDS = 15
 TERMINAL_MAX_OUTPUT = 3000
 
+_SECRET_ENV_VARS = frozenset({
+    "ANTHROPIC_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_ALLOWED_USER_IDS",
+    "TELEGRAM_CHAT_ID",
+    "OPENAI_API_KEY",
+    "TAVILY_API_KEY",
+    "BRAVE_API_KEY",
+    "LANGCHAIN_API_KEY",
+    "FABBOT_WA_TOKEN",
+})
+
 PROMPT = """Du bist ein spezialisierter Terminal-Agent auf einem Mac.
 
 Deine Aufgabe: Analysiere die Anfrage und antworte mit einem einzigen, sicheren Shell-Befehl.
@@ -154,12 +166,14 @@ def execute_command(command: str) -> str:
     try:
         parts = shlex.split(command.strip())
         import pathlib
+        safe_env = {k: v for k, v in os.environ.items() if k not in _SECRET_ENV_VARS}
         result = subprocess.run(
             parts,
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
             cwd=str(pathlib.Path.home()),
+            env=safe_env,
         )
         output = result.stdout.strip() or result.stderr.strip() or "(kein Output)"
         if len(output) > TERMINAL_MAX_OUTPUT:
