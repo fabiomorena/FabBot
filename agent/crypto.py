@@ -65,7 +65,12 @@ def _get_fernet() -> Fernet:
                 f"({type(e).__name__}: {e}). "
                 "Keychain-Schreibzugriff prüfen."
             ) from e
-        logger.info("Neuer Fernet-Key generiert und im Keychain gespeichert (fabbot/profile_key).")
+        logger.warning(
+            "Neuer Fernet-Key generiert (fabbot/profile_key). "
+            "Falls zuvor ein anderes Keychain-Backend aktiv war, sind bestehende "
+            "verschlüsselte Daten (personal_profile.yaml) mit diesem Key NICHT lesbar – "
+            "Backup prüfen oder Datei neu verschlüsseln."
+        )
         _fernet = Fernet(key)
     else:
         _fernet = Fernet(key_str.encode())

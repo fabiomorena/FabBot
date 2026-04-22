@@ -356,6 +356,32 @@ async def init_graph() -> None:
         agent_graph = _build_graph().compile(checkpointer=checkpointer)
 
 
+async def cleanup_checkpoints(max_per_thread: int = 200) -> None:
+    """Löscht alte Checkpoints – behält nur die letzten max_per_thread pro thread_id."""
+    if _db_conn is None:
+        return
+    deleted = await _db_conn.execute(
+        """
+        DELETE FROM checkpoints
+        WHERE rowid NOT IN (
+            SELECT rowid FROM (
+                SELECT rowid,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY thread_id ORDER BY checkpoint_id DESC
+                       ) AS rn
+                FROM checkpoints
+            ) WHERE rn <= ?
+        )
+        """,
+        (max_per_thread,),
+    )
+    await _db_conn.execute(
+        "DELETE FROM writes WHERE checkpoint_id NOT IN (SELECT checkpoint_id FROM checkpoints)"
+    )
+    await _db_conn.commit()
+    logger.info(f"Checkpoint-Bereinigung: {deleted.rowcount} Einträge entfernt.")
+
+
 async def close_graph() -> None:
     global _db_conn
     if _db_conn:

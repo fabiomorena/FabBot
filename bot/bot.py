@@ -37,6 +37,7 @@ from telegram.ext import Application, ApplicationBuilder, CommandHandler, Messag
 from telegram.error import TimedOut, NetworkError, RetryAfter
 from langchain_core.messages import HumanMessage, AIMessage
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
+from langgraph.errors import GraphRecursionError
 
 from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
@@ -769,6 +770,9 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     except asyncio.TimeoutError:
         await _delete_thinking(thinking)
         await update.message.reply_text("Timeout – bitte nochmal versuchen.")
+    except GraphRecursionError:
+        await _delete_thinking(thinking)
+        await update.message.reply_text("Anfrage zu komplex – bitte anders formulieren.")
     except Exception as e:
         logger.error(f"Unexpected agent error: {e}", exc_info=True)
         await _delete_thinking(thinking)
@@ -780,9 +784,10 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _post_init(app: Application) -> None:
-    from agent.supervisor import init_graph
+    from agent.supervisor import init_graph, cleanup_checkpoints
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
+    await cleanup_checkpoints(max_per_thread=200)
 
     # Phase 92: Audit-Logger erst jetzt initialisieren (nach logging.basicConfig()).
     from agent.audit import setup_audit_logger
@@ -853,18 +858,34 @@ async def _post_init(app: Application) -> None:
     from bot.reminders import run_reminder_scheduler
     task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_reminders)
+    task_reminders.add_done_callback(
+        lambda t: logger.error(f"Reminders Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
 
     from bot.health_check import run_health_check_scheduler
     task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_health)
+    task_health.add_done_callback(
+        lambda t: logger.error(f"Health-Check Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
 
     from bot.party_report import run_party_report_scheduler
     task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_party)
+    task_party.add_done_callback(
+        lambda t: logger.error(f"Party-Report Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
 
     from bot.session_summary import run_session_summary_scheduler
     task_summary = asyncio.create_task(run_session_summary_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_summary)
+    task_summary.add_done_callback(
+        lambda t: logger.error(f"Session-Summary Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
 
     try:
         from agent.retrieval import index_all

@@ -116,9 +116,26 @@ def _extract_json(text: str) -> str:
     text = text.strip()
     if not text:
         return "UNSUPPORTED"
-    match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
-    if match:
-        return match.group(0)
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+    for i, ch in enumerate(text):
+        if ch == "{":
+            depth = 0
+            for j, c in enumerate(text[i:], i):
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[i : j + 1]
+                        try:
+                            json.loads(candidate)
+                            return candidate
+                        except json.JSONDecodeError:
+                            break
     return text
 
 

@@ -63,6 +63,32 @@ _write_semaphore: asyncio.Semaphore | None = None
 # ChromaDB Collection – lazy singleton
 _collection = None
 
+_PID_LOCK_PATH = Path.home() / ".fabbot" / "chroma.pid"
+
+
+def _check_multiprocess_warning() -> None:
+    """Warnt wenn ein zweiter Bot-Prozess ChromaDB gleichzeitig nutzt."""
+    pid = os.getpid()
+    if _PID_LOCK_PATH.exists():
+        try:
+            existing_pid = int(_PID_LOCK_PATH.read_text().strip())
+            if existing_pid != pid:
+                try:
+                    os.kill(existing_pid, 0)
+                    logger.warning(
+                        f"Zweiter Bot-Prozess (PID {existing_pid}) nutzt ChromaDB – "
+                        "_write_semaphore schützt nur innerhalb eines Prozesses, "
+                        "Datenkorrruption möglich! Alten Prozess beenden."
+                    )
+                except ProcessLookupError:
+                    pass
+        except (ValueError, OSError):
+            pass
+    try:
+        _PID_LOCK_PATH.write_text(str(pid))
+    except OSError:
+        pass
+
 
 def _get_semaphore() -> asyncio.Semaphore:
     """
@@ -87,6 +113,7 @@ def _get_collection():
     global _collection
     if _collection is not None:
         return _collection
+    _check_multiprocess_warning()
     try:
         import chromadb
         _CHROMA_PATH.mkdir(parents=True, exist_ok=True)
