@@ -157,10 +157,10 @@ def main() -> None:
 
     if bot_up:
         print(f"{LOG_PREFIX} Bot läuft ✅")
-        if state["last_status"] == "down" and state["notified"]:
+        if state.get("last_status") == "down" and state.get("notified"):
             # Recovery – Entwarnung senden
             downtime = ""
-            if state["down_since"]:
+            if state.get("down_since"):
                 try:
                     down_dt = datetime.fromisoformat(state["down_since"])
                     delta = datetime.now() - down_dt
@@ -174,11 +174,11 @@ def main() -> None:
         state["notified"] = False
     else:
         print(f"{LOG_PREFIX} Bot DOWN ❌")
-        if state["last_status"] != "down":
+        if state.get("last_status") != "down":
             state["down_since"] = now
         state["last_status"] = "down"
 
-        if not state["notified"]:
+        if not state.get("notified"):
             down_since = state.get("down_since", now)
             try:
                 down_dt   = datetime.fromisoformat(down_since)

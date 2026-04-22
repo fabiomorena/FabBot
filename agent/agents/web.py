@@ -10,6 +10,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
+from agent.profile import load_profile
 from agent.agents.chat_agent import _is_short_confirmation
 
 logger = logging.getLogger(__name__)
@@ -214,11 +215,18 @@ async def _fetch_url(url: str) -> str:
         return text[:MAX_FETCH_SIZE]
 
 
-async def _get_weather_berlin() -> str:
-    """Holt aktuelles Berliner Wetter via wttr.in – kein API-Key nötig."""
+async def _get_weather() -> str:
+    """Holt aktuelles Wetter via wttr.in – Standort aus Profil, Fallback Berlin."""
+    location = "Berlin"
+    try:
+        profile = load_profile()
+        raw_location = profile.get("identity", {}).get("location", "Berlin")
+        location = raw_location.split(",")[0].strip() or "Berlin"
+    except Exception:
+        pass
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get("https://wttr.in/Berlin?format=j1")
+            resp = await client.get(f"https://wttr.in/{location}?format=j1")
             resp.raise_for_status()
             data = resp.json()
         current = data["current_condition"][0]
@@ -231,7 +239,7 @@ async def _get_weather_berlin() -> str:
         max_c   = forecast.get("maxtempC", "?")
         min_c   = forecast.get("mintempC", "?")
         return (
-            f"Berlin: {temp_c}°C (gefühlt {feels}°C), {desc}\n"
+            f"{location}: {temp_c}°C (gefühlt {feels}°C), {desc}\n"
             f"Luftfeuchtigkeit: {humidity}%, Wind: {wind} km/h\n"
             f"Heute: max {max_c}°C / min {min_c}°C"
         )
@@ -241,7 +249,6 @@ async def _get_weather_berlin() -> str:
 
 
 # Issue #20: "heute" entfernt – verursachte False Positives bei Kalender-Fragen.
-# Issue #23: wttr.in-Abfrage ist bewusst Berlin-spezifisch.
 _WEATHER_KEYWORDS = {
     "wetter", "temperatur", "weather", "temperature", "grad", "regen",
     "sonne", "sonnig", "bewölkt", "wind", "kalt", "warm", "draußen",
@@ -325,7 +332,7 @@ async def web_agent(state: AgentState) -> AgentState:
 
     # Issue #24: _is_short_confirmation() Guard vor _is_weather_query()
     if not _is_short_confirmation(last_human_text) and _is_weather_query(last_human_text):
-        weather = await _get_weather_berlin()
+        weather = await _get_weather()
         if weather:
             return {
                 "messages": [AIMessage(content=weather)],

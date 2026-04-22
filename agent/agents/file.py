@@ -236,6 +236,9 @@ def file_agent_write(path: Path, content: str, chat_id: int) -> str:
         log_action("file_agent", "write", f"toctou-blocked: {reason}", chat_id, status="blocked")
         return f"Blockiert (Re-Validierung): {reason}"
 
+    if len(content.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
+        return f"Inhalt zu groß (max. {MAX_FILE_SIZE_BYTES // 1_000_000} MB)."
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")

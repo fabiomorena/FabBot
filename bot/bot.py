@@ -510,8 +510,12 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not log_path.exists():
         await update.message.reply_text("Noch keine Aktionen geloggt.")
         return
-    lines = log_path.read_text().strip().split("\n")
-    last  = lines[-10:] if len(lines) > 10 else lines
+    last = deque(maxlen=10)
+    with log_path.open(encoding="utf-8", errors="replace") as f:
+        for line in f:
+            stripped = line.rstrip()
+            if stripped:
+                last.append(stripped)
     await update.message.reply_text("Letzte Aktionen:\n\n" + "\n".join(last))
 
 
