@@ -1,8 +1,8 @@
-# FabBot – Personal Mac AI Assistant
+# FabBot – Personal Companion
 
 ![CI](https://github.com/fabiomorena/FabBot/actions/workflows/test.yml/badge.svg)
 
-A personal AI assistant that runs locally on macOS, controlled via Telegram and a native menubar app. Built with Claude (Anthropic), LangGraph, and a multi-agent architecture.
+A personal AI companion that runs locally on macOS, controlled via Telegram. Built with Claude (Anthropic), LangGraph, and a multi-agent architecture.
 
 ---
 
@@ -16,7 +16,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 
 ## Features
 
-**Interface & Control** – Telegram bot (text/voice/photo), macOS menubar app (start/stop, audit log), user authentication (whitelist), human-in-the-loop confirmation for all destructive actions, German date format
+**Interface & Control** – Telegram bot (text/voice/photo), user authentication (whitelist), human-in-the-loop confirmation for all destructive actions, German date format
 
 **Agents** – Terminal (shell commands), File (read/write/list), Web (Tavily+Brave search + fetch), Calendar (Apple), Chat (conversation history + follow-ups), Vision (Claude Sonnet, objects/OCR/scene), Computer Use (screenshot + desktop control), WhatsApp (whatsapp-web.js, HITL, QR via Telegram), Knowledge Clipper (`/clip <URL>` → Obsidian), Knowledge Search (`/search <term>`)
 
@@ -35,7 +35,6 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 ```
 FabBot/
 ├── main.py                  # Entrypoint
-├── menubar.py               # macOS menubar app
 ├── personal_profile.yaml    # Personal profile (local only, not in repo)
 ├── requirements.txt         # Direct dependencies
 ├── requirements.lock        # Pinned lock file (pip-compile)
@@ -92,7 +91,6 @@ FabBot/
 - aiosqlite – async SQLite for persistent memory
 - Tavily + Brave Search – web search
 - cryptography + keyring – At-Rest-Encryption via Fernet
-- rumps – macOS menubar app
 - Python 3.11+, macOS
 
 ---
@@ -146,8 +144,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ### Run
 
 ```bash
-python main.py        # Bot only
-python menubar.py     # With menubar app
+python main.py        # Bot starten
 .venv/bin/python -m pytest tests/ -v      # Run tests (972 tests)
 ```
 
@@ -279,7 +276,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 
 ## Roadmap
 
-- **Phase 1–19** ✅ Foundation – Telegram bot, multi-agent supervisor, terminal/file/web/calendar agents, security guard, audit log, menubar app, CI, TTS, persistent memory
+- **Phase 1–19** ✅ Foundation – Telegram bot, multi-agent supervisor, terminal/file/web/calendar agents, security guard, audit log, CI, TTS, persistent memory
 - **Phase 20–30** ✅ Hardening – async fixes, morning briefing, HITL improvements, code quality, watchdog
 - **Phase 31–40** ✅ Personal Context – personal_profile.yaml, /remember, auto-learning pipeline, 529 retry
 - **Phase 41–50** ✅ Security & Memory – security test suite, memory agent, media tracking, at-rest encryption
