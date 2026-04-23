@@ -1136,7 +1136,12 @@ class TestHealthCheckOutput:
              patch("bot.health_check._check_web", return_value=(True, "ok")), \
              patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
              patch("bot.health_check._check_profile", return_value=(True, "ok")), \
-             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")), \
+             patch("bot.health_check._check_disk_space", return_value=(True, "ok")), \
+             patch("bot.health_check._check_chromadb", return_value=(True, "ok")), \
+             patch("bot.health_check._check_whatsapp", return_value=(True, "ok")), \
+             patch("bot.health_check._check_audit_log", return_value=(True, "ok")), \
+             patch("bot.health_check._check_tts", return_value=(True, "ok")):
             from bot.health_check import run_health_check
             await run_health_check(fake_bot, 12345)
 
@@ -1157,7 +1162,12 @@ class TestHealthCheckOutput:
              patch("bot.health_check._check_web", return_value=(True, "ok")), \
              patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
              patch("bot.health_check._check_profile", return_value=(True, "ok")), \
-             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")), \
+             patch("bot.health_check._check_disk_space", return_value=(True, "ok")), \
+             patch("bot.health_check._check_chromadb", return_value=(True, "ok")), \
+             patch("bot.health_check._check_whatsapp", return_value=(True, "ok")), \
+             patch("bot.health_check._check_audit_log", return_value=(True, "ok")), \
+             patch("bot.health_check._check_tts", return_value=(True, "ok")):
             from bot.health_check import run_health_check
             await run_health_check(fake_bot, 12345)
 
@@ -1177,13 +1187,18 @@ class TestHealthCheckOutput:
              patch("bot.health_check._check_web", return_value=(False, "err")), \
              patch("bot.health_check._check_calendar", return_value=(False, "err")), \
              patch("bot.health_check._check_profile", return_value=(False, "err")), \
-             patch("bot.health_check._check_memory_db", return_value=(False, "err")):
+             patch("bot.health_check._check_memory_db", return_value=(False, "err")), \
+             patch("bot.health_check._check_disk_space", return_value=(False, "err")), \
+             patch("bot.health_check._check_chromadb", return_value=(False, "err")), \
+             patch("bot.health_check._check_whatsapp", return_value=(False, "err")), \
+             patch("bot.health_check._check_audit_log", return_value=(False, "err")), \
+             patch("bot.health_check._check_tts", return_value=(False, "err")):
             from bot.health_check import run_health_check
             await run_health_check(fake_bot, 12345)
 
         text = fake_bot.send_message.call_args[1]["text"]
         assert "Probleme erkannt" in text
-        assert text.count("❌") == 6
+        assert text.count("❌") == 11
 
     @pytest.mark.asyncio
     async def test_check_exception_does_not_crash(self) -> None:
@@ -1196,7 +1211,12 @@ class TestHealthCheckOutput:
              patch("bot.health_check._check_web", return_value=(True, "ok")), \
              patch("bot.health_check._check_calendar", return_value=(True, "ok")), \
              patch("bot.health_check._check_profile", return_value=(True, "ok")), \
-             patch("bot.health_check._check_memory_db", return_value=(True, "ok")):
+             patch("bot.health_check._check_memory_db", return_value=(True, "ok")), \
+             patch("bot.health_check._check_disk_space", return_value=(True, "ok")), \
+             patch("bot.health_check._check_chromadb", return_value=(True, "ok")), \
+             patch("bot.health_check._check_whatsapp", return_value=(True, "ok")), \
+             patch("bot.health_check._check_audit_log", return_value=(True, "ok")), \
+             patch("bot.health_check._check_tts", return_value=(True, "ok")):
             from bot.health_check import run_health_check
             await run_health_check(fake_bot, 12345)  # darf nicht crashen
 

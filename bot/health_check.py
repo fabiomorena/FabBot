@@ -6,12 +6,17 @@ werden alle kritischen Komponenten geprüft und ein Statusbericht
 per Telegram gesendet.
 
 Geprüfte Komponenten:
-1. Terminal     – df -h via subprocess
-2. Anthropic    – minimaler Haiku-Call (günstigster Check)
-3. Web-Suche    – Tavily/Brave API Keys vorhanden + HTTP-Ping
-4. Kalender     – AppleScript osascript-Call
-5. Profil       – personal_profile.yaml ladbar
-6. Memory DB    – SQLite memory.db öffnbar
+ 1. Terminal       – df -h via subprocess
+ 2. Anthropic      – minimaler Haiku-Call (günstigster Check)
+ 3. Web-Suche      – Tavily/Brave API Keys vorhanden + HTTP-Ping
+ 4. Kalender       – AppleScript osascript-Call
+ 5. Profil         – personal_profile.yaml ladbar
+ 6. Memory DB      – SQLite memory.db öffnbar
+ 7. Disk Space     – Hauptpartition < 85% belegt
+ 8. ChromaDB       – Second Brain Client initialisierbar
+ 9. WhatsApp       – Bridge HTTP-Ping auf localhost:8767
+10. Audit Log      – ~/.fabbot/audit.log schreibbar
+11. TTS            – OpenAI API Key vorhanden + Endpoint erreichbar
 
 Design-Prinzipien:
 - Kein LangGraph, kein Agent-Graph – direkter, minimaler Code
@@ -175,6 +180,113 @@ async def _check_memory_db() -> tuple[bool, str]:
         return False, str(e)[:80]
 
 
+async def _check_disk_space() -> tuple[bool, str]:
+    """Warnt wenn die Hauptpartition >85% belegt ist."""
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                subprocess.run,
+                ["df", "-h", "/"],
+                capture_output=True,
+                text=True,
+            ),
+            timeout=_CHECK_TIMEOUT,
+        )
+        if result.returncode != 0:
+            return False, "df / fehlgeschlagen"
+        # Zeile 2: "Filesystem  Size  Used  Avail  Use%  Mounted"
+        line = result.stdout.strip().splitlines()[-1]
+        parts = line.split()
+        pct_str = next((p for p in parts if p.endswith("%")), None)
+        if not pct_str:
+            return False, "Auslastung nicht parsebar"
+        pct = int(pct_str.rstrip("%"))
+        if pct >= 85:
+            return False, f"Disk {pct}% belegt – kritisch!"
+        return True, f"Disk {pct}% belegt ({parts[3] if len(parts) > 3 else '?'} frei)"
+    except asyncio.TimeoutError:
+        return False, "Timeout"
+    except Exception as e:
+        return False, str(e)[:80]
+
+
+async def _check_chromadb() -> tuple[bool, str]:
+    """Prüft ob die ChromaDB (Second Brain) initialisierbar ist."""
+    try:
+        import chromadb
+
+        chroma_path = Path.home() / ".fabbot" / "chroma"
+        if not chroma_path.exists():
+            return False, f"Chroma-Verzeichnis nicht gefunden: {chroma_path}"
+
+        client = await asyncio.wait_for(
+            asyncio.to_thread(chromadb.PersistentClient, path=str(chroma_path)),
+            timeout=_CHECK_TIMEOUT,
+        )
+        collections = await asyncio.to_thread(client.list_collections)
+        return True, f"ChromaDB OK ({len(collections)} Collections)"
+    except asyncio.TimeoutError:
+        return False, "Timeout"
+    except Exception as e:
+        return False, str(e)[:80]
+
+
+async def _check_whatsapp() -> tuple[bool, str]:
+    """Prüft ob die WhatsApp-Bridge auf localhost erreichbar ist."""
+    try:
+        import httpx
+
+        port = int(os.getenv("WA_SERVICE_PORT", "8767"))
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"http://127.0.0.1:{port}/health")
+            if resp.status_code < 500:
+                return True, f"Bridge antwortet (HTTP {resp.status_code})"
+            return False, f"Bridge HTTP {resp.status_code}"
+    except Exception:
+        return False, "Bridge nicht erreichbar (nicht gestartet?)"
+
+
+async def _check_audit_log() -> tuple[bool, str]:
+    """Prüft ob das Audit-Log schreibbar ist."""
+    try:
+        audit_path = Path.home() / ".fabbot" / "audit.log"
+        await asyncio.to_thread(_audit_write_check, audit_path)
+        size_kb = audit_path.stat().st_size // 1024 if audit_path.exists() else 0
+        return True, f"audit.log schreibbar ({size_kb} KB)"
+    except Exception as e:
+        return False, str(e)[:80]
+
+
+def _audit_write_check(path: Path) -> None:
+    with open(path, "a"):
+        pass
+
+
+async def _check_tts() -> tuple[bool, str]:
+    """Prüft ob OpenAI TTS konfiguriert und der Endpoint erreichbar ist."""
+    try:
+        import httpx
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return False, "OPENAI_API_KEY nicht gesetzt"
+
+        async with httpx.AsyncClient(timeout=_CHECK_TIMEOUT) as client:
+            resp = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, "OpenAI TTS erreichbar"
+            if resp.status_code == 401:
+                return False, "API-Key ungültig (401)"
+            return True, f"OpenAI erreichbar (HTTP {resp.status_code})"
+    except asyncio.TimeoutError:
+        return False, "Timeout"
+    except Exception as e:
+        return False, str(e)[:80]
+
+
 # ---------------------------------------------------------------------------
 # Haupt-Check-Funktion
 # ---------------------------------------------------------------------------
@@ -195,6 +307,11 @@ async def run_health_check(bot, chat_id: int) -> None:
             _check_calendar(),
             _check_profile(),
             _check_memory_db(),
+            _check_disk_space(),
+            _check_chromadb(),
+            _check_whatsapp(),
+            _check_audit_log(),
+            _check_tts(),
             return_exceptions=True,  # Exceptions als Ergebnis, kein crash
         )
 
@@ -205,6 +322,11 @@ async def run_health_check(bot, chat_id: int) -> None:
             "Kalender",
             "Profil",
             "Memory DB",
+            "Disk Space",
+            "ChromaDB",
+            "WhatsApp Bridge",
+            "Audit Log",
+            "TTS",
         ]
 
         lines = ["🤖 *FabBot Health Check*\n"]
