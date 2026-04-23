@@ -666,6 +666,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             after = len(updated.get("people", []))
             if before == after:
                 logger.warning(f"MemoryAgent delete people: kein Match für '{name}'")
+                return _reject(f"Kein Eintrag gefunden für: {name}")
             return _ok(updated)
 
         elif category == "project":
@@ -688,6 +689,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             after = len(updated.get("projects", {}).get("active", []))
             if before == after:
                 logger.warning(f"MemoryAgent delete project: kein Match für '{name}'")
+                return _reject(f"Kein Projekt gefunden für: {name}")
             return _ok(updated)
 
         elif category == "place":
@@ -701,6 +703,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             after = len(updated.get("places", []))
             if before == after:
                 logger.warning(f"MemoryAgent delete place: kein Match für '{name}'")
+                return _reject(f"Kein Ort gefunden für: {name}")
             return _ok(updated)
 
         elif category == "media":
@@ -714,6 +717,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             after = len(updated.get("media", []))
             if before == after:
                 logger.warning(f"MemoryAgent delete media: kein Match für '{title}'")
+                return _reject(f"Kein Media-Eintrag gefunden für: {title}")
             return _ok(updated)
 
         elif category == "preference":
@@ -770,7 +774,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                         return _ok(updated)
 
             logger.warning(f"MemoryAgent delete preference: kein Match für Key oder Wert '{key}'")
-            return _ok(updated)
+            return _reject(f"Kein Eintrag gefunden für: {key}")
 
         elif category == "location":
             if "identity" in updated and isinstance(updated["identity"], dict):

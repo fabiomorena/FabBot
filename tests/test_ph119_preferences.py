@@ -320,15 +320,13 @@ class TestApplyMemoryUpdatePreferenceDelete:
         assert result.success is True
         assert result.updated_profile["preferences"]["entertainment"]["favorite_film"] == "Inception"
 
-    def test_delete_no_match_returns_ok_unchanged(self, profile_flat):
-        import copy
-        original = copy.deepcopy(profile_flat)
+    def test_delete_no_match_returns_reject(self, profile_flat):
         result = _apply_memory_update(
             profile_flat, "delete", "preference",
             {"key": "nonexistent_key_xyz"}
         )
-        assert result.success is True
-        assert result.updated_profile["preferences"] == original["preferences"]
+        assert result.success is False
+        assert "nonexistent_key_xyz" in result.user_message
 
     def test_delete_empty_key_returns_invalid(self, profile_flat):
         result = _apply_memory_update(

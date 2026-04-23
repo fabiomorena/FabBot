@@ -82,9 +82,10 @@ class TestProjectDelete:
         active = r.updated_profile.get("projects", {}).get("active", [])
         assert not any(p.get("name") == "FabBot" for p in active)
 
-    def test_no_match_ok(self, full_profile):
+    def test_no_match_reject(self, full_profile):
         r = _apply_memory_update(full_profile, "delete", "project", {"name": "NichtVorhanden"})
-        assert r.success is True
+        assert r.success is False
+        assert "nichtvorhanden" in r.user_message.lower()
 
 class TestInvalidInputs:
     @pytest.mark.parametrize("cat,data", [
