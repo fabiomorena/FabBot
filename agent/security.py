@@ -123,24 +123,29 @@ _INJECTION_PATTERNS = [
     r"<\s*script",
     r"eval\s*\(",
     r"exec\s*\(",
+    r"<\|im_start\|>",
+    r"<\|im_end\|>",
+    r"\[/?inst\]",
 ]
 
-_SUSPICIOUS_PATTERNS = [
-    r"system\s*prompt",
-    r"ignore\s+(all|previous|instructions|your)",
-    r"vergiss\s+(alle|meine|vorherigen|deine)",
-    r"forget\s+(all|your|previous|everything)",
-    r"pretend\s+(you\s+are|to\s+be)",
-    r"tu\s+so\s+als\s+ob\s+(du|sie)",
-    r"new\s+instructions?\s+(are|follow)",
-    r"override\s+(your|all|previous)",
-    r"bypass\s+(security|restrictions|rules)",
-    r"disregard\s+(all|previous|your)",
-    r"assistant\s*:\s*",
-    r"\[system\]",
-    r"\[inst\]",
-    r"<\|im_start\|>",
+# (pattern, weight) – starke Signale (2) triggern LLM-Guard alleine,
+# schwache (1) brauchen Kombination. Threshold: LLM_GUARD_THRESHOLD.
+_SUSPICIOUS_PATTERNS: list[tuple[str, int]] = [
+    (r"\[system\]",                          2),
+    (r"assistant\s*:\s*",                    2),
+    (r"bypass\s+(security|restrictions|rules)", 2),
+    (r"override\s+(your|all|previous)",      2),
+    (r"new\s+instructions?\s+(are|follow)",  2),
+    (r"system\s*prompt",                     1),
+    (r"ignore\s+(all|previous|instructions|your)", 1),
+    (r"vergiss\s+(alle|meine|vorherigen|deine)", 1),
+    (r"forget\s+(all|your|previous|everything)", 1),
+    (r"pretend\s+(you\s+are|to\s+be)",       1),
+    (r"tu\s+so\s+als\s+ob\s+(du|sie)",       1),
+    (r"disregard\s+(all|previous|your)",     1),
 ]
+
+LLM_GUARD_THRESHOLD = 2
 
 
 def _pattern_check(text: str) -> tuple[bool, int, str]:
@@ -149,9 +154,9 @@ def _pattern_check(text: str) -> tuple[bool, int, str]:
         if re.search(pattern, normalized):
             return True, 0, "Ungültige Eingabe erkannt."
     score = 0
-    for pattern in _SUSPICIOUS_PATTERNS:
+    for pattern, weight in _SUSPICIOUS_PATTERNS:
         if re.search(pattern, normalized):
-            score += 1
+            score += weight
     return False, score, ""
 
 
@@ -278,14 +283,20 @@ def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
 
 async def sanitize_input_async(text: str, user_id: int = 0) -> tuple[bool, str]:
     """Asynchroner Input-Check mit LLM-Guard. Gibt (True, clean_text) oder (False, reason) zurück.
-    Ruft sanitize_input() intern auf und ergänzt bei verdächtigen Scores den LLM-Guard-Check."""
-    ok, result = sanitize_input(text, user_id)
-    if not ok:
-        return False, result
-    _, score, _ = _pattern_check(result)
-    if score > 0:
-        logger.info("LLM-Guard aktiviert fuer verdaechtige Eingabe.")
-        is_safe = await _llm_guard(result)
+    _pattern_check wird einmal aufgerufen – Score entscheidet ob Haiku-Guard nötig ist."""
+    if not text or not text.strip():
+        return False, "Leere Eingabe."
+    if len(text) > MAX_INPUT_LENGTH:
+        return False, f"Eingabe zu lang (max {MAX_INPUT_LENGTH} Zeichen)."
+    text = text.replace("\x00", "")
+    if user_id and not check_rate_limit(user_id):
+        return False, "Zu viele Nachrichten – bitte kurz warten."
+    hard_block, score, reason = _pattern_check(text)
+    if hard_block:
+        return False, reason
+    if score >= LLM_GUARD_THRESHOLD:
+        logger.info(f"LLM-Guard aktiviert (score={score}).")
+        is_safe = await _llm_guard(text)
         if not is_safe:
             return False, "Ungültige Eingabe erkannt."
-    return True, result
+    return True, text
