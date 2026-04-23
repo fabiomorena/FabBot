@@ -292,6 +292,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 117–124** ✅ Bug-Fixes & Refactoring – Screenshot-Kontext für chat_agent, web_agent AIMessage-Fix, Preferences-System mit Auto-Kategorisierung, Supervisor-Routing-Umbau + Prompt-Leak-Fix, MemoryUpdateResult-Refactor, bot_instruction-Delete-Routing, memory_agent clarify-Fix, Duplicate-Scheduler-Fix (launchd/caffeinate)
 - **Phase 125–129** ✅ Code-Review & Hardening – file_agent expanduser + launchd HOME, terminal_agent Freitext-Block, GraphRecursionError-Handler, Scheduler done_callbacks, web.py Prompt-Injection-Escaping, subprocess Env-Isolation, watchdog/auditlog/file-Größe-Fixes, Wetter-Standort aus Profil
 - **Phase 130–132** ✅ Security & Quick Wins – security.py Kommentare, WA /send Längenlimit, Contact Matching mit Kandidatenliste, memory_agent Delete-Reject statt generischem Fehler, DNS-Rebinding-Schutz auf IPv6 erweitert (getaddrinfo + ValueError-Guard)
+- **Phase 133** ✅ web.py spezifischere Exception-Handler – DNS/ConnectError → "Host nicht erreichbar", HTTP 404/403/429/503 mit nutzerfreundlichen Meldungen, TransportError-Handler, Exception-Leak gefixt
 
 ---
 

@@ -499,8 +499,8 @@ async def web_agent(state: AgentState) -> AgentState:
                 "last_agent_name": "web_agent",
             }
 
-    except httpx.HTTPStatusError as e:
-        msg = f"HTTP Fehler: {e.response.status_code}"
+    except httpx.ConnectError:
+        msg = "Host nicht erreichbar."
         return {
             "messages": [AIMessage(content=msg)],
             "last_agent_result": msg,
@@ -513,8 +513,33 @@ async def web_agent(state: AgentState) -> AgentState:
             "last_agent_result": msg,
             "last_agent_name": "web_agent",
         }
-    except Exception as e:
-        msg = f"Fehler: {e}"
+    except httpx.TransportError:
+        msg = "Netzwerkfehler beim Abrufen der Webseite."
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "web_agent",
+        }
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        if code == 404:
+            msg = "Seite nicht gefunden."
+        elif code == 403:
+            msg = "Zugriff verweigert."
+        elif code == 429:
+            msg = "Zu viele Anfragen – bitte später erneut versuchen."
+        elif code == 503:
+            msg = "Server momentan nicht verfügbar."
+        else:
+            msg = f"HTTP Fehler: {code}"
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "web_agent",
+        }
+    except Exception:
+        logger.exception("web_agent unerwarteter Fehler")
+        msg = "Fehler beim Abrufen der Webseite."
         return {
             "messages": [AIMessage(content=msg)],
             "last_agent_result": msg,
