@@ -375,6 +375,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 127** ✅ Chore – `*.bak` aus Repo entfernt, `.gitignore` generalisiert; Issues #42/#49/#68 als bereits erledigt geschlossen (Closes #72)
 - **Phase 128** ✅ Security – web.py `</document>`-Tag-Escaping gegen Prompt Injection, terminal.py subprocess mit gefilterter Env (API-Keys nicht an child-Prozesse) (Closes #74 #75)
 - **Phase 129** ✅ Stabilisierung – watchdog.py `state.get()` gegen KeyError, cmd_auditlog auf `deque(maxlen=10)`, file_agent_write Größenlimit (1 MB), Wetter-Standort aus Profil statt hardcoded Berlin (Closes #71 #76 #77 #81)
+- **Phase 130** ✅ P3 Quick Wins – security.py Kommentare sanitize_input vs sanitize_input_async, WA /send Nachrichten-Längenlimit (4096 Zeichen), ambiguous Contact Matching gibt Kandidatenliste statt blindem ersten Treffer (Closes #83 #84 #85)
 
 ---
 

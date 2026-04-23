@@ -261,7 +261,8 @@ def check_action_rate_limit(user_id: int, action_type: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
-    """Synchroner Input-Check. Gibt (True, clean_text) oder (False, reason) zurück."""
+    """Synchroner Input-Check. Gibt (True, clean_text) oder (False, reason) zurück.
+    Nur Pattern-Matching + Rate-Limit – kein LLM-Guard (kein await möglich)."""
     if not text or not text.strip():
         return False, "Leere Eingabe."
     if len(text) > MAX_INPUT_LENGTH:
@@ -276,7 +277,8 @@ def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
 
 
 async def sanitize_input_async(text: str, user_id: int = 0) -> tuple[bool, str]:
-    """Asynchroner Input-Check mit LLM-Guard. Gibt (True, clean_text) oder (False, reason) zurück."""
+    """Asynchroner Input-Check mit LLM-Guard. Gibt (True, clean_text) oder (False, reason) zurück.
+    Ruft sanitize_input() intern auf und ergänzt bei verdächtigen Scores den LLM-Guard-Check."""
     ok, result = sanitize_input(text, user_id)
     if not ok:
         return False, result

@@ -145,13 +145,16 @@ app.post('/send', requireAuth, async (req, res) => {
     if (!to || !message) {
         return res.status(400).json({ ok: false, error: '"to" und "message" sind erforderlich.' });
     }
+    if (message.length > 4096) {
+        return res.status(400).json({ ok: false, error: 'Nachricht zu lang (max 4096 Zeichen).' });
+    }
     if (!isReady) {
         return res.status(503).json({ ok: false, error: 'WhatsApp nicht verbunden.' });
     }
 
     try {
         const contacts = await client.getContacts();
-        const toTrim   = to.trim();
+        const toTrim   = to.trim().replace(/\s*\(Du\)\s*$/i, '').trim();
         const toLow    = toTrim.toLowerCase();
 
         // Kontakt-Suche: exakter Match bevorzugt, dann case-insensitive, dann partial
@@ -161,11 +164,20 @@ app.post('/send', requireAuth, async (req, res) => {
             contacts.find(c =>
                 (c.name     && c.name.trim().toLowerCase()     === toLow) ||
                 (c.pushname && c.pushname.trim().toLowerCase() === toLow)
-            ) ||
-            contacts.find(c =>
+            );
+
+        if (!found) {
+            const partialMatches = contacts.filter(c =>
                 (c.name     && c.name.trim().toLowerCase().includes(toLow)) ||
                 (c.pushname && c.pushname.trim().toLowerCase().includes(toLow))
             );
+            if (partialMatches.length === 1) {
+                found = partialMatches[0];
+            } else if (partialMatches.length > 1) {
+                const names = partialMatches.map(c => c.name || c.pushname).join(', ');
+                return res.json({ ok: false, error: `Mehrdeutiger Kontakt '${to}'. Meintest du: ${names}?` });
+            }
+        }
 
         if (!found) {
             return res.json({
