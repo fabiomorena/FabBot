@@ -16,91 +16,18 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 
 ## Features
 
-| Status | Feature |
-|--------|---------|
-| ✅ | Telegram bot interface |
-| ✅ | User authentication (whitelist, cached at startup) |
-| ✅ | Multi-agent supervisor routing (claude-haiku for speed) |
-| ✅ | Terminal – execute shell commands |
-| ✅ | File – read, write, list files |
-| ✅ | Web – search (Tavily + Brave) and fetch URLs |
-| ✅ | Calendar – read and create events (Apple Calendar) |
-| ✅ | Two-stage prompt injection guard (pattern + LLM-Guard via Haiku, fail-closed) |
-| ✅ | Content isolation for indirect injection (web/clip agents) |
-| ✅ | Human-in-the-loop confirmation for all destructive actions |
-| ✅ | Tamper-evident audit log |
-| ✅ | macOS menubar app – start/stop bot, audit log |
-| ✅ | Computer Use – screenshot + desktop control with HITL |
-| ✅ | Voice Notes – send voice messages, transcribed locally via Whisper |
-| ✅ | Knowledge Clipper – `/clip <URL>` saves articles as Markdown to Obsidian vault |
-| ✅ | Knowledge Search – `/search <term>` searches saved notes locally |
-| ✅ | Persistent Conversation Memory – SQLite via AsyncSqliteSaver, survives restarts |
-| ✅ | Chat Agent – answers follow-up questions directly from conversation history |
-| ✅ | Text-to-Speech – OpenAI TTS (primär) + edge-tts (Fallback), Mac speaker + Telegram voice |
-| ✅ | TTS Toggle – `/tts on\|off` or `TTS_ENABLED` env var |
-| ✅ | TTS Stop – `/stop` kills running afplay immediately |
-| ✅ | German date format – `18.03.2026, 19:06 Uhr` |
-| ✅ | GitHub Actions CI – runs 969 pytest tests on every push |
-| ✅ | Personal Context Layer – `personal_profile.yaml` injected into all agents |
-| ✅ | `/remember` – save personal notes to profile live from Telegram |
-| ✅ | Auto-Learning – 3-stage pipeline (Detector → Writer → Reviewer) updates profile automatically |
-| ✅ | 529 Retry – exponential backoff (2s/4s/8s) on Anthropic overload |
-| ✅ | Memory Agent – explicit profile updates via natural language |
-| ✅ | Hybrid profile structure – fixed sections + free `custom` section + `places` + `media` |
-| ✅ | Media tracking – songs, films, podcasts, books stored as structured `media` entries |
-| ✅ | Health Check – daily 06:00 system status report (6 components) |
-| ✅ | Vision Agent – photo analysis via Claude Sonnet Vision (objects, OCR, scene description) |
-| ✅ | At-Rest-Encryption – personal_profile.yaml via Fernet, Key im macOS Keychain |
-| ✅ | Context Trim – chat_agent limits LLM-Call to CHAT_CONTEXT_WINDOW messages (default 40) |
-| ✅ | Weekend Party Report – jeden Mittwoch 20:00, 7 Berliner Clubs, Tavily + Homepage-Fetch |
-| ✅ | Dedup-Fix – chat_agent never repeats answers on short confirmations (Genau, Ok, Danke) |
-| ✅ | claude.md – persistente Bot-Instruktionen, in chat_agent System-Prompt injiziert, überlebt Context Trim |
-| ✅ | Bot-Instruktionen lernbar – "Merke dir grundsätzlich..." schreibt direkt in claude.md, sofort aktiv |
-| ✅ | "Merke dir das" – Bot formuliert aus vorheriger Aussage eine Bot-Instruktion → claude.md |
-| ✅ | OpenAI TTS – primärer Provider (nova/shimmer/...), edge-tts Fallback |
-| ✅ | Modell via .env – ANTHROPIC_MODEL_SONNET/HAIKU konfigurierbar, lazy singleton |
-| ✅ | Session Summary – tägliche Konversationszusammenfassung (23:30), Cross-Session-Kontext im chat_agent |
-| ✅ | Second Brain – ChromaDB + OpenAI text-embedding-3-small, semantisches Retrieval aus Notizen/Sessions/Profil |
-| ✅ | WhatsApp Agent – Nachrichten senden via whatsapp-web.js Node.js Service (Whitelist-gesichert, HITL, QR via Telegram) |
-| ✅ | Prompt-Cache – chat_agent cached claude.md + Sessions + Profil (TTL 60s), invalidate_chat_cache() |
-| ✅ | Datetime-Awareness – get_current_datetime() Europe/Berlin, alle Agenten-Prompts |
-| ✅ | State-Transfer – last_agent_result/last_agent_name zwischen Agents, dynamischer Suffix außerhalb Cache |
-| ✅ | memory_agent delete-aware – _is_valid_delete() strukturelle Subset-Prüfung, alle Kategorien generisch |
-| ✅ | Modell-Validierung – _MODEL_PATTERN optional Datum, claude-sonnet-4-6 + opus-4-7 ohne Suffix valide |
-| ✅ | Screenshot-Kontext – last_agent_result mit Analyse-Text befüllt, _update_memory() in bot.py, chat_agent kennt Screenshot-Kontext bei Follow-ups |
-| ✅ | web_agent Prefill-Fix – summary_messages enden mit HumanMessage statt AIMessage, kompatibel mit claude-sonnet-4-6 |
-| ✅ | Nested Preferences – `preferences.<subcategory>.<key>` Struktur, automatische Kategorisierung (entertainment/lifestyle/tech/work), Legacy-Keys kompatibel |
-| ✅ | Profilbewusster Delete-Parser – Parser kennt Profil-Keys, Wert-Match bei Delete ('Vergiss Star Trek' → löscht `lieblingsserie`), Rückfrage bei Ambiguität |
-| ✅ | Deterministisches Supervisor-Pre-Routing – 'vergiss X' / 'merke dir' → memory_agent ohne LLM-Halluzinieren |
-| ✅ | Supervisor-Routing nachhaltig umgebaut – chat_agent als Default-Fallback, web_agent nur bei externen Daten, deterministisches Pre-Routing für Opinion-Trigger |
-| ✅ | Prompt-Leak Fix – web_agent filtert interne Fallback-Texte via `_filter_internal_response()` bevor sie den User erreichen |
-| ✅ | bot_instruction delete Pre-Routing – `_BOT_INSTRUCTION_DELETE_PREFIXES` in supervisor, `_reject()` mit `claude.md`-Hinweis statt falsches 🗑️ |
-| ✅ | Security: SSL-Zertifikatsprüfung global re-aktiviert – globales `ssl._create_unverified_context` in transcribe.py entfernt |
-| ✅ | Security: Symlink-Traversal-Fix – file_agent prüft alle Pfad-Komponenten auf Symlinks, nicht nur die finale |
-| ✅ | Security: Path-Traversal-Fix (terminal) – `..`-Check via `Path.parts` statt Substring, vermeidet False-Positives auf `..hidden` |
-| ✅ | Bugfix: Prompt-Cache-Split – `agent/chat_agent.py` ist jetzt Re-Export von `agent/agents/chat_agent.py`, ein einziger `_prompt_cache`-Global |
-| ✅ | Security: Audit-Log Sanitization – OpenAI/Tavily/Brave API-Keys + E-Mail-Regex-Bug behoben |
-| ✅ | Security: WhatsApp Token chmod(0o600) auch auf existierende Dateien |
-| ✅ | Perf: Whisper-Modell beim Bot-Start vorladen – keine 2-3s Verzögerung bei erster Voice-Message |
-| ✅ | Perf: `_load_all_sessions()` mit mtime-Cache – kein Disk-Read wenn Sessions unverändert |
-| ✅ | Bugfix: `_get_invoke_lock` via `setdefault()` – atomarer Dict-Zugriff |
-| ✅ | Refactor: `extract_llm_text()` in `agent/utils.py` – zentralisiert LLM-Content-Normalisierung, Ph.98 Dead-Code-Aliases entfernt |
-| ✅ | file_agent – `expanduser()` für `~/`-Pfade, HOME-Fix unter launchd |
-| ✅ | terminal_agent – LLM-Freitext blockiert, nur strukturierte JSON-Antworten akzeptiert |
-| ✅ | YAML-Reviewer – nur noch Struktur-Validierung, keine inhaltliche LLM-Bewertung |
-| ✅ | party_report – `get_fast_llm()` statt `get_llm()` für Event-Extraktion |
-| ✅ | GraphRecursionError explizit abgefangen – User-Meldung statt generischer Fehler |
-| ✅ | Scheduler done_callback – alle 5 Scheduler-Tasks loggen silent crashes |
-| ✅ | Checkpoint-Bereinigung – `cleanup_checkpoints()` beim Start, letzte 200 pro thread_id |
-| ✅ | `_extract_json()` – nested JSON via `json.loads` + Brace-Matching (kein Regex) |
-| ✅ | retrieval.py – PID-Lockfile-Warnung bei Multi-Prozess-Zugriff auf ChromaDB |
-| ✅ | crypto.py – `logger.warning` bei neuem Fernet-Key (potentieller Keychain-Backend-Wechsel) |
-| ✅ | Security: web.py – `</document>`-Tag in fetch/search-Inhalt escaped (Prompt Injection) |
-| ✅ | Security: terminal.py – subprocess erbt keine API-Keys mehr (gefilterte Env) |
-| ✅ | watchdog.py – `state.get()` statt `state[]` – kein KeyError bei korruptem State |
-| ✅ | cmd_auditlog – `deque(maxlen=10)` statt `read_text()` – speichereffizient |
-| ✅ | file_agent_write – Größenlimit 1 MB vor dem Schreiben geprüft |
-| ✅ | web.py – Wetter-Standort aus `identity.location` im Profil, Fallback Berlin |
+**Interface & Control** – Telegram bot (text/voice/photo), macOS menubar app (start/stop, audit log), user authentication (whitelist), human-in-the-loop confirmation for all destructive actions, German date format
+
+**Agents** – Terminal (shell commands), File (read/write/list), Web (Tavily+Brave search + fetch), Calendar (Apple), Chat (conversation history + follow-ups), Vision (Claude Sonnet, objects/OCR/scene), Computer Use (screenshot + desktop control), WhatsApp (whatsapp-web.js, HITL, QR via Telegram), Knowledge Clipper (`/clip <URL>` → Obsidian), Knowledge Search (`/search <term>`)
+
+**Memory & Learning** – Persistent conversation memory (SQLite), `personal_profile.yaml` injected into all agents, `/remember` + "Merke dir das" live learning, 3-stage auto-learning pipeline (Detector → Writer → Reviewer), Memory Agent (natural language profile updates), nested Preferences system (`preferences.<subcategory>.<key>`), Session Summary (daily 23:30), Second Brain (ChromaDB semantic retrieval), persistent `claude.md` bot instructions (learnable, survives context trim)
+
+**Voice & Media** – Voice notes (Whisper, local transcription), TTS (OpenAI nova/shimmer + edge-tts fallback, Mac speaker + Telegram voice, `/tts on|off`, `/stop`), media tracking (songs/films/podcasts/books), Weekend Party Report (weekly, 7 Berliner Clubs, Wednesdays 20:00)
+
+**Security** – Two-stage prompt injection guard (pattern + LLM-Guard via Haiku, fail-closed), content isolation for web/clip agents, tamper-evident audit log, at-rest encryption (`personal_profile.yaml` via Fernet + macOS Keychain), SSRF + DNS-Rebinding protection (IPv4 + IPv6 via `getaddrinfo`), SSL validation, path/symlink traversal prevention, subprocess env isolation (no API-key leakage)
+
+**Operations** – GitHub Actions CI (969 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 40), Whisper preload at startup, daily health check (06:00, 6 components), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`)
+
 ---
 
 ## Architecture
