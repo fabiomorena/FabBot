@@ -1,4 +1,4 @@
-# FabBot – Personal Companion
+# FabBot - Personal Companion
 
 ![CI](https://github.com/fabiomorena/FabBot/actions/workflows/test.yml/badge.svg)
 
