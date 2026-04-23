@@ -147,7 +147,7 @@ class TestSSRFDNSRebinding:
     def test_hostname_resolving_to_private_ip_blocked(self) -> None:
         """Hostname der auf private IP auflöst wird blockiert."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname", return_value="192.168.1.100"):
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('192.168.1.100', 0))]):
             blocked, reason = _is_ssrf_blocked("http://evil-rebinding.com")
         assert blocked is True
         assert "192.168.1.100" in reason or "DNS" in reason or "Rebinding" in reason
@@ -155,35 +155,35 @@ class TestSSRFDNSRebinding:
     def test_hostname_resolving_to_loopback_blocked(self) -> None:
         """Hostname der auf 127.0.0.1 auflöst wird blockiert."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname", return_value="127.0.0.1"):
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('127.0.0.1', 0))]):
             blocked, reason = _is_ssrf_blocked("http://evil.com")
         assert blocked is True
 
     def test_hostname_resolving_to_link_local_blocked(self) -> None:
         """Hostname der auf 169.254.x.x auflöst wird blockiert."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname", return_value="169.254.0.1"):
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('169.254.0.1', 0))]):
             blocked, reason = _is_ssrf_blocked("http://evil.com")
         assert blocked is True
 
     def test_hostname_resolving_to_public_ip_allowed(self) -> None:
         """Hostname der auf öffentliche IP auflöst wird durchgelassen."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname", return_value="93.184.216.34"):
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('93.184.216.34', 0))]):
             blocked, _ = _is_ssrf_blocked("http://example.com")
         assert blocked is False
 
     def test_dns_gaierror_allows_through(self) -> None:
         """DNS-Fehler (Host nicht auflösbar) blockiert nicht – httpx scheitert später."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname", side_effect=socket.gaierror("NXDOMAIN")):
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
             blocked, _ = _is_ssrf_blocked("http://nonexistent.invalid")
         assert blocked is False
 
     def test_ip_literal_not_dns_resolved(self) -> None:
         """IP-Adressen direkt werden ohne DNS-Auflösung geprüft."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname") as mock_dns:
+        with patch("socket.getaddrinfo") as mock_dns:
             blocked, _ = _is_ssrf_blocked("http://192.168.1.1")
         assert blocked is True
         mock_dns.assert_not_called()
@@ -191,14 +191,14 @@ class TestSSRFDNSRebinding:
     def test_clip_agent_dns_rebinding_blocked(self) -> None:
         """Auch clip_agent._is_ssrf_blocked schützt gegen DNS-Rebinding."""
         from agent.agents.clip_agent import _is_ssrf_blocked as clip_ssrf
-        with patch("socket.gethostbyname", return_value="10.0.0.1"):
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('10.0.0.1', 0))]):
             blocked, reason = clip_ssrf("http://evil-clip.com")
         assert blocked is True
 
     def test_localhost_still_blocked_without_dns(self) -> None:
         """localhost wird ohne DNS-Auflösung blockiert (bestehender Check)."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.gethostbyname") as mock_dns:
+        with patch("socket.getaddrinfo") as mock_dns:
             blocked, _ = _is_ssrf_blocked("http://localhost/api")
         assert blocked is True
         mock_dns.assert_not_called()

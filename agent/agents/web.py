@@ -176,13 +176,17 @@ def _is_ssrf_blocked(url: str) -> tuple[bool, str]:
                 return True, f"Lokaler Hostname nicht erlaubt: {host}"
 
         try:
-            resolved_ip = socket.gethostbyname(host)
-            ip = ipaddress.ip_address(resolved_ip)
-            if any([
-                ip.is_loopback, ip.is_private, ip.is_link_local,
-                ip.is_multicast, ip.is_reserved, ip.is_unspecified,
-            ]):
-                return True, f"DNS-Rebinding blockiert: {host} → {resolved_ip}"
+            for info in socket.getaddrinfo(host, None):
+                resolved_ip = info[4][0]
+                try:
+                    ip = ipaddress.ip_address(resolved_ip)
+                except ValueError:
+                    continue
+                if any([
+                    ip.is_loopback, ip.is_private, ip.is_link_local,
+                    ip.is_multicast, ip.is_reserved, ip.is_unspecified,
+                ]):
+                    return True, f"DNS-Rebinding blockiert: {host} → {resolved_ip}"
         except (socket.gaierror, OSError):
             pass
 

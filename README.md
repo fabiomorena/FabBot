@@ -377,6 +377,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 129** ✅ Stabilisierung – watchdog.py `state.get()` gegen KeyError, cmd_auditlog auf `deque(maxlen=10)`, file_agent_write Größenlimit (1 MB), Wetter-Standort aus Profil statt hardcoded Berlin (Closes #71 #76 #77 #81)
 - **Phase 130** ✅ P3 Quick Wins – security.py Kommentare sanitize_input vs sanitize_input_async, WA /send Nachrichten-Längenlimit (4096 Zeichen), ambiguous Contact Matching gibt Kandidatenliste statt blindem ersten Treffer (Closes #83 #84 #85)
 - **Phase 131** ✅ Bug-Fix – memory_agent Delete-Kategorien (people, project, place, media, preference) geben `_reject()` statt `_ok(updated)` wenn kein Match gefunden – klare Fehlermeldung statt generischem Fehler (Closes #78)
+- **Phase 132** ✅ Security – DNS-Rebinding-Schutz auf IPv6 erweitert: `getaddrinfo` statt `gethostbyname` in web.py + clip_agent.py, ValueError-Guard für scoped IPv6-Adressen (Closes #80)
 
 ---
 
