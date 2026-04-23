@@ -1,6 +1,8 @@
+import atexit
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 from dotenv import load_dotenv
@@ -9,6 +11,7 @@ load_dotenv()
 LOG_DIR = Path.home() / ".fabbot"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "fabbot.log"
+PID_FILE = LOG_DIR / "bot.pid"
 
 file_handler = TimedRotatingFileHandler(
     LOG_FILE, when="midnight", interval=1, backupCount=7, encoding="utf-8"
@@ -20,7 +23,22 @@ logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler]
 logger = logging.getLogger(__name__)
 
 
+def _check_single_instance() -> None:
+    if PID_FILE.exists():
+        try:
+            old_pid = int(PID_FILE.read_text().strip())
+            os.kill(old_pid, 0)
+            print(f"Bot läuft bereits (PID {old_pid}). Abbruch.")
+            sys.exit(1)
+        except (ProcessLookupError, PermissionError):
+            pass  # Stale PID-File
+    PID_FILE.write_text(str(os.getpid()))
+    atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
+
+
 def main() -> None:
+    _check_single_instance()
+
     # Verhindert Mac-Sleep solange der Bot läuft (ersetzt caffeinate als plist-Parent).
     _caff = subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())])
 
