@@ -177,24 +177,32 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
         logger.warning(f"Vision memory update fehlgeschlagen: {e}", exc_info=True)
 
 
+_TRANSIENT_EXCEPTIONS = (APIConnectionError, RateLimitError)
+
+
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
     from agent.supervisor import get_graph
     last_exception = None
     for attempt in range(_RETRY_MAX_ATTEMPTS):
         try:
             return await get_graph().ainvoke(state, config=config)
+        except _TRANSIENT_EXCEPTIONS as e:
+            # Vor APIStatusError prüfen – RateLimitError ist Subklasse von APIStatusError
+            last_exception = e
         except APIStatusError as e:
             if e.status_code == 529:
-                delay = _RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning(
-                    f"Anthropic 529 Overloaded – Versuch {attempt + 1}/{_RETRY_MAX_ATTEMPTS}, "
-                    f"warte {delay:.0f}s..."
-                )
                 last_exception = e
-                if attempt < _RETRY_MAX_ATTEMPTS - 1:
-                    await asyncio.sleep(delay)
             else:
                 raise
+
+        delay = _RETRY_BASE_DELAY * (2 ** attempt)
+        logger.warning(
+            f"{type(last_exception).__name__} – Versuch {attempt + 1}/{_RETRY_MAX_ATTEMPTS}, "
+            f"warte {delay:.0f}s..."
+        )
+        if attempt < _RETRY_MAX_ATTEMPTS - 1:
+            await asyncio.sleep(delay)
+
     raise last_exception
 
 

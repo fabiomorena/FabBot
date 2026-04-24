@@ -295,6 +295,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 136** ✅ Health Check auf 11 Komponenten erweitert – Disk Space Threshold (>85%), ChromaDB, WhatsApp Bridge, Audit Log, TTS
 - **Phase 137** ✅ supervisor.py Pre-Routing als Tabelle refactored – _PRE_ROUTING_RULES ersetzt 4 separate Prefix-Tupel, _match_pre_routing() als single entry point, neue Rules = 1 Zeile
 - **Phase 138** ✅ wrap_agent_node Decorator – last_agent_result/last_agent_name automatisch aus letzter AIMessage, kein manuelles Setzen in Agents mehr nötig, in _build_graph() angewendet
+- **Phase 139** ✅ _invoke_with_retry Backoff auf APIConnectionError + RateLimitError erweitert – transiente Fehler retried 3x mit exponentiellem Backoff, fatale Fehler sofort weitergereicht
 
 ---
 
