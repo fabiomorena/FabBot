@@ -15,6 +15,7 @@ import subprocess
 from datetime import datetime, date, timedelta
 
 from agent.proactive.pending import get_pending_items
+from agent.proactive.briefing_agent import orchestrate_briefing
 
 logger = logging.getLogger(__name__)
 
@@ -259,33 +260,30 @@ async def generate_briefing() -> str:
     weekday_de = days_de.get(date.today().strftime("%A"), date.today().strftime("%A"))
     today_str = f"{weekday_de}, {date.today().strftime('%d.%m.%Y')}"
 
-    wetter_task = asyncio.create_task(_get_weather_berlin())
-    news_task = asyncio.create_task(_fetch_web("Top Nachrichten Deutschland heute"))
+    async def _pending_fn():
+        items = await asyncio.to_thread(get_pending_items, 5)
+        return _format_pending_items(items)
 
-    kalender = await asyncio.to_thread(_get_calendar_today)
-    wetter = await wetter_task
-    news = await news_task
+    sections = await orchestrate_briefing(
+        weather_fn=_get_weather_berlin,
+        calendar_fn=lambda: asyncio.to_thread(_get_calendar_today),
+        pending_fn=_pending_fn,
+        news_fn=lambda: _fetch_web("Top Nachrichten Deutschland heute"),
+    )
 
-    try:
-        pending_items = await asyncio.to_thread(get_pending_items, 5)
-    except Exception as e:
-        logger.warning(f"Pending Items im Briefing nicht verfügbar: {e}")
-        pending_items = []
-
-    pending_text = _format_pending_items(pending_items)
-    pending_section = f"\n📋 *Offene Punkte:*\n{pending_text}\n" if pending_text else ""
+    pending_section = f"\n📋 *Offene Punkte:*\n{sections['pending']}\n" if sections["pending"] else ""
 
     briefing = f"""🌅 *Guten Morgen, Fabio!*
 📅 *{today_str}*
 
 🌤 *Wetter Berlin:*
-{wetter}
+{sections['weather']}
 
 📆 *Deine Termine heute:*
-{kalender}
+{sections['calendar']}
 {pending_section}
 📰 *Top News:*
-{news}
+{sections['news']}
 
 Einen guten Tag! 💪"""
 
