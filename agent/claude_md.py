@@ -100,7 +100,7 @@ def _migrate_claude_md_if_needed() -> None:
             f"Empfehlung: alte Datei entfernen und 'claude.md' in .gitignore aufnehmen."
         )
     except Exception as e:
-        logger.error(f"claude.md Migration fehlgeschlagen (ignoriert): {e}")
+        logger.warning(f"claude.md Migration fehlgeschlagen (ignoriert): {e}")
 
 
 # Migration beim ersten Import ausführen – vor allen anderen Operationen.
@@ -133,7 +133,7 @@ def load_claude_md() -> str:
             logger.info(f"claude.md geladen: {len(content)} Zeichen aus {_CLAUDE_MD_PATH}")
         return _claude_md_cache
     except Exception as e:
-        logger.error(f"Fehler beim Laden von claude.md (ignoriert): {e}")
+        logger.warning(f"Fehler beim Laden von claude.md (ignoriert): {e}")
         _claude_md_cache = ""
         return _claude_md_cache
 

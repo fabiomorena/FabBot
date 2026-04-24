@@ -260,7 +260,7 @@ def get_profile_context_short() -> str:
                 parts.append(f"Aktive Projekte: {', '.join(high)}")
         return "\n".join(parts)
     except Exception as e:
-        logger.error(f"get_profile_context_short Fehler (ignoriert): {e}")
+        logger.warning(f"get_profile_context_short Fehler (ignoriert): {e}")
         return ""
 
 
@@ -429,5 +429,5 @@ def get_profile_context_full() -> str:
         return "\n".join(lines)
 
     except Exception as e:
-        logger.error(f"get_profile_context_full Fehler (ignoriert): {e}")
+        logger.warning(f"get_profile_context_full Fehler (ignoriert): {e}")
         return ""

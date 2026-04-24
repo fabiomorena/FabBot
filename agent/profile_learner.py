@@ -265,4 +265,4 @@ async def apply_learning(human_message: str) -> None:
         logger.info(f"ProfileLearner: Profil aktualisiert – type={info_type}")
 
     except Exception as e:
-        logger.error(f"ProfileLearner: unerwarteter Fehler (ignoriert): {e}")
+        logger.warning(f"ProfileLearner: unerwarteter Fehler (ignoriert): {e}")

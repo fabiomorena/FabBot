@@ -23,13 +23,15 @@ ALLOWED_COMMANDS = {
 
 FORBIDDEN_ARGS = {
     "--exec", "-exec", "--delete", "-delete",
-    "/etc/passwd", "/etc/shadow", "/etc/sudoers",
-    "~/.ssh", ".ssh/id_rsa", ".ssh/id_ed25519",
-    ".ssh/authorized_keys", ".ssh/config",
-    "/private/etc", "/Library/LaunchDaemons",
-    ".fabbot/local_api_token", "local_api_token",
-    ".env", "id_rsa", "id_ed25519",
 }
+
+# Dateinamen/Verzeichnisse die unabhängig vom Pfad blockiert werden
+_FORBIDDEN_FILENAMES = frozenset({
+    ".env", ".env.local", ".env.production", ".env.staging",
+    "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+    "local_api_token",
+})
+_FORBIDDEN_PATH_PARTS = frozenset({".ssh", ".fabbot"})
 
 FORBIDDEN_PATH_PREFIXES = (
     "/etc/",
@@ -145,6 +147,13 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
                 if expanded.startswith(blocked) or expanded == blocked.rstrip("/"):
                     return False, f"Zugriff auf `{part}` ist nicht erlaubt."
 
+            # Relative Pfade und Basenames sensitiver Dateien blockieren
+            path_parts = Path(part).parts
+            if any(p in _FORBIDDEN_FILENAMES for p in path_parts):
+                return False, f"Zugriff auf `{part}` ist nicht erlaubt."
+            if any(p in _FORBIDDEN_PATH_PARTS for p in path_parts):
+                return False, f"Zugriff auf `{part}` ist nicht erlaubt."
+
     return True, command
 
 
@@ -236,7 +245,7 @@ async def terminal_agent(state: AgentState) -> AgentState:
 
         if not _is_base_cmd_allowed(command):
             if attempt <= MAX_RETRIES:
-                logger.info(f"terminal_agent: Versuch {attempt} – Basisbefehl nicht erlaubt: {command!r}")
+                logger.debug(f"terminal_agent: Versuch {attempt} – Basisbefehl nicht erlaubt: {command!r}")
                 messages = messages + [
                     AIMessage(content=command),
                     HumanMessage(content=(
@@ -259,7 +268,7 @@ async def terminal_agent(state: AgentState) -> AgentState:
             break
 
         if attempt <= MAX_RETRIES:
-            logger.info(f"terminal_agent: Versuch {attempt} – Sicherheitscheck fehlgeschlagen: {reason}")
+            logger.debug(f"terminal_agent: Versuch {attempt} – Sicherheitscheck fehlgeschlagen: {reason}")
             messages = messages + [
                 AIMessage(content=command),
                 HumanMessage(content=(

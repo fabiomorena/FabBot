@@ -23,8 +23,8 @@ TTS_RATE  = "+0%"
 
 TTS_MAX_CHARS = 1000
 
-# TTS-Status
-_tts_enabled: bool = os.getenv("TTS_ENABLED", "true").lower() != "false"
+# TTS-Status – None = noch nicht gelesen (lazy), bool = explizit gesetzt via set_tts_enabled()
+_tts_enabled: bool | None = None
 
 # Laufender afplay-Prozess
 _current_afplay: subprocess.Popen | None = None
@@ -83,6 +83,8 @@ def _validate_tts_config() -> None:
 
 
 def is_tts_enabled() -> bool:
+    if _tts_enabled is None:
+        return os.getenv("TTS_ENABLED", "true").lower() != "false"
     return _tts_enabled
 
 
