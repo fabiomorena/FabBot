@@ -293,6 +293,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 134** ✅ security.py LLM-Guard Weighted Scoring – starke Patterns (2 Punkte) triggern Guard alleine, schwache (1 Punkt) brauchen Kombination, ChatML/Inst-Tokens hart geblockt, double _pattern_check-Call eliminiert
 - **Phase 135** ✅ PID-File Instanzencheck – verhindert mehrfach laufende Bot-Instanzen beim launchd-Neustart, Stale-PID-Detection via os.kill(pid, 0), atexit-Cleanup
 - **Phase 136** ✅ Health Check auf 11 Komponenten erweitert – Disk Space Threshold (>85%), ChromaDB, WhatsApp Bridge, Audit Log, TTS
+- **Phase 137** ✅ supervisor.py Pre-Routing als Tabelle refactored – _PRE_ROUTING_RULES ersetzt 4 separate Prefix-Tupel, _match_pre_routing() als single entry point, neue Rules = 1 Zeile
 
 ---
 

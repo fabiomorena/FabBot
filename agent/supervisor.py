@@ -101,73 +101,68 @@ FINISH
 """
 
 # ---------------------------------------------------------------------------
-# Deterministisches Pre-Routing – Modul-Konstanten
-# Phase 119c/120: Opinion + Memory-Delete/Save
-# Phase 122 (Issue #52): Bot-Instruktion-Delete als eigener Block
+# Deterministisches Pre-Routing – Tabelle (Issue #55)
+# Reihenfolge ist semantisch: spezifischer vor generischem.
+# Neue Rules: nur eine Zeile in _PRE_ROUTING_RULES ergänzen.
 # ---------------------------------------------------------------------------
 
-# Opinion-Trigger → sofort chat_agent (Fix #41/#47)
-_OPINION_PREFIXES = (
-    "was hälst du",
-    "was haelst du",
-    "was denkst du",
-    "was findest du",
-    "wie findest du",
-    "magst du",
-    "gefällt dir",
-    "gefaellt dir",
-    "deine meinung",
-    "dein urteil",
-    "was ist deine meinung",
-)
+_PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
+    # (prefixes, target_agent, log_label)
+    (
+        (
+            "was hälst du", "was haelst du", "was denkst du",
+            "was findest du", "wie findest du", "magst du",
+            "gefällt dir", "gefaellt dir", "deine meinung",
+            "dein urteil", "was ist deine meinung",
+        ),
+        "chat_agent",
+        "opinion-trigger",
+    ),
+    (
+        # Spezifischer als memory-delete – muss davor stehen
+        (
+            "vergiss die instruktion", "vergiss alle instruktionen",
+            "lösch die instruktion", "loesch die instruktion",
+            "lösche die instruktion", "loesche die instruktion",
+            "entferne die instruktion", "alle instruktionen löschen",
+            "alle instruktionen loeschen", "instruktionen zurücksetzen",
+            "instruktionen zuruecksetzen", "instruktion löschen",
+            "instruktion loeschen", "setze instruktionen zurück",
+            "setze instruktionen zurueck",
+        ),
+        "memory_agent",
+        "bot-instruction-delete-trigger",
+    ),
+    (
+        (
+            "vergiss ", "vergiss,", "lösche aus dem profil",
+            "loesche aus dem profil", "entferne aus dem profil",
+            "aus dem profil löschen", "aus dem profil loeschen",
+            "aus meinem profil löschen", "aus meinem profil loeschen",
+            "profil eintrag löschen", "profil eintrag loeschen",
+        ),
+        "memory_agent",
+        "delete-trigger",
+    ),
+    (
+        (
+            "merke dir dass", "merke dir:", "speichere dass",
+            "füge hinzu:", "fuege hinzu:", "merke dir grundsätzlich",
+            "merke dir grundsaetzlich", "von jetzt an sollst du",
+        ),
+        "memory_agent",
+        "save-trigger",
+    ),
+]
 
-# Bot-Instruktion-Delete-Trigger → sofort memory_agent (Phase 122, Issue #52)
-# Muss VOR _MEMORY_DELETE_PREFIXES geprüft werden, da "vergiss die instruktion"
-# spezifischer ist als das generische "vergiss " (mit Leerzeichen).
-_BOT_INSTRUCTION_DELETE_PREFIXES = (
-    "vergiss die instruktion",
-    "vergiss alle instruktionen",
-    "lösch die instruktion",
-    "loesch die instruktion",
-    "lösche die instruktion",
-    "loesche die instruktion",
-    "entferne die instruktion",
-    "alle instruktionen löschen",
-    "alle instruktionen loeschen",
-    "instruktionen zurücksetzen",
-    "instruktionen zuruecksetzen",
-    "instruktion löschen",
-    "instruktion loeschen",
-    "setze instruktionen zurück",
-    "setze instruktionen zurueck",
-)
 
-# Memory-Delete-Trigger → sofort memory_agent (Phase 119c)
-_MEMORY_DELETE_PREFIXES = (
-    "vergiss ",
-    "vergiss,",
-    "lösche aus dem profil",
-    "loesche aus dem profil",
-    "entferne aus dem profil",
-    "aus dem profil löschen",
-    "aus dem profil loeschen",
-    "aus meinem profil löschen",
-    "aus meinem profil loeschen",
-    "profil eintrag löschen",
-    "profil eintrag loeschen",
-)
-
-# Memory-Save-Trigger → sofort memory_agent (Phase 119c)
-_MEMORY_SAVE_PREFIXES = (
-    "merke dir dass",
-    "merke dir:",
-    "speichere dass",
-    "füge hinzu:",
-    "fuege hinzu:",
-    "merke dir grundsätzlich",
-    "merke dir grundsaetzlich",
-    "von jetzt an sollst du",
-)
+def _match_pre_routing(text: str) -> tuple[str, str] | None:
+    """Gibt (agent_name, log_label) zurück wenn ein Prefix-Rule greift, sonst None."""
+    lower = text.strip().lower()
+    for prefixes, agent, label in _PRE_ROUTING_RULES:
+        if any(lower.startswith(p) for p in prefixes):
+            return agent, label
+    return None
 
 
 _MAX_ROUTING_LEN = 500
@@ -235,35 +230,18 @@ async def supervisor_node(state: AgentState) -> AgentState:
         logger.info(f"supervisor routing: '{last_text[:100]}' → ?")
 
     # ---------------------------------------------------------------------------
-    # Deterministisches Pre-Routing vor dem LLM-Call
-    # Reihenfolge: spezifischer vor generischem (Bot-Instruktion vor Memory-Delete)
+    # Deterministisches Pre-Routing vor dem LLM-Call (Issue #55)
     # ---------------------------------------------------------------------------
     if routing_messages:
         last_content = routing_messages[-1].content if hasattr(routing_messages[-1], "content") else ""
         if isinstance(last_content, list):
             last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
-        last_lower = last_content.strip().lower()
 
-        # Opinion-Trigger → chat_agent (Phase 120, Fix #41)
-        if any(last_lower.startswith(p) for p in _OPINION_PREFIXES):
-            logger.info(f"supervisor: Pre-Routing → chat_agent (opinion-trigger: '{last_lower[:60]}')")
-            return {"next_agent": "chat_agent"}
-
-        # Bot-Instruktion-Delete-Trigger → memory_agent (Phase 122, Fix #52)
-        # Vor _MEMORY_DELETE_PREFIXES, da spezifischer.
-        if any(last_lower.startswith(p) for p in _BOT_INSTRUCTION_DELETE_PREFIXES):
-            logger.info(f"supervisor: Pre-Routing → memory_agent (bot-instruction-delete-trigger: '{last_lower[:60]}')")
-            return {"next_agent": "memory_agent"}
-
-        # Memory-Delete-Trigger → memory_agent (Phase 119c, Fix #47)
-        if any(last_lower.startswith(p) for p in _MEMORY_DELETE_PREFIXES):
-            logger.info(f"supervisor: Pre-Routing → memory_agent (delete-trigger: '{last_lower[:60]}')")
-            return {"next_agent": "memory_agent"}
-
-        # Memory-Save-Trigger → memory_agent (Phase 119c)
-        if any(last_lower.startswith(p) for p in _MEMORY_SAVE_PREFIXES):
-            logger.info(f"supervisor: Pre-Routing → memory_agent (save-trigger: '{last_lower[:60]}')")
-            return {"next_agent": "memory_agent"}
+        match = _match_pre_routing(last_content)
+        if match:
+            agent, label = match
+            logger.info(f"supervisor: Pre-Routing → {agent} ({label}: '{last_content.strip()[:60]}')")
+            return {"next_agent": agent}
 
     sanitized = [
         HumanMessage(content=_sanitize_routing_content(m.content)) if isinstance(m, HumanMessage) else m

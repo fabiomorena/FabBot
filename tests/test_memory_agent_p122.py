@@ -64,30 +64,35 @@ class TestSaveRegression:
 
 class TestSupervisorPreRouting:
     def test_prefixes_defined(self):
-        from agent.supervisor import _BOT_INSTRUCTION_DELETE_PREFIXES
-        assert len(_BOT_INSTRUCTION_DELETE_PREFIXES) > 0
+        from agent.supervisor import _PRE_ROUTING_RULES
+        assert len(_PRE_ROUTING_RULES) > 0
 
     def test_vergiss_die_instruktion(self):
-        from agent.supervisor import _BOT_INSTRUCTION_DELETE_PREFIXES
-        assert any("vergiss die instruktion über x".startswith(p) for p in _BOT_INSTRUCTION_DELETE_PREFIXES)
+        from agent.supervisor import _match_pre_routing
+        result = _match_pre_routing("vergiss die instruktion über x")
+        assert result is not None
+        assert result[0] == "memory_agent"
+        assert "bot-instruction" in result[1]
 
     def test_loesche_die_instruktion(self):
-        from agent.supervisor import _BOT_INSTRUCTION_DELETE_PREFIXES
-        assert any("lösche die instruktion".startswith(p) for p in _BOT_INSTRUCTION_DELETE_PREFIXES)
+        from agent.supervisor import _match_pre_routing
+        result = _match_pre_routing("lösche die instruktion")
+        assert result is not None
+        assert result[0] == "memory_agent"
 
     def test_vergiss_person_not_matched(self):
-        from agent.supervisor import _BOT_INSTRUCTION_DELETE_PREFIXES
-        assert not any("vergiss max mustermann".startswith(p) for p in _BOT_INSTRUCTION_DELETE_PREFIXES)
+        from agent.supervisor import _match_pre_routing
+        result = _match_pre_routing("vergiss max mustermann")
+        # "vergiss " (mit Leerzeichen) würde matchen – korrekt, denn das ist memory-delete
+        # Sicherstellen dass es NICHT als bot-instruction-delete erkannt wird
+        assert result is None or "bot-instruction" not in result[1]
 
-    def test_order_in_source(self):
-        import inspect
-        from agent import supervisor
-        src = inspect.getsource(supervisor.supervisor_node)
-        bot = src.find("_BOT_INSTRUCTION_DELETE_PREFIXES")
-        first = src.find("_MEMORY_DELETE_PREFIXES")
-        second = src.find("_MEMORY_DELETE_PREFIXES", first + 1)
-        mem = second if second != -1 else first
-        assert 0 < bot < mem
+    def test_order_bot_instruction_before_memory_delete(self):
+        from agent.supervisor import _PRE_ROUTING_RULES
+        labels = [rule[2] for rule in _PRE_ROUTING_RULES]
+        bot_idx = next(i for i, l in enumerate(labels) if "bot-instruction" in l)
+        del_idx = next(i for i, l in enumerate(labels) if l == "delete-trigger")
+        assert bot_idx < del_idx
 
 class TestDeleteRegression:
     def test_people(self):
