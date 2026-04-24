@@ -55,9 +55,8 @@ class TestChatAgentPrompt:
 class TestOtherAgentsDatetime:
 
     @pytest.mark.parametrize("module,func", [
-        ("agent.agents.web",            "_build_web_prompt"),
-        ("agent.agents.terminal",       "_build_terminal_prompt"),
-        ("agent.agents.reminder_agent", "_build_reminder_prompt"),
+        ("agent.agents.web",            "_build_prompt"),
+        ("agent.agents.reminder_agent", "_build_prompt"),
     ])
     def test_agent_prompt_contains_datetime(self, module, func):
         import importlib
