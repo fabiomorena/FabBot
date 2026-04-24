@@ -521,6 +521,13 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
+async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    from bot.briefing import generate_briefing
+    briefing = await generate_briefing()
+    await update.message.reply_text(briefing, parse_mode="Markdown")
+
+
+@restricted
 async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from agent.proactive.heartbeat import mute_proactive, unmute_proactive, is_muted
     args = ctx.args or []
@@ -982,6 +989,7 @@ def build_bot() -> Application:
         .build()
     )
     app.add_handler(CommandHandler("health",          cmd_health,          block=False))
+    app.add_handler(CommandHandler("briefing",        cmd_briefing,        block=False))
     app.add_handler(CommandHandler("mute_proactive",  cmd_mute_proactive,  block=False))
     app.add_handler(CommandHandler("start",      cmd_start))
     app.add_handler(CommandHandler("status",     cmd_status))
