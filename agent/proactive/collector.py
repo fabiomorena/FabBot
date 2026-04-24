@@ -24,6 +24,8 @@ _ENTITIES_COLLECTION = "entities"
 
 _EXTRACTION_PROMPT = """Analysiere die folgende Konversation und extrahiere strukturierte Entitäten.
 
+Heute ist {current_date}.
+
 Konversation:
 User: {user_message}
 Bot: {bot_response}
@@ -36,6 +38,7 @@ Extrahiere alle relevanten Entitäten als JSON-Array. Jede Entität hat:
 
 Nur Entitäten mit klarer semantischer Bedeutung extrahieren.
 Keine trivialen Entitäten (z.B. "Bot", "Antwort").
+Verwandtschaftsbeziehungen wie "Steffis Vater" oder "der Bruder von X" nur extrahieren wenn ein eigenständiger Name bekannt ist – sonst weglassen.
 Falls keine relevanten Entitäten vorhanden: leeres Array [].
 
 Antwort NUR als JSON-Array, kein Text darum."""
@@ -110,6 +113,7 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
         llm = _get_llm()
         from langchain_core.messages import HumanMessage
         prompt = _EXTRACTION_PROMPT.format(
+            current_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             user_message=user_message[:500],
             bot_response=bot_response[:500],
         )
