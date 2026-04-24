@@ -161,5 +161,10 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
         logger.info(f"Context Collector: {len(entities)} Entität(en) gespeichert")
 
+        if len(ids) >= 2:
+            from agent.proactive.linker import link_entities
+            entity_names = {eid: m["name"] for eid, m in zip(ids, metadatas)}
+            link_entities(ids, entity_names)
+
     except Exception as e:
         logger.warning(f"Context Collector Fehler (non-critical): {e}")

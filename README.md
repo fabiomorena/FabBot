@@ -299,6 +299,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 140** ✅ Context Collector – Entitäten-Extraktion via Haiku async fire-and-forget, neue ChromaDB Collection 'entities', deterministischer SHA256-ID-Upsert, vollständig fail-safe
 - **Phase 141** ✅ Pending Items Tracker – get_pending_items() API, Prioritätsscore (due_date + mention_count + entity_type), Collector Datum-Fix + Vater-Pattern-Fix im Extraktions-Prompt, 23 Tests
 - **Phase 142** ✅ Morning Briefing auf ChromaDB-Kontext – Pending-Items-Sektion (Top 5 nach Priorität, Typ-Icons, Fälligkeitsdatum), fail-safe Integration in generate_briefing(), 13 Tests
+- **Phase 143** ✅ Context Linking – entity_links ChromaDB Collection, link_entities() verknüpft alle Paare mit Gewicht, get_related_entities() liefert Cluster, Collector-Integration, 18 Tests
 
 ---
 
