@@ -14,7 +14,37 @@ import os
 import subprocess
 from datetime import datetime, date, timedelta
 
+from agent.proactive.pending import get_pending_items
+
 logger = logging.getLogger(__name__)
+
+_TYPE_ICONS: dict[str, str] = {
+    "task": "✅",
+    "event": "📅",
+    "intent": "💭",
+    "person": "👤",
+    "place": "📍",
+}
+
+
+def _format_pending_items(items: list[dict]) -> str:
+    if not items:
+        return ""
+    lines = []
+    for item in items:
+        icon = _TYPE_ICONS.get(item.get("entity_type", ""), "•")
+        name = item.get("name", "")
+        due = item.get("due_date", "")
+        if due:
+            try:
+                due_str = datetime.strptime(due[:10], "%Y-%m-%d").strftime("%d.%m.")
+                line = f"{icon} {name} (bis {due_str})"
+            except ValueError:
+                line = f"{icon} {name}"
+        else:
+            line = f"{icon} {name}"
+        lines.append(line)
+    return "\n".join(lines)
 
 _raw_time = os.getenv("BRIEFING_TIME", "07:30")
 try:
@@ -236,6 +266,15 @@ async def generate_briefing() -> str:
     wetter = await wetter_task
     news = await news_task
 
+    try:
+        pending_items = await asyncio.to_thread(get_pending_items, 5)
+    except Exception as e:
+        logger.warning(f"Pending Items im Briefing nicht verfügbar: {e}")
+        pending_items = []
+
+    pending_text = _format_pending_items(pending_items)
+    pending_section = f"\n📋 *Offene Punkte:*\n{pending_text}\n" if pending_text else ""
+
     briefing = f"""🌅 *Guten Morgen, Fabio!*
 📅 *{today_str}*
 
@@ -244,7 +283,7 @@ async def generate_briefing() -> str:
 
 📆 *Deine Termine heute:*
 {kalender}
-
+{pending_section}
 📰 *Top News:*
 {news}
 
