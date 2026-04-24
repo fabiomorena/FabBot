@@ -767,6 +767,12 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             response_msg = await _invoke_and_extract(state, config)
         await _delete_thinking(thinking)
         await _dispatch_response(response_msg, bot, chat_id, update)
+        if response_msg:
+            from agent.proactive.collector import collect_entities
+            asyncio.create_task(collect_entities(
+                user_message=clean_text,
+                bot_response=response_msg,
+            ))
 
     except RateLimitError:
         await _delete_thinking(thinking)
