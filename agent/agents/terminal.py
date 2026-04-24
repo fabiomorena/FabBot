@@ -1,13 +1,18 @@
+import logging
 import os
 import subprocess
 import shlex
 from pathlib import Path
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
 from agent.utils import extract_llm_text
+
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 2  # max. Korrektur-Versuche nach ungültigem Befehl
 
 ALLOWED_COMMANDS = {
     "ls", "pwd", "cat", "head", "tail", "grep",
@@ -185,41 +190,84 @@ def execute_command(command: str) -> str:
         return f"Fehler: {e}"
 
 
+def _extract_command(response_content) -> str:
+    content = extract_llm_text(response_content)
+    command = content.strip().strip("`")
+    if command.startswith("__CONFIRM_TERMINAL__:"):
+        command = command[len("__CONFIRM_TERMINAL__:"):]
+    return command
+
+
+def _is_base_cmd_allowed(command: str) -> bool:
+    try:
+        first = os.path.basename(shlex.split(command)[0]) if command.split() else ""
+    except ValueError:
+        first = ""
+    return first in ALLOWED_COMMANDS
+
+
 async def terminal_agent(state: AgentState) -> AgentState:
-    """Phase 88: async. Phase 99: last_agent_result im Return."""
+    """Phase 88: async. Phase 99: last_agent_result im Return.
+    Phase 146 (Issue #38): Self-Correction – bei ungültigem Befehl bis zu
+    MAX_RETRIES Korrektur-Versuche vor dem HITL.
+    """
     llm = get_llm()
     filtered = [m for m in state["messages"] if not (
         hasattr(m, "content") and isinstance(m.content, str)
         and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
     )]
     messages = [SystemMessage(content=PROMPT)] + filtered
-    response = await llm.ainvoke(messages)
-    content = extract_llm_text(response.content)
-    command = content.strip().strip("`")
-    if command.startswith("__CONFIRM_TERMINAL__:"):
-        command = command[len("__CONFIRM_TERMINAL__:"):]
 
-    if command == "UNSUPPORTED":
-        msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
-        return {
-            "messages": [AIMessage(content=msg)],
-            "last_agent_result": msg,
-            "last_agent_name": "terminal_agent",
-        }
+    command = ""
+    allowed = False
+    reason = ""
 
-    try:
-        _first = os.path.basename(shlex.split(command)[0]) if command.split() else ""
-    except ValueError:
-        _first = ""
-    if _first not in ALLOWED_COMMANDS:
-        msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
-        return {
-            "messages": [AIMessage(content=msg)],
-            "last_agent_result": msg,
-            "last_agent_name": "terminal_agent",
-        }
+    for attempt in range(1, MAX_RETRIES + 2):
+        response = await llm.ainvoke(messages)
+        command = _extract_command(response.content)
 
-    allowed, reason = is_command_allowed(command)
+        if command == "UNSUPPORTED":
+            msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
+            return {
+                "messages": [AIMessage(content=msg)],
+                "last_agent_result": msg,
+                "last_agent_name": "terminal_agent",
+            }
+
+        if not _is_base_cmd_allowed(command):
+            if attempt <= MAX_RETRIES:
+                logger.info(f"terminal_agent: Versuch {attempt} – Basisbefehl nicht erlaubt: {command!r}")
+                messages = messages + [
+                    AIMessage(content=command),
+                    HumanMessage(content=(
+                        f"Fehler: Der Befehl '{command.split()[0] if command.split() else command}' "
+                        f"ist nicht in der Erlaubt-Liste. "
+                        f"Erlaubte Befehle: {', '.join(sorted(ALLOWED_COMMANDS))}. "
+                        f"Bitte antworte nur mit einem erlaubten Befehl oder UNSUPPORTED."
+                    )),
+                ]
+                continue
+            msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
+            return {
+                "messages": [AIMessage(content=msg)],
+                "last_agent_result": msg,
+                "last_agent_name": "terminal_agent",
+            }
+
+        allowed, reason = is_command_allowed(command)
+        if allowed:
+            break
+
+        if attempt <= MAX_RETRIES:
+            logger.info(f"terminal_agent: Versuch {attempt} – Sicherheitscheck fehlgeschlagen: {reason}")
+            messages = messages + [
+                AIMessage(content=command),
+                HumanMessage(content=(
+                    f"Fehler: Der Befehl wurde aus Sicherheitsgründen abgelehnt: {reason}. "
+                    f"Bitte generiere einen korrekten, erlaubten Befehl oder antworte mit UNSUPPORTED."
+                )),
+            ]
+
     if not allowed:
         log_action("terminal_agent", command[:200], reason,
                    state.get("telegram_chat_id"), status="blocked")

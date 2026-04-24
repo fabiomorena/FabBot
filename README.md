@@ -303,6 +303,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 144** ✅ Multi-Agent Briefing Orchestrator – briefing_agent.py mit _run_with_timeout() + asyncio.gather(), alle Sub-Agenten parallel mit 5s Timeout, Ausfall je eines Agenten blockiert Briefing nicht, 9 Tests
 - **Phase 145** ✅ Heartbeat + Trigger-basierte Proaktivität – stündlicher Scheduler, Zeit-Trigger (7/3/1 Tage), Cooldown 6h, /mute_proactive Command, Haiku-generierte Nachrichten, 21 Tests
 - **Phase 146** ✅ Proaktiver Kontext-Aggregator – `agent/proactive/context.py` bündelt Pending Items + Heartbeat-State, chat_agent kennt alle offenen Themen via `_build_dynamic_prompt_suffix()`, fail-safe, 25 Tests
+- **Phase 147** ✅ terminal_agent Self-Correction (Issue #38) – bei ungültigem Befehl bis zu MAX_RETRIES=2 Korrektur-Versuche mit Fehlerfeedback an LLM, HITL bleibt unverändert, 20 Tests
 
 ---
 
