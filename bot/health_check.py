@@ -262,6 +262,21 @@ def _audit_write_check(path: Path) -> None:
         pass
 
 
+async def _check_heartbeat() -> tuple[bool, str]:
+    """Prüft Heartbeat-Status: ob Cooldown aktiv oder stummgeschaltet."""
+    try:
+        from agent.proactive.heartbeat import is_on_cooldown, is_muted, COOLDOWN_FILE
+        muted = is_muted()
+        on_cooldown = is_on_cooldown()
+        if muted:
+            return True, "Heartbeat aktiv (stummgeschaltet)"
+        if on_cooldown:
+            return True, "Heartbeat aktiv (Cooldown läuft)"
+        return True, "Heartbeat aktiv (bereit)"
+    except Exception as e:
+        return False, str(e)[:80]
+
+
 async def _check_tts() -> tuple[bool, str]:
     """Prüft ob OpenAI TTS konfiguriert und der Endpoint erreichbar ist."""
     try:
@@ -312,6 +327,7 @@ async def run_health_check(bot, chat_id: int) -> None:
             _check_whatsapp(),
             _check_audit_log(),
             _check_tts(),
+            _check_heartbeat(),
             return_exceptions=True,  # Exceptions als Ergebnis, kein crash
         )
 
@@ -327,6 +343,7 @@ async def run_health_check(bot, chat_id: int) -> None:
             "WhatsApp Bridge",
             "Audit Log",
             "TTS",
+            "Heartbeat",
         ]
 
         lines = ["🤖 *FabBot Health Check*\n"]
