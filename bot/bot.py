@@ -492,6 +492,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/stop – Laufende Sprachausgabe stoppen\n"
         "/wa_setup – WhatsApp Web einrichten\n"
         "/wa_contact add/remove/list – WhatsApp-Kontakte verwalten\n"
+        "/health – System Health Check\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen"
     )
@@ -510,6 +511,12 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"Agent läuft.\nTTS: {tts_status}\nRetrieval: {retrieval_status}\nWhatsApp: {wa_status}"
     )
+
+
+@restricted
+async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    from bot.health_check import run_health_check
+    await run_health_check(ctx.bot, update.effective_chat.id)
 
 
 @restricted
@@ -946,6 +953,7 @@ def build_bot() -> Application:
         .pool_timeout(5)
         .build()
     )
+    app.add_handler(CommandHandler("health",     cmd_health,     block=False))
     app.add_handler(CommandHandler("start",      cmd_start))
     app.add_handler(CommandHandler("status",     cmd_status))
     app.add_handler(CommandHandler("auditlog",   cmd_auditlog))
