@@ -494,7 +494,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/wa_contact add/remove/list – WhatsApp-Kontakte verwalten\n"
         "/health – System Health Check\n"
         "/status – Agent Status\n"
-        "/auditlog – Letzte Aktionen"
+        "/auditlog – Letzte Aktionen\n"
+        "/mute_proactive [h] – Proaktive Nachrichten stumm (default 24h)"
     )
 
 
@@ -517,6 +518,19 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from bot.health_check import run_health_check
     await run_health_check(ctx.bot, update.effective_chat.id)
+
+
+@restricted
+async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    from agent.proactive.heartbeat import mute_proactive, unmute_proactive, is_muted
+    args = ctx.args or []
+    if args and args[0].lower() == "off":
+        unmute_proactive()
+        await update.message.reply_text("Proaktive Nachrichten wieder aktiv.")
+    else:
+        hours = int(args[0]) if args and args[0].isdigit() else 24
+        mute_proactive(hours)
+        await update.message.reply_text(f"Proaktive Nachrichten für {hours}h stummgeschaltet. /mute_proactive off zum Reaktivieren.")
 
 
 @restricted
@@ -888,6 +902,14 @@ async def _post_init(app: Application) -> None:
         if not t.cancelled() and t.exception() else None
     )
 
+    from bot.heartbeat_scheduler import run_heartbeat_scheduler
+    task_heartbeat = asyncio.create_task(run_heartbeat_scheduler(app.bot, chat_id))
+    _scheduler_tasks.append(task_heartbeat)
+    task_heartbeat.add_done_callback(
+        lambda t: logger.error(f"Heartbeat Scheduler unerwartet beendet: {t.exception()}")
+        if not t.cancelled() and t.exception() else None
+    )
+
     from bot.health_check import run_health_check_scheduler
     task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
     _scheduler_tasks.append(task_health)
@@ -959,7 +981,8 @@ def build_bot() -> Application:
         .pool_timeout(5)
         .build()
     )
-    app.add_handler(CommandHandler("health",     cmd_health,     block=False))
+    app.add_handler(CommandHandler("health",          cmd_health,          block=False))
+    app.add_handler(CommandHandler("mute_proactive",  cmd_mute_proactive,  block=False))
     app.add_handler(CommandHandler("start",      cmd_start))
     app.add_handler(CommandHandler("status",     cmd_status))
     app.add_handler(CommandHandler("auditlog",   cmd_auditlog))

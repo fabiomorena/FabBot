@@ -301,6 +301,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 142** ✅ Morning Briefing auf ChromaDB-Kontext – Pending-Items-Sektion (Top 5 nach Priorität, Typ-Icons, Fälligkeitsdatum), fail-safe Integration in generate_briefing(), 13 Tests
 - **Phase 143** ✅ Context Linking – entity_links ChromaDB Collection, link_entities() verknüpft alle Paare mit Gewicht, get_related_entities() liefert Cluster, Collector-Integration, 18 Tests
 - **Phase 144** ✅ Multi-Agent Briefing Orchestrator – briefing_agent.py mit _run_with_timeout() + asyncio.gather(), alle Sub-Agenten parallel mit 5s Timeout, Ausfall je eines Agenten blockiert Briefing nicht, 9 Tests
+- **Phase 145** ✅ Heartbeat + Trigger-basierte Proaktivität – stündlicher Scheduler, Zeit-Trigger (7/3/1 Tage), Cooldown 6h, /mute_proactive Command, Haiku-generierte Nachrichten, 21 Tests
 
 ---
 
