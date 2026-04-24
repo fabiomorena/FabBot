@@ -13,6 +13,57 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 
 
+class TestIsStale:
+    def test_no_due_date_not_stale(self):
+        from agent.proactive.pending import _is_stale
+        assert not _is_stale(None)
+
+    def test_future_date_not_stale(self):
+        from agent.proactive.pending import _is_stale
+        future = (datetime.now(timezone.utc) + timedelta(days=7)).date().isoformat()
+        assert not _is_stale(future)
+
+    def test_today_not_stale(self):
+        from agent.proactive.pending import _is_stale
+        today = datetime.now(timezone.utc).date().isoformat()
+        assert not _is_stale(today)
+
+    def test_yesterday_not_stale(self):
+        from agent.proactive.pending import _is_stale
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+        assert not _is_stale(yesterday)
+
+    def test_two_days_ago_is_stale(self):
+        from agent.proactive.pending import _is_stale
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).date().isoformat()
+        assert _is_stale(old)
+
+    def test_two_weeks_ago_is_stale(self):
+        from agent.proactive.pending import _is_stale
+        old = (datetime.now(timezone.utc) - timedelta(days=14)).date().isoformat()
+        assert _is_stale(old)
+
+    def test_stale_items_excluded_from_get_pending(self):
+        from agent.proactive.pending import get_pending_items
+        old = (datetime.now(timezone.utc) - timedelta(days=10)).date().isoformat()
+        future = (datetime.now(timezone.utc) + timedelta(days=7)).date().isoformat()
+        mock_col = MagicMock()
+        mock_col.get.return_value = {
+            "ids": ["id1", "id2"],
+            "metadatas": [
+                {"entity_type": "event", "name": "Altes Event", "due_date": old,
+                 "mention_count": 1, "status": "open"},
+                {"entity_type": "task", "name": "Zukünftige Aufgabe", "due_date": future,
+                 "mention_count": 1, "status": "open"},
+            ],
+            "documents": ["ctx1", "ctx2"],
+        }
+        with patch("agent.proactive.pending._get_entities_collection", return_value=mock_col):
+            result = get_pending_items()
+        assert len(result) == 1
+        assert result[0]["name"] == "Zukünftige Aufgabe"
+
+
 class TestDueDateScore:
     def test_no_date_returns_zero(self):
         from agent.proactive.pending import _due_date_score

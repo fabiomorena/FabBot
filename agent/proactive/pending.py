@@ -23,6 +23,18 @@ _TYPE_SCORE: dict[str, int] = {
 }
 
 
+def _is_stale(due_date_str: str | None, max_overdue_days: int = 1) -> bool:
+    """True wenn due_date mehr als max_overdue_days Tage in der Vergangenheit liegt."""
+    if not due_date_str:
+        return False
+    try:
+        due = datetime.strptime(due_date_str[:10], "%Y-%m-%d").date()
+        days_overdue = (datetime.now(timezone.utc).date() - due).days
+        return days_overdue > max_overdue_days
+    except (ValueError, TypeError):
+        return False
+
+
 def _due_date_score(due_date_str: str | None) -> int:
     if not due_date_str:
         return 0
@@ -115,6 +127,8 @@ def get_pending_items(limit: int = 10) -> list[dict]:
 
     items = []
     for i, meta in enumerate(metadatas):
+        if _is_stale(meta.get("due_date")):
+            continue
         item = dict(meta)
         item["id"] = ids[i] if i < len(ids) else ""
         item["document"] = documents[i] if i < len(documents) else ""
