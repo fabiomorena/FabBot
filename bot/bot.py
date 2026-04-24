@@ -528,6 +528,23 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @restricted
+async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    from agent.proactive.pending import mark_done
+    query = " ".join(ctx.args or []).strip()
+    if not query:
+        await update.message.reply_text("Verwendung: /done <Name oder Teil des Namens>")
+        return
+    matched = await asyncio.to_thread(mark_done, query)
+    if not matched:
+        await update.message.reply_text(f"Kein offenes Item gefunden für: \"{query}\"")
+    elif len(matched) == 1:
+        await update.message.reply_text(f"✅ Erledigt: {matched[0]}")
+    else:
+        names = "\n".join(f"✅ {n}" for n in matched)
+        await update.message.reply_text(f"Erledigt:\n{names}")
+
+
+@restricted
 async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from agent.proactive.heartbeat import mute_proactive, unmute_proactive, is_muted
     args = ctx.args or []
@@ -990,6 +1007,7 @@ def build_bot() -> Application:
     )
     app.add_handler(CommandHandler("health",          cmd_health,          block=False))
     app.add_handler(CommandHandler("briefing",        cmd_briefing,        block=False))
+    app.add_handler(CommandHandler("done",            cmd_done,            block=False))
     app.add_handler(CommandHandler("mute_proactive",  cmd_mute_proactive,  block=False))
     app.add_handler(CommandHandler("start",      cmd_start))
     app.add_handler(CommandHandler("status",     cmd_status))

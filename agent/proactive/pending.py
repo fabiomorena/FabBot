@@ -59,6 +59,41 @@ def _priority_score(metadata: dict) -> int:
     )
 
 
+def mark_done(name_query: str) -> list[str]:
+    """Markiert alle offenen Entitäten deren Name name_query enthält als 'done'.
+
+    Matching: case-insensitiv, partial. Gibt Liste der gematchten Namen zurück.
+    """
+    collection = _get_entities_collection()
+    if collection is None:
+        return []
+    try:
+        result = collection.get(
+            where={"status": "open"},
+            include=["metadatas"],
+        )
+    except Exception as e:
+        logger.warning(f"mark_done: ChromaDB-Fehler: {e}")
+        return []
+
+    ids = result.get("ids") or []
+    metadatas = result.get("metadatas") or []
+    query = name_query.lower()
+    matched_names = []
+
+    for eid, meta in zip(ids, metadatas):
+        if query not in meta.get("name", "").lower():
+            continue
+        updated = {**meta, "status": "done"}
+        try:
+            collection.update(ids=[eid], metadatas=[updated])
+            matched_names.append(meta["name"])
+        except Exception as e:
+            logger.warning(f"mark_done: Update-Fehler für '{meta.get('name')}': {e}")
+
+    return matched_names
+
+
 def get_pending_items(limit: int = 10) -> list[dict]:
     """Gibt offene Entitäten sortiert nach Prioritätsscore zurück."""
     collection = _get_entities_collection()
