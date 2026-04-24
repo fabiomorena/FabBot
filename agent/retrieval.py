@@ -6,9 +6,10 @@ ChromaDB (lokal, persistent) + OpenAI text-embedding-3-small.
 Indexierte Quellen:
   - personal_profile.yaml  (virtuell, via get_profile_context_full)
   - ~/Documents/Wissen/*.md        (alle /clip Notizen)
-  - ~/Documents/Wissen/Sessions/   (Session Summaries)
 
 Nicht indexiert:
+  - ~/Documents/Wissen/Sessions/   (Session Summaries) → direktes Lesen via
+    _load_all_sessions() in chat_agent.py (Hotfix 18.04 / Issue #35)
   - claude.md → wird bereits vollständig in jeden chat_agent System-Prompt
     injiziert (direkte Injektion). ChromaDB-Indexierung wäre redundant
     und würde claude.md doppelt in den Prompt laden.
@@ -303,10 +304,50 @@ async def _upsert_chunks(
     return len(chunks)
 
 
-async def index_file(path: Path, force: bool = False) -> bool:
-    """Indexiert eine einzelne Markdown-Datei (Delta: nur bei geänderter mtime)."""
+async def _remove_sessions_from_index() -> None:
+    """
+    Issue #35: Entfernt alle Session-Chunks aus ChromaDB.
+    Einmalige Bereinigung – Sessions werden nicht mehr indexiert.
+    """
     collection = _get_collection()
     if collection is None:
+        return
+    try:
+        existing = await asyncio.to_thread(
+            collection.get,
+            where={"type": "session"},
+            include=[],
+        )
+        if not existing or not existing.get("ids"):
+            return
+        sem = _get_semaphore()
+        async with sem:
+            await asyncio.to_thread(collection.delete, ids=existing["ids"])
+        meta = _load_meta()
+        sessions_str = str(_SESSIONS_DIR.resolve())
+        keys_to_remove = [k for k in meta if k.startswith(sessions_str)]
+        for k in keys_to_remove:
+            meta.pop(k)
+        if keys_to_remove:
+            _save_meta(meta)
+        logger.info(
+            f"Retrieval: {len(existing['ids'])} Session-Chunks aus ChromaDB entfernt (#35)"
+        )
+    except Exception as e:
+        logger.debug(f"Retrieval: Session-Cleanup fehlgeschlagen (ignoriert): {e}")
+
+
+async def index_file(path: Path, force: bool = False) -> bool:
+    """Indexiert eine einzelne Markdown-Datei (Delta: nur bei geänderter mtime).
+    Issue #35: Session-Dateien werden übersprungen.
+    """
+    collection = _get_collection()
+    if collection is None:
+        return False
+
+    # Issue #35: Sessions direkt via _load_all_sessions() geladen – nicht indexieren
+    if str(path.resolve()).startswith(str(_SESSIONS_DIR.resolve())):
+        logger.debug(f"Retrieval: '{path.name}' ist Session-Datei – übersprungen (#35)")
         return False
 
     try:
@@ -322,13 +363,9 @@ async def index_file(path: Path, force: bool = False) -> bool:
         if not text:
             return False
 
-        sessions_str = str(_SESSIONS_DIR.resolve())
         wissen_str = str(_WISSEN_DIR.resolve())
 
-        if filepath.startswith(sessions_str):
-            source_type = "session"
-            label = f"Session: {path.stem}"
-        elif filepath.startswith(wissen_str):
+        if filepath.startswith(wissen_str):
             source_type = "knowledge"
             label = f"Notiz: {path.stem}"
         else:
@@ -444,20 +481,19 @@ async def index_all(force: bool = False) -> None:
     """
     Vollständige Delta-Indexierung aller Quellen.
 
-    Phase 79: claude.md wird nicht mehr indexiert – direkte Injektion
-    in chat_agent System-Prompt übernimmt das vollständig.
-    Veraltete claude.md-Chunks werden beim ersten Aufruf bereinigt.
+    Phase 79: claude.md nicht mehr indexiert.
+    Issue #35: Sessions nicht mehr indexiert – direktes Lesen via _load_all_sessions().
 
     Quellen:
       1. personal_profile.yaml (virtuell, Hash-Check)
       2. ~/Documents/Wissen/*.md (mtime-Check)
-      3. ~/Documents/Wissen/Sessions/*.md (mtime-Check)
     """
     logger.info("Retrieval: Starte Index-Durchlauf...")
     total_updated = 0
 
-    # Einmalige Bereinigung veralteter claude.md-Chunks
+    # Einmalige Bereinigungen veralteter Chunks
     await _remove_claude_md_from_index()
+    await _remove_sessions_from_index()
 
     # 1. personal_profile.yaml (virtuell – Hash-Check)
     try:
@@ -475,13 +511,6 @@ async def index_all(force: bool = False) -> None:
     # 2. ~/Documents/Wissen/*.md (Knowledge Notes – mtime-Check)
     if _WISSEN_DIR.exists():
         for path in sorted(_WISSEN_DIR.glob("*.md")):
-            ok = await index_file(path, force=force)
-            if ok:
-                total_updated += 1
-
-    # 3. ~/Documents/Wissen/Sessions/*.md (Session Summaries – mtime-Check)
-    if _SESSIONS_DIR.exists():
-        for path in sorted(_SESSIONS_DIR.glob("????-??-??.md")):
             ok = await index_file(path, force=force)
             if ok:
                 total_updated += 1

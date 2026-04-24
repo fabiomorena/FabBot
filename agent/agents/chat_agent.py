@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm
@@ -244,10 +245,26 @@ def _is_short_confirmation(text: str) -> bool:
 
 _sessions_cache: tuple[float, str] | None = None  # (max_mtime, result)
 
+_SESSION_ALL_THRESHOLD = 20    # bis hier: alle Sessions laden
+_SESSION_SHORT_THRESHOLD = 50  # ab hier: kürzeres Rolling Window
+_SESSION_DAYS_DEFAULT = 30     # Rolling Window Standard (20–49 Sessions)
+_SESSION_DAYS_SHORT = 14       # Rolling Window kurz (50+ Sessions)
 
-def _load_all_sessions() -> str:
+
+def _parse_session_date(stem: str) -> date | None:
+    try:
+        return datetime.strptime(stem, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _load_all_sessions(max_days: int | None = None) -> str:
     """
-    Laedt alle Session-Summaries direkt aus SESSIONS_DIR (sortiert nach Datum).
+    Laedt Session-Summaries direkt aus SESSIONS_DIR (sortiert nach Datum).
+    Issue #33: Rolling Window bei wachsendem Vault.
+      - bis 20 Sessions: alle laden
+      - ab 20 Sessions: Rolling 30 Tage (max_days überschreibbar)
+      - ab 50 Sessions: Rolling 14 Tage
     mtime-Cache: neu lesen nur wenn sich Dateien geaendert haben.
     Fail-safe: Bei Fehler leerer String.
     """
@@ -260,11 +277,30 @@ def _load_all_sessions() -> str:
         files = sorted(sessions_dir.glob("*.md"))
         if not files:
             return ""
+
+        n = len(files)
+        effective_days: int | None = None
+        if n <= _SESSION_ALL_THRESHOLD:
+            active_files = files
+        else:
+            effective_days = max_days or (
+                _SESSION_DAYS_SHORT if n >= _SESSION_SHORT_THRESHOLD else _SESSION_DAYS_DEFAULT
+            )
+            cutoff = date.today() - timedelta(days=effective_days)
+            active_files = [
+                f for f in files
+                if (d := _parse_session_date(f.stem)) is not None and d >= cutoff
+            ]
+            if not active_files:
+                active_files = [files[-1]]  # mindestens die letzte Session
+
         max_mtime = max(f.stat().st_mtime for f in files)
         if _sessions_cache is not None and _sessions_cache[0] == max_mtime:
             return _sessions_cache[1]
-        parts = ["\n## Deine Session-Erinnerungen (alle):"]
-        for f in files:
+
+        label = "alle" if effective_days is None else f"letzte {effective_days} Tage"
+        parts = [f"\n## Deine Session-Erinnerungen ({label}):"]
+        for f in active_files:
             try:
                 content = f.read_text(encoding="utf-8").strip()
                 if content:
