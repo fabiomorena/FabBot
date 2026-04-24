@@ -10,6 +10,7 @@ import asyncio
 from agent.state import AgentState, AgentName
 from agent.llm import get_fast_llm
 from agent.utils import extract_llm_text
+from agent.node_utils import wrap_agent_node
 from agent.agents.computer import computer_agent
 from agent.agents.terminal import terminal_agent
 from agent.agents.file import file_agent
@@ -272,17 +273,18 @@ def route(state: AgentState) -> AgentName:
 def _build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
 
+    _wrap = wrap_agent_node
     graph.add_node("supervisor", supervisor_node)
-    graph.add_node("computer_agent", computer_agent)
-    graph.add_node("terminal_agent", terminal_agent)
-    graph.add_node("file_agent", file_agent)
-    graph.add_node("web_agent", web_agent)
-    graph.add_node("calendar_agent", calendar_agent)
-    graph.add_node("chat_agent", chat_agent)
-    graph.add_node("reminder_agent", reminder_agent)
-    graph.add_node("memory_agent", memory_agent)
-    graph.add_node("vision_agent", vision_agent)
-    graph.add_node("whatsapp_agent", whatsapp_agent)
+    graph.add_node("computer_agent", _wrap("computer_agent")(computer_agent))
+    graph.add_node("terminal_agent", _wrap("terminal_agent")(terminal_agent))
+    graph.add_node("file_agent", _wrap("file_agent")(file_agent))
+    graph.add_node("web_agent", _wrap("web_agent")(web_agent))
+    graph.add_node("calendar_agent", _wrap("calendar_agent")(calendar_agent))
+    graph.add_node("chat_agent", _wrap("chat_agent")(chat_agent))
+    graph.add_node("reminder_agent", _wrap("reminder_agent")(reminder_agent))
+    graph.add_node("memory_agent", _wrap("memory_agent")(memory_agent))
+    graph.add_node("vision_agent", _wrap("vision_agent")(vision_agent))
+    graph.add_node("whatsapp_agent", _wrap("whatsapp_agent")(whatsapp_agent))
 
     graph.set_entry_point("supervisor")
 
