@@ -54,7 +54,7 @@ FabBot/
 │   ├── profile_learner.py   # Auto-learning pipeline
 │   ├── retrieval.py         # Second Brain – ChromaDB + OpenAI Embeddings
 │   └── agents/
-│       ├── chat_agent.py    # Dynamic prompt, claude.md + sessions + profile + retrieval per call
+│       ├── chat_agent.py    # Dynamic prompt, claude.md + sessions + profile + retrieval + proactive context per call
 │       ├── memory_agent.py  # Explicit profile updates, delete-aware _review_yaml
 │       ├── vision_agent.py  # Photo analysis via Claude Sonnet Vision
 │       ├── computer.py      # Desktop control
@@ -302,6 +302,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 143** ✅ Context Linking – entity_links ChromaDB Collection, link_entities() verknüpft alle Paare mit Gewicht, get_related_entities() liefert Cluster, Collector-Integration, 18 Tests
 - **Phase 144** ✅ Multi-Agent Briefing Orchestrator – briefing_agent.py mit _run_with_timeout() + asyncio.gather(), alle Sub-Agenten parallel mit 5s Timeout, Ausfall je eines Agenten blockiert Briefing nicht, 9 Tests
 - **Phase 145** ✅ Heartbeat + Trigger-basierte Proaktivität – stündlicher Scheduler, Zeit-Trigger (7/3/1 Tage), Cooldown 6h, /mute_proactive Command, Haiku-generierte Nachrichten, 21 Tests
+- **Phase 146** ✅ Proaktiver Kontext-Aggregator – `agent/proactive/context.py` bündelt Pending Items + Heartbeat-State, chat_agent kennt alle offenen Themen via `_build_dynamic_prompt_suffix()`, fail-safe, 25 Tests
 
 ---
 

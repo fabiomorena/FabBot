@@ -151,7 +151,12 @@ def _build_dynamic_prompt_suffix(
     Wird in chat_agent() NACH dem Cache-Lookup angehängt.
     """
     from agent.utils import get_current_datetime
+    from agent.proactive.context import get_proactive_context
     parts = [f"\n[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"]
+
+    proactive_ctx = get_proactive_context()
+    if proactive_ctx:
+        parts.append(proactive_ctx)
 
     if last_agent_result and last_agent_result.strip():
         agent_label = last_agent_name or "vorheriger Agent"
