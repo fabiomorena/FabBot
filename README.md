@@ -308,6 +308,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 149** ✅ Retrieval #35+#33 – Sessions aus ChromaDB-Index ausgeschlossen + einmalige Chunk-Bereinigung; Rolling Window in _load_all_sessions() (≤20 alle, >20 → 30 Tage, ≥50 → 14 Tage), 15 Tests
 - **Phase 150** ✅ Briefing-Timeouts sektionsspezifisch – News 30s, Kalender 15s
 - **Phase 151** ✅ Kalender-Fix – System-Kalender überspringen, Timeout 20s
+- **Phase 152** ✅ Modell-IDs zentral – .env.example auf claude-sonnet-4-6 aktualisiert (Closes #94)
 
 ---
 
