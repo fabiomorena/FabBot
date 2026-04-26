@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUTS = {
     "weather": 10.0,
-    "calendar": 15.0,
+    "calendar": 20.0,
     "pending": 5.0,
     "news": 30.0,
 }

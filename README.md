@@ -307,6 +307,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 148** ✅ Refactoring #79/#67/#61 – FORBIDDEN_ARGS auf find-Flags reduziert, log-Level error→warning für ignorierte Fehler, tts._tts_enabled lazy
 - **Phase 149** ✅ Retrieval #35+#33 – Sessions aus ChromaDB-Index ausgeschlossen + einmalige Chunk-Bereinigung; Rolling Window in _load_all_sessions() (≤20 alle, >20 → 30 Tage, ≥50 → 14 Tage), 15 Tests
 - **Phase 150** ✅ Briefing-Timeouts sektionsspezifisch – News 30s, Kalender 15s
+- **Phase 151** ✅ Kalender-Fix – System-Kalender überspringen, Timeout 20s
 
 ---
 

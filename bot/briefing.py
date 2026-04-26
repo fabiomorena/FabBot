@@ -98,34 +98,35 @@ async def _get_weather_berlin() -> str:
 
 def _get_calendar_today() -> str:
     """Holt heutige Kalender-Termine via AppleScript (Temp-Datei)."""
-    import tempfile, os, time
+    import tempfile, os
     today = date.today().strftime("%d.%m.%Y")
     script_lines = [
         f'set startDate to date "{today}"',
         f'set endDate to date "{today}" + (23 * hours) + (59 * minutes)',
+        'set skipNames to {"Geburtstage", "Siri-Vorschläge", "Geplante Erinnerungen", "Feiertage in Deutschland"}',
         'set output to ""',
         'tell application "Calendar"',
         '    repeat with cal in calendars',
-        '        set evts to (every event of cal whose start date >= startDate and start date <= endDate)',
-        '        repeat with evt in evts',
-        '            set evtStart to start date of evt',
-        '            set h to hours of evtStart as string',
-        '            set m to minutes of evtStart',
-        '            if m < 10 then',
-        '                set mStr to "0" & (m as string)',
-        '            else',
-        '                set mStr to m as string',
-        '            end if',
-        '            set output to output & (summary of evt) & "|" & h & ":" & mStr & linefeed',
-        '        end repeat',
+        '        if skipNames does not contain (name of cal) then',
+        '            set evts to (every event of cal whose start date >= startDate and start date <= endDate)',
+        '            repeat with evt in evts',
+        '                set evtStart to start date of evt',
+        '                set h to hours of evtStart as string',
+        '                set m to minutes of evtStart',
+        '                if m < 10 then',
+        '                    set mStr to "0" & (m as string)',
+        '                else',
+        '                    set mStr to m as string',
+        '                end if',
+        '                set output to output & (summary of evt) & "|" & h & ":" & mStr & linefeed',
+        '            end repeat',
+        '        end if',
         '    end repeat',
         'end tell',
         'return output',
     ]
     script = "\n".join(script_lines)
     try:
-        subprocess.run(["open", "-a", "Calendar"], check=False, timeout=5)
-        time.sleep(2)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".applescript", delete=False, encoding="utf-8"
         ) as f:
