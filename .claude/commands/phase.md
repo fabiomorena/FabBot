@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Bash(gh issue close:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Bash(pytest:*), Read, Edit
+allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Bash(git status:*), Bash(gh issue close:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Bash(pytest:*), Read, Edit
 description: Schließt eine FabBot-Phase ab – Security-Check, README-Eintrag, Commit mit Closes #XX, GitHub Issue schließen.
 ---
 
@@ -64,6 +64,11 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ### 4. Issue schließen (nur wenn Issue-Nummer vorhanden)
 ```bash
 gh issue close <issue#>
+```
+
+### 4.5 Push
+```bash
+git push
 ```
 
 ### 5. Bot-Neustart
