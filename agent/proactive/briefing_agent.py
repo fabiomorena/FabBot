@@ -16,7 +16,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TIMEOUT = 5.0
+_TIMEOUTS = {
+    "weather": 10.0,
+    "calendar": 15.0,
+    "pending": 5.0,
+    "news": 30.0,
+}
 
 _FALLBACKS = {
     "weather": "Wetter nicht verfügbar.",
@@ -30,7 +35,7 @@ async def _run_with_timeout(
     coro: Coroutine[Any, Any, str],
     fallback: str,
     name: str,
-    timeout: float = _DEFAULT_TIMEOUT,
+    timeout: float = 10.0,
 ) -> str:
     try:
         return await asyncio.wait_for(coro, timeout=timeout)
@@ -47,14 +52,18 @@ async def orchestrate_briefing(
     calendar_fn: Callable[[], Coroutine[Any, Any, str]],
     pending_fn: Callable[[], Coroutine[Any, Any, str]],
     news_fn: Callable[[], Coroutine[Any, Any, str]],
-    timeout: float = _DEFAULT_TIMEOUT,
+    timeout: float | None = None,
 ) -> dict[str, str]:
-    """Führt alle Sub-Agenten parallel aus und gibt Sektions-Dict zurück."""
+    """Führt alle Sub-Agenten parallel aus und gibt Sektions-Dict zurück.
+
+    timeout: wenn gesetzt, überschreibt die sektionsspezifischen Timeouts (nur für Tests).
+    """
+    t = lambda name: timeout if timeout is not None else _TIMEOUTS[name]  # noqa: E731
     weather, calendar, pending, news = await asyncio.gather(
-        _run_with_timeout(weather_fn(), _FALLBACKS["weather"], "weather", timeout),
-        _run_with_timeout(calendar_fn(), _FALLBACKS["calendar"], "calendar", timeout),
-        _run_with_timeout(pending_fn(), _FALLBACKS["pending"], "pending", timeout),
-        _run_with_timeout(news_fn(), _FALLBACKS["news"], "news", timeout),
+        _run_with_timeout(weather_fn(), _FALLBACKS["weather"], "weather", t("weather")),
+        _run_with_timeout(calendar_fn(), _FALLBACKS["calendar"], "calendar", t("calendar")),
+        _run_with_timeout(pending_fn(), _FALLBACKS["pending"], "pending", t("pending")),
+        _run_with_timeout(news_fn(), _FALLBACKS["news"], "news", t("news")),
     )
     return {
         "weather": weather,
