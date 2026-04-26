@@ -116,3 +116,37 @@ class TestCaseInsensitivity:
     def test_mixed_case_memory_save(self):
         agent, _ = _match_pre_routing("MERKE DIR DASS ich früh aufstehe")
         assert agent == "memory_agent"
+
+
+class TestVergissPrefixBugFix:
+    """Issue #96: "vergiss "-Prefix darf keine temporalen/negierten Sätze matchen."""
+
+    def test_vergiss_morgen_nicht_no_match(self):
+        """Temporal+Negation darf NICHT an memory_agent geroutet werden."""
+        result = _match_pre_routing("Vergiss morgen nicht das Meeting um 10")
+        assert result is None or result[0] != "memory_agent"
+
+    def test_vergiss_nicht_dass_no_match(self):
+        result = _match_pre_routing("Vergiss nicht dass du das Meeting hast")
+        assert result is None or result[0] != "memory_agent"
+
+    def test_vergiss_den_eintrag_matches(self):
+        """Explizite Lösch-Absicht mit Artikel → memory_agent."""
+        agent, _ = _match_pre_routing("Vergiss den Eintrag über Berlin")
+        assert agent == "memory_agent"
+
+    def test_vergiss_die_info_matches(self):
+        agent, _ = _match_pre_routing("Vergiss die Info über das Projekt")
+        assert agent == "memory_agent"
+
+    def test_vergiss_alles_matches(self):
+        agent, _ = _match_pre_routing("Vergiss alles was ich dir gesagt habe")
+        assert agent == "memory_agent"
+
+    def test_vergiss_bitte_matches(self):
+        agent, _ = _match_pre_routing("Vergiss bitte den letzten Eintrag")
+        assert agent == "memory_agent"
+
+    def test_vergiss_das_matches(self):
+        agent, _ = _match_pre_routing("Vergiss das bitte")
+        assert agent == "memory_agent"

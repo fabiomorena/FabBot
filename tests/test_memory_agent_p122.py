@@ -80,11 +80,11 @@ class TestSupervisorPreRouting:
         assert result is not None
         assert result[0] == "memory_agent"
 
-    def test_vergiss_person_not_matched(self):
+    def test_vergiss_person_falls_through_to_llm(self):
         from agent.supervisor import _match_pre_routing
+        # Issue #96: "vergiss " war zu breit – nackter Name ohne Artikel fällt ans LLM
+        # LLM routet "vergiss max mustermann" trotzdem korrekt zu memory_agent
         result = _match_pre_routing("vergiss max mustermann")
-        # "vergiss " (mit Leerzeichen) würde matchen – korrekt, denn das ist memory-delete
-        # Sicherstellen dass es NICHT als bot-instruction-delete erkannt wird
         assert result is None or "bot-instruction" not in result[1]
 
     def test_order_bot_instruction_before_memory_delete(self):

@@ -136,8 +136,12 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
     ),
     (
         (
-            "vergiss ", "vergiss,", "lösche aus dem profil",
-            "loesche aus dem profil", "entferne aus dem profil",
+            # Artikel/Konjunktions-Pattern: explizite Lösch-Absicht (Issue #96: "vergiss " war zu breit)
+            "vergiss den ", "vergiss die ", "vergiss das ",
+            "vergiss diesen ", "vergiss diese ", "vergiss diesem ",
+            "vergiss alles", "vergiss bitte", "vergiss dass ",
+            "lösche aus dem profil", "loesche aus dem profil",
+            "entferne aus dem profil",
             "aus dem profil löschen", "aus dem profil loeschen",
             "aus meinem profil löschen", "aus meinem profil loeschen",
             "profil eintrag löschen", "profil eintrag loeschen",
