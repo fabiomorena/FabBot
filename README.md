@@ -42,40 +42,56 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/test_security_terminal.py  # pytest suite (972 tests)
+├── tests/                   # pytest suite (1245 tests)
 ├── agent/
-│   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver
+│   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver, _PRE_ROUTING_RULES
 │   ├── state.py             # LangGraph AgentState
 │   ├── llm.py               # get_llm() Sonnet + get_fast_llm() Haiku
 │   ├── protocol.py          # Protocol constants (HITL magic strings)
-│   ├── security.py          # Two-stage injection guard, rate limiting, fail-closed
+│   ├── security.py          # Two-stage injection guard, weighted scoring, fail-closed
 │   ├── audit.py             # Tamper-evident audit log (setup_audit_logger)
+│   ├── claude_md.py         # claude.md loader – persistente Bot-Instruktionen
+│   ├── crypto.py            # At-rest encryption via Fernet + macOS Keychain
 │   ├── profile.py           # Personal context loader
-│   ├── profile_learner.py   # Auto-learning pipeline
+│   ├── profile_learner.py   # Auto-learning pipeline (Detector → Writer → Reviewer)
 │   ├── retrieval.py         # Second Brain – ChromaDB + OpenAI Embeddings
+│   ├── node_utils.py        # wrap_agent_node Decorator – last_agent_result/name
+│   ├── utils.py             # extract_llm_text + shared helpers
+│   ├── telemetry.py         # LangSmith tracing (optional)
+│   ├── proactive/
+│   │   ├── collector.py     # Entitäten-Extraktion via Haiku, SHA256-Upsert in ChromaDB
+│   │   ├── pending.py       # Pending Items Tracker – Prioritätsscore (due_date/mentions)
+│   │   ├── linker.py        # Context Linking – entity_links Collection, Cluster-API
+│   │   ├── briefing_agent.py# Multi-Agent Briefing Orchestrator (asyncio.gather, 5s Timeout)
+│   │   ├── heartbeat.py     # Stündlicher Heartbeat, Zeit-Trigger, Cooldown 6h
+│   │   └── context.py       # Proaktiver Kontext-Aggregator für chat_agent
 │   └── agents/
-│       ├── chat_agent.py    # Dynamic prompt, claude.md + sessions + profile + retrieval + proactive context per call
-│       ├── memory_agent.py  # Explicit profile updates, delete-aware _review_yaml
-│       ├── vision_agent.py  # Photo analysis via Claude Sonnet Vision
-│       ├── computer.py      # Desktop control
-│       ├── terminal.py      # Shell command execution
-│       ├── file.py          # File operations
-│       ├── web.py           # Web search & fetch
-│       ├── calendar.py      # Calendar management
+│       ├── chat_agent.py    # Dynamic prompt – claude.md + sessions + profile + retrieval + proactive
+│       ├── memory_agent.py  # Profil-Updates, delete-aware _review_yaml
+│       ├── vision_agent.py  # Bildanalyse via Claude Sonnet Vision
+│       ├── computer.py      # Desktop-Steuerung (Screenshot, Apps)
+│       ├── terminal.py      # Shell-Befehle, Self-Correction (MAX_RETRIES=2)
+│       ├── file.py          # Dateioperationen (read/write/list)
+│       ├── web.py           # Web-Suche (Tavily+Brave) + Fetch
+│       ├── calendar.py      # Apple Kalender (lesen/erstellen)
 │       ├── reminder_agent.py
-│       └── clip_agent.py
+│       ├── whatsapp_agent.py# WhatsApp via whatsapp-web.js, HITL
+│       └── clip_agent.py    # Knowledge Clipper → Obsidian
 └── bot/
-    ├── bot.py               # Telegram handlers, HITL, sanitize_input_async im try/except
-    ├── auth.py              # User whitelist (cached at startup, RuntimeError if empty)
-    ├── confirm.py           # HITL confirmation (full UUID)
-    ├── transcribe.py        # Local Whisper transcription
+    ├── bot.py               # Telegram-Handler, HITL, Retry-Logik, Exception-Handler
+    ├── auth.py              # User-Whitelist (fail-closed, RuntimeError if empty)
+    ├── confirm.py           # HITL-Bestätigung (full UUID)
+    ├── transcribe.py        # Lokale Whisper-Transkription
     ├── tts.py               # OpenAI TTS (primär) + edge-tts (Fallback)
-    ├── search.py            # Local knowledge base search
-    ├── briefing.py          # Morning briefing scheduler (07:30)
-    ├── reminders.py         # Reminder storage + proactive delivery
-    ├── health_check.py      # Daily health check scheduler (06:00)
-    ├── session_summary.py   # Daily session summary (23:30), TOCTOU-sicher
-    └── party_report.py      # Weekend Party Report (Mittwoch 20:00)
+    ├── search.py            # Lokale Wissenssuche
+    ├── briefing.py          # Morning Briefing Scheduler (07:30)
+    ├── reminders.py         # Reminder-Storage + proaktive Zustellung
+    ├── heartbeat_scheduler.py # Stündlicher Proaktivitäts-Scheduler
+    ├── health_check.py      # Daily Health Check (06:00, 11 Komponenten)
+    ├── session_summary.py   # Daily Session Summary (23:30), TOCTOU-sicher
+    ├── party_report.py      # Weekend Party Report (Mittwoch 20:00)
+    ├── whatsapp.py          # WhatsApp Bridge (Node.js-Prozess, QR via Telegram)
+    └── local_api.py         # Lokale Bot-API (Status, Diagnose)
 ```
 
 **Stack:**
@@ -145,7 +161,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 
 ```bash
 python main.py        # Bot starten
-.venv/bin/python -m pytest tests/ -v      # Run tests (972 tests)
+.venv/bin/python -m pytest tests/ -v      # Run tests (1245 tests)
 ```
 
 ### Run as Launch Agent
