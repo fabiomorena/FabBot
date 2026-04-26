@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Bash(gh issue close:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Read, Edit
+allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Bash(gh issue close:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Bash(pytest:*), Read, Edit
 description: Schließt eine FabBot-Phase ab – Security-Check, README-Eintrag, Commit mit Closes #XX, GitHub Issue schließen.
 ---
 
@@ -31,6 +31,14 @@ Wenn ein Treffer gefunden wird:
 - Kein automatisches Commit bei kritischen Funden
 
 Wenn alles sauber: kurze Bestätigung „Security-Check OK" und weiter.
+
+### 0.5 Tests
+Führe die Test-Suite aus:
+```bash
+pytest --tb=short -q
+```
+- Wenn alle Tests grün: kurze Bestätigung „Tests OK (X passed)" und weiter.
+- Wenn Tests fehlschlagen: **STOP** – zeige die fehlgeschlagenen Tests und frage ob trotzdem fortgefahren werden soll.
 
 ### 1. Phasen-Nummer
 Nächste Nummer = gefundene Nummer + 1. Format: dreistellig (Phase 001, Phase 123).
