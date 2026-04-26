@@ -288,32 +288,9 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 100–116** ✅ Stabilisierung & Bug-Fixes – Duplicate Responses fix, Wetter via wttr.in, drop_pending_updates + ThrottleInterval, _invoke_locks Race Condition, web_agent Wetter-Routing, Supervisor Early-Return, memory_agent delete generisch, computer_agent Regex-Intent-Parse, _review_yaml delete-aware (alle Kategorien), Sonnet-Default auf claude-sonnet-4-6, _MODEL_PATTERN optional Datum; 881 Tests grün
 - **Phase 117–124** ✅ Bug-Fixes & Refactoring – Screenshot-Kontext für chat_agent, web_agent AIMessage-Fix, Preferences-System mit Auto-Kategorisierung, Supervisor-Routing-Umbau + Prompt-Leak-Fix, MemoryUpdateResult-Refactor, bot_instruction-Delete-Routing, memory_agent clarify-Fix, Duplicate-Scheduler-Fix (launchd/caffeinate)
 - **Phase 125–129** ✅ Code-Review & Hardening – file_agent expanduser + launchd HOME, terminal_agent Freitext-Block, GraphRecursionError-Handler, Scheduler done_callbacks, web.py Prompt-Injection-Escaping, subprocess Env-Isolation, watchdog/auditlog/file-Größe-Fixes, Wetter-Standort aus Profil
-- **Phase 130–132** ✅ Security & Quick Wins – security.py Kommentare, WA /send Längenlimit, Contact Matching mit Kandidatenliste, memory_agent Delete-Reject statt generischem Fehler, DNS-Rebinding-Schutz auf IPv6 erweitert (getaddrinfo + ValueError-Guard)
-- **Phase 133** ✅ web.py spezifischere Exception-Handler – DNS/ConnectError → "Host nicht erreichbar", HTTP 404/403/429/503 mit nutzerfreundlichen Meldungen, TransportError-Handler, Exception-Leak gefixt
-- **Phase 134** ✅ security.py LLM-Guard Weighted Scoring – starke Patterns (2 Punkte) triggern Guard alleine, schwache (1 Punkt) brauchen Kombination, ChatML/Inst-Tokens hart geblockt, double _pattern_check-Call eliminiert
-- **Phase 135** ✅ PID-File Instanzencheck – verhindert mehrfach laufende Bot-Instanzen beim launchd-Neustart, Stale-PID-Detection via os.kill(pid, 0), atexit-Cleanup
-- **Phase 136** ✅ Health Check auf 11 Komponenten erweitert – Disk Space Threshold (>85%), ChromaDB, WhatsApp Bridge, Audit Log, TTS
-- **Phase 137** ✅ supervisor.py Pre-Routing als Tabelle refactored – _PRE_ROUTING_RULES ersetzt 4 separate Prefix-Tupel, _match_pre_routing() als single entry point, neue Rules = 1 Zeile
-- **Phase 138** ✅ wrap_agent_node Decorator – last_agent_result/last_agent_name automatisch aus letzter AIMessage, kein manuelles Setzen in Agents mehr nötig, in _build_graph() angewendet
-- **Phase 139** ✅ _invoke_with_retry Backoff auf APIConnectionError + RateLimitError erweitert – transiente Fehler retried 3x mit exponentiellem Backoff, fatale Fehler sofort weitergereicht
-- **Phase 140** ✅ Context Collector – Entitäten-Extraktion via Haiku async fire-and-forget, neue ChromaDB Collection 'entities', deterministischer SHA256-ID-Upsert, vollständig fail-safe
-- **Phase 141** ✅ Pending Items Tracker – get_pending_items() API, Prioritätsscore (due_date + mention_count + entity_type), Collector Datum-Fix + Vater-Pattern-Fix im Extraktions-Prompt, 23 Tests
-- **Phase 142** ✅ Morning Briefing auf ChromaDB-Kontext – Pending-Items-Sektion (Top 5 nach Priorität, Typ-Icons, Fälligkeitsdatum), fail-safe Integration in generate_briefing(), 13 Tests
-- **Phase 143** ✅ Context Linking – entity_links ChromaDB Collection, link_entities() verknüpft alle Paare mit Gewicht, get_related_entities() liefert Cluster, Collector-Integration, 18 Tests
-- **Phase 144** ✅ Multi-Agent Briefing Orchestrator – briefing_agent.py mit _run_with_timeout() + asyncio.gather(), alle Sub-Agenten parallel mit 5s Timeout, Ausfall je eines Agenten blockiert Briefing nicht, 9 Tests
-- **Phase 145** ✅ Heartbeat + Trigger-basierte Proaktivität – stündlicher Scheduler, Zeit-Trigger (7/3/1 Tage), Cooldown 6h, /mute_proactive Command, Haiku-generierte Nachrichten, 21 Tests
-- **Phase 146** ✅ Proaktiver Kontext-Aggregator – `agent/proactive/context.py` bündelt Pending Items + Heartbeat-State, chat_agent kennt alle offenen Themen via `_build_dynamic_prompt_suffix()`, fail-safe, 25 Tests
-- **Phase 147** ✅ terminal_agent Self-Correction (Issue #38) – bei ungültigem Befehl bis zu MAX_RETRIES=2 Korrektur-Versuche mit Fehlerfeedback an LLM, HITL bleibt unverändert, 20 Tests
-- **Phase 148** ✅ Refactoring #79/#67/#61 – FORBIDDEN_ARGS auf find-Flags reduziert, log-Level error→warning für ignorierte Fehler, tts._tts_enabled lazy
-- **Phase 149** ✅ Retrieval #35+#33 – Sessions aus ChromaDB-Index ausgeschlossen + einmalige Chunk-Bereinigung; Rolling Window in _load_all_sessions() (≤20 alle, >20 → 30 Tage, ≥50 → 14 Tage), 15 Tests
-- **Phase 150** ✅ Briefing-Timeouts sektionsspezifisch – News 30s, Kalender 15s
-- **Phase 151** ✅ Kalender-Fix – System-Kalender überspringen, Timeout 20s
-- **Phase 152** ✅ Modell-IDs zentral – .env.example auf claude-sonnet-4-6 aktualisiert (Closes #94)
-- **Phase 153** ✅ Heartbeat mit Profil/Memory/Session-Kontext anreichern (Closes #95)
-- **Phase 154** ✅ Bot-Neustart nach Phase 153 – neue Heartbeat-Änderungen laden; /phase um Bot-Neustart erweitert
-- **Phase 155** ✅ vergiss-Prefix-Bug: Artikel-Pattern statt generisches "vergiss " (Closes #96)
-- **Phase 156** ✅ FOTO-Pre-Routing deterministisch + Agent-Registrierung konsolidiert (Closes #97, #98)
-- **Phase 157** ✅ RuntimeError-Handler für User-Feedback + Proto-Import Top-Level + cleanup_checkpoints Concurrency-Guard (Closes #99, #100, #101)
+- **Phase 130–139** ✅ Security & Routing Hardening – DNS-Rebinding IPv6, web.py Exception-Handler (404/503/DNS), LLM-Guard Weighted Scoring (starke/schwache Patterns), PID-File Instanzencheck, Health Check auf 11 Komponenten, _PRE_ROUTING_RULES-Tabelle, wrap_agent_node Decorator, _invoke_with_retry Backoff auf APIConnectionError + RateLimitError
+- **Phase 140–149** ✅ Second Brain & Proaktivität – Context Collector (Haiku, ChromaDB entities), Pending Items Tracker (Prioritätsscore), Morning Briefing auf ChromaDB, Context Linking (entity_links), Multi-Agent Briefing Orchestrator (asyncio.gather + 5s Timeout), Heartbeat + Trigger-basierte Proaktivität (Cooldown 6h), Proaktiver Kontext-Aggregator, terminal_agent Self-Correction (MAX_RETRIES=2), Retrieval-Hardening (Rolling Window, Sessions aus Index)
+- **Phase 150–157** ✅ Stabilisierung & Hardening – Briefing-Timeouts sektionsspezifisch, Kalender System-Filter, Modell-IDs zentral (.env), Heartbeat mit Profil/Memory/Session-Kontext, /phase Bot-Neustart, vergiss-Artikel-Pattern-Fix, FOTO-Pre-Routing deterministisch + Agent-Registrierung konsolidiert, RuntimeError-Handler + Proto-Import Top-Level + cleanup_checkpoints Concurrency-Guard; 1245 Tests grün
 
 ---
 
