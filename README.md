@@ -309,6 +309,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 150** ✅ Briefing-Timeouts sektionsspezifisch – News 30s, Kalender 15s
 - **Phase 151** ✅ Kalender-Fix – System-Kalender überspringen, Timeout 20s
 - **Phase 152** ✅ Modell-IDs zentral – .env.example auf claude-sonnet-4-6 aktualisiert (Closes #94)
+- **Phase 153** ✅ Heartbeat mit Profil/Memory/Session-Kontext anreichern (Closes #95)
 
 ---
 

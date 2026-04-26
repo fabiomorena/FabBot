@@ -315,6 +315,11 @@ def _load_all_sessions(max_days: int | None = None) -> str:
         return ""
 
 
+def load_all_sessions(max_days: int | None = None) -> str:
+    """Public-API für externe Module – delegiert an _load_all_sessions."""
+    return _load_all_sessions(max_days)
+
+
 async def _get_retrieval_context(query: str) -> str:
     """
     Phase 77: Holt semantisch relevante Chunks aus der Wissensbasis.

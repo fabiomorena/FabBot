@@ -1,5 +1,5 @@
 """
-agent/proactive/heartbeat.py – Phase 145 (Issue #92)
+agent/proactive/heartbeat.py – Phase 145 (Issue #92), erweitert Phase 152 (Issue #95)
 
 Heartbeat-Logik: Cooldown-Management, Trigger-Evaluation, Nachrichtengenerierung.
 
@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 COOLDOWN_FILE = Path.home() / ".fabbot" / "proactive_cooldown.json"
 COOLDOWN_HOURS = 6
 TRIGGER_DAYS: set[int] = {7, 3, 1}
+
+CONTEXT_FETCH_TIMEOUT = 3.0
+LLM_TIMEOUT = 5.0
+SESSION_CTX_MAX_CHARS = 500
+MEMORY_N_RESULTS = 3
 
 
 def _load_cooldown() -> dict:
@@ -100,8 +105,78 @@ def _get_llm():
     return get_fast_llm()
 
 
+async def _fetch_profile_ctx() -> str:
+    try:
+        from agent.profile import get_profile_context_short
+        return await asyncio.to_thread(get_profile_context_short)
+    except Exception as e:
+        logger.debug(f"heartbeat profile ctx fehlgeschlagen: {e}")
+        return ""
+
+
+async def _fetch_memory_ctx(query: str) -> str:
+    if not query or len(query) < 3:
+        return ""
+    try:
+        from agent.retrieval import search
+        results = await search(query, n_results=MEMORY_N_RESULTS)
+        if not results:
+            return ""
+        lines = []
+        for r in results:
+            label = r.get("label", "Unbekannt")
+            doc = (r.get("document", "") or "")[:300]
+            if doc:
+                lines.append(f"[{label}] {doc}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug(f"heartbeat memory ctx fehlgeschlagen: {e}")
+        return ""
+
+
+async def _fetch_session_ctx(entity_name: str) -> str:
+    try:
+        from agent.agents.chat_agent import load_all_sessions
+        raw = await asyncio.to_thread(load_all_sessions)
+        if not raw:
+            return ""
+        if entity_name:
+            needle = entity_name.lower()
+            lines = [ln for ln in raw.splitlines() if needle in ln.lower()]
+            filtered = "\n".join(lines).strip()
+        else:
+            filtered = raw.strip()
+        if not filtered:
+            return ""
+        if len(filtered) > SESSION_CTX_MAX_CHARS:
+            filtered = filtered[:SESSION_CTX_MAX_CHARS].rsplit(" ", 1)[0] + "…"
+        return filtered
+    except Exception as e:
+        logger.debug(f"heartbeat session ctx fehlgeschlagen: {e}")
+        return ""
+
+
+async def _gather_heartbeat_context(trigger_item: dict) -> dict[str, str]:
+    name = trigger_item.get("name", "")
+    source_ctx = trigger_item.get("source_context", "")
+    query = f"{name} {source_ctx}".strip()
+    try:
+        profile, memory, sessions = await asyncio.wait_for(
+            asyncio.gather(
+                _fetch_profile_ctx(),
+                _fetch_memory_ctx(query),
+                _fetch_session_ctx(name),
+            ),
+            timeout=CONTEXT_FETCH_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("heartbeat context fetch timeout")
+        return {"profile": "", "memory": "", "sessions": ""}
+    return {"profile": profile, "memory": memory, "sessions": sessions}
+
+
 async def generate_proactive_message(trigger_item: dict) -> str:
-    """Haiku generiert eine kurze proaktive Nachricht für das getriggerte Item."""
+    """Haiku generiert eine personalisierte proaktive Nachricht mit Profil/Memory/Session-Kontext."""
     try:
         from langchain_core.messages import HumanMessage
         llm = _get_llm()
@@ -111,9 +186,20 @@ async def generate_proactive_message(trigger_item: dict) -> str:
         entity_type = trigger_item.get("entity_type", "")
         context = trigger_item.get("source_context", "")
 
+        ctx = await _gather_heartbeat_context(trigger_item)
+
         prompt = f"""Schreibe eine kurze, freundliche proaktive Telegram-Nachricht für Fabio.
 
-Kontext:
+=== Persönliches Profil ===
+{ctx['profile'] or '(keine Profildaten)'}
+
+=== Relevantes Wissen ===
+{ctx['memory'] or '(nichts gefunden)'}
+
+=== Frühere Sessions zu "{name}" ===
+{ctx['sessions'] or '(keine Erwähnungen)'}
+
+=== Trigger ===
 - {entity_type} "{name}" ist in {days} Tag(en) fällig ({due})
 - Ursprünglicher Kontext: {context}
 
@@ -121,11 +207,12 @@ Regeln:
 - Max. 2 Sätze
 - Direkt und persönlich ("Du wolltest...", "Hast du schon...")
 - Kein "Guten Morgen", keine förmliche Begrüßung
-- Deutsch, keine URLs"""
+- Deutsch, keine URLs
+- Leere Sektionen ignorieren"""
 
         response = await asyncio.wait_for(
             llm.ainvoke([HumanMessage(content=prompt)]),
-            timeout=8.0,
+            timeout=LLM_TIMEOUT,
         )
         content = response.content
         if isinstance(content, list):
