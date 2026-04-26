@@ -97,16 +97,17 @@ FabBot/
 **Stack:**
 - Claude Sonnet – AI backbone (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, default: `claude-sonnet-4-6`)
 - Claude Haiku – supervisor routing + LLM-Guard (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`, default: `claude-haiku-4-5-20251001`)
-- LangGraph – multi-agent state machine with AsyncSqliteSaver
-- python-telegram-bot – Telegram interface
-- Whisper – local voice transcription
-- OpenAI TTS – primary TTS (nova, konfigurierbar via OPENAI_TTS_VOICE)
-- OpenAI Embeddings – text-embedding-3-small für Second Brain Retrieval
+- LangGraph `1.1.x` – multi-agent state machine with AsyncSqliteSaver
+- python-telegram-bot `22.x` – Telegram interface
+- openai-whisper – lokale Sprachtranskription (preloaded at startup)
+- OpenAI TTS API – primary TTS (nova, konfigurierbar via `OPENAI_TTS_VOICE`, direkt via httpx)
+- OpenAI Embeddings API – text-embedding-3-small für Second Brain (direkt via httpx)
 - edge-tts – TTS fallback (de-DE-KatjaNeural)
-- ChromaDB – lokale Vektordatenbank für Second Brain (~/.fabbot/chroma/)
+- ChromaDB `1.5.x` – lokale Vektordatenbank für Second Brain (~/.fabbot/chroma/)
 - aiosqlite – async SQLite for persistent memory
-- Tavily + Brave Search – web search
-- cryptography + keyring – At-Rest-Encryption via Fernet
+- Tavily + Brave Search – web search (direkt via httpx REST)
+- Google Calendar API – calendar_agent via google-api-python-client
+- cryptography + keyring – At-Rest-Encryption via Fernet + macOS Keychain
 - Python 3.11+, macOS
 
 ---
