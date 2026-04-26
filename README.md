@@ -310,6 +310,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 151** ✅ Kalender-Fix – System-Kalender überspringen, Timeout 20s
 - **Phase 152** ✅ Modell-IDs zentral – .env.example auf claude-sonnet-4-6 aktualisiert (Closes #94)
 - **Phase 153** ✅ Heartbeat mit Profil/Memory/Session-Kontext anreichern (Closes #95)
+- **Phase 154** ✅ Bot-Neustart nach Phase 153 – neue Heartbeat-Änderungen laden; /phase um Bot-Neustart erweitert
 
 ---
 

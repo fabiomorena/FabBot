@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Bash(gh issue close:*), Bash(git diff:*), Bash(grep:*), Read, Edit
+allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git status:*), Bash(gh issue close:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Read, Edit
 description: Schließt eine FabBot-Phase ab – Security-Check, README-Eintrag, Commit mit Closes #XX, GitHub Issue schließen.
 ---
 
@@ -58,5 +58,17 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 gh issue close <issue#>
 ```
 
-### 5. Ausgabe
-Einzeilige Bestätigung: welche Phase, welcher Commit, welches Issue geschlossen.
+### 5. Bot-Neustart
+Starte den Bot via launchd neu damit die neuen Änderungen aktiv werden:
+```bash
+launchctl kickstart -k gui/$(id -u)/com.fabbot.agent
+```
+Warte 3 Sekunden, dann Status prüfen:
+```bash
+launchctl list com.fabbot.agent
+```
+- Wenn PID vorhanden: „Bot neu gestartet ✓"
+- Wenn kein PID: „Bot-Neustart fehlgeschlagen – bitte manuell prüfen"
+
+### 6. Ausgabe
+Einzeilige Bestätigung: welche Phase, welcher Commit, welches Issue geschlossen, Bot-Status.
