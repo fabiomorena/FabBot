@@ -22,6 +22,21 @@ from agent.agents.memory_agent import memory_agent
 from agent.agents.vision_agent import vision_agent
 from agent.agents.whatsapp_agent import whatsapp_agent
 
+# Issue #98: Single Source of Truth für alle Agenten.
+# Neue Agenten: nur hier eintragen – supervisor_node und _build_graph werden automatisch aktualisiert.
+_AGENTS: dict[str, object] = {
+    "computer_agent": computer_agent,
+    "terminal_agent": terminal_agent,
+    "file_agent":     file_agent,
+    "web_agent":      web_agent,
+    "calendar_agent": calendar_agent,
+    "reminder_agent": reminder_agent,
+    "memory_agent":   memory_agent,
+    "chat_agent":     chat_agent,
+    "vision_agent":   vision_agent,
+    "whatsapp_agent": whatsapp_agent,
+}
+
 logger = logging.getLogger(__name__)
 
 _DB_PATH = Path.home() / ".fabbot" / "memory.db"
@@ -109,6 +124,12 @@ FINISH
 
 _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
     # (prefixes, target_agent, log_label)
+    # Issue #97: [FOTO]-Prefix deterministisch, kein LLM-Call nötig
+    (
+        ("[foto]",),
+        "vision_agent",
+        "foto-trigger",
+    ),
     (
         (
             "was hälst du", "was haelst du", "was denkst du",
@@ -215,6 +236,11 @@ async def supervisor_node(state: AgentState) -> AgentState:
     llm = get_fast_llm()
     messages = state["messages"]
 
+    # Issue #97: image_data im State → immer vision_agent, kein LLM-Call
+    if state.get("image_data"):
+        logger.info("supervisor: Pre-Routing → vision_agent (image_data gesetzt)")
+        return {"next_agent": "vision_agent"}
+
     # Phase 109: Early-Return NUR wenn letzte Message eine AIMessage ist
     # UND keine neue HumanMessage danach kommt.
     last_msg = messages[-1] if messages else None
@@ -257,11 +283,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
     content = extract_llm_text(response.content)
     next_agent = content.strip()
 
-    valid = {
-        "computer_agent", "terminal_agent", "file_agent",
-        "web_agent", "calendar_agent", "reminder_agent",
-        "memory_agent", "chat_agent", "vision_agent", "whatsapp_agent", "FINISH"
-    }
+    valid = set(_AGENTS.keys()) | {"FINISH"}
     if next_agent not in valid:
         logger.warning(f"supervisor: ungültiges Routing '{next_agent}' → fallback chat_agent")
         next_agent = "chat_agent"
@@ -279,41 +301,17 @@ def _build_graph() -> StateGraph:
 
     _wrap = wrap_agent_node
     graph.add_node("supervisor", supervisor_node)
-    graph.add_node("computer_agent", _wrap("computer_agent")(computer_agent))
-    graph.add_node("terminal_agent", _wrap("terminal_agent")(terminal_agent))
-    graph.add_node("file_agent", _wrap("file_agent")(file_agent))
-    graph.add_node("web_agent", _wrap("web_agent")(web_agent))
-    graph.add_node("calendar_agent", _wrap("calendar_agent")(calendar_agent))
-    graph.add_node("chat_agent", _wrap("chat_agent")(chat_agent))
-    graph.add_node("reminder_agent", _wrap("reminder_agent")(reminder_agent))
-    graph.add_node("memory_agent", _wrap("memory_agent")(memory_agent))
-    graph.add_node("vision_agent", _wrap("vision_agent")(vision_agent))
-    graph.add_node("whatsapp_agent", _wrap("whatsapp_agent")(whatsapp_agent))
+    for name, fn in _AGENTS.items():
+        graph.add_node(name, _wrap(name)(fn))
 
     graph.set_entry_point("supervisor")
 
-    graph.add_conditional_edges(
-        "supervisor",
-        route,
-        {
-            "computer_agent": "computer_agent",
-            "terminal_agent": "terminal_agent",
-            "file_agent": "file_agent",
-            "web_agent": "web_agent",
-            "calendar_agent": "calendar_agent",
-            "reminder_agent": "reminder_agent",
-            "memory_agent": "memory_agent",
-            "chat_agent": "chat_agent",
-            "vision_agent": "vision_agent",
-            "whatsapp_agent": "whatsapp_agent",
-            "FINISH": END,
-        },
-    )
+    edge_map = {name: name for name in _AGENTS}
+    edge_map["FINISH"] = END
+    graph.add_conditional_edges("supervisor", route, edge_map)
 
-    for agent in ["computer_agent", "terminal_agent", "file_agent",
-                  "web_agent", "calendar_agent", "reminder_agent",
-                  "memory_agent", "chat_agent", "vision_agent", "whatsapp_agent"]:
-        graph.add_edge(agent, "supervisor")
+    for name in _AGENTS:
+        graph.add_edge(name, "supervisor")
 
     return graph
 
