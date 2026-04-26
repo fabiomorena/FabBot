@@ -26,7 +26,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 
 **Security** – Two-stage prompt injection guard (pattern + LLM-Guard via Haiku, fail-closed), content isolation for web/clip agents, tamper-evident audit log, at-rest encryption (`personal_profile.yaml` via Fernet + macOS Keychain), SSRF + DNS-Rebinding protection (IPv4 + IPv6 via `getaddrinfo`), SSL validation, path/symlink traversal prevention, subprocess env isolation (no API-key leakage)
 
-**Operations** – GitHub Actions CI (969 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 40), Whisper preload at startup, daily health check (06:00, 6 components), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`)
+**Operations** – GitHub Actions CI (1245 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 40), Whisper preload at startup, daily health check (06:00, 11 components), proactive heartbeat (stündlich, Cooldown 6h), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`)
 
 ---
 
@@ -126,7 +126,6 @@ cd FabBot
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.lock
-pip install chromadb
 brew install ffmpeg
 ```
 
@@ -185,7 +184,7 @@ tail -f ~/.fabbot/fabbot.log
 | "Zeig mir den Inhalt von ~/Downloads" | `file_agent` |
 | "Schreibe eine Datei nach ~/Desktop/notiz.txt" | `file_agent` |
 | "Wie viel freier Speicher ist noch?" | `terminal_agent` |
-| "Was ist heute für ein Datum?" | `terminal_agent` → `18.03.2026, 19:06 Uhr` |
+| "Was ist heute für ein Datum?" | `chat_agent` → `26.04.2026, 14:30 Uhr` |
 | "Welche Prozesse laufen gerade?" | `terminal_agent` |
 | "Suche nach den neuesten KI News" | `web_agent` |
 | "Wie ist das Wetter in Berlin?" | `web_agent` |
@@ -209,7 +208,7 @@ tail -f ~/.fabbot/fabbot.log
 
 **Commands:**
 ```
-/start /ask /clip /search /remember /tts on|off /stop /status /auditlog
+/start /ask /clip /search /remember /briefing /done /mute_proactive /tts on|off /stop /status /auditlog
 ```
 
 ---
