@@ -313,6 +313,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 154** ✅ Bot-Neustart nach Phase 153 – neue Heartbeat-Änderungen laden; /phase um Bot-Neustart erweitert
 - **Phase 155** ✅ vergiss-Prefix-Bug: Artikel-Pattern statt generisches "vergiss " (Closes #96)
 - **Phase 156** ✅ FOTO-Pre-Routing deterministisch + Agent-Registrierung konsolidiert (Closes #97, #98)
+- **Phase 157** ✅ RuntimeError-Handler für User-Feedback + Proto-Import Top-Level + cleanup_checkpoints Concurrency-Guard (Closes #99, #100, #101)
 
 ---
 

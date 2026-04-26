@@ -21,6 +21,7 @@ from agent.agents.reminder_agent import reminder_agent
 from agent.agents.memory_agent import memory_agent
 from agent.agents.vision_agent import vision_agent
 from agent.agents.whatsapp_agent import whatsapp_agent
+from agent.protocol import Proto
 
 # Issue #98: Single Source of Truth für alle Agenten.
 # Neue Agenten: nur hier eintragen – supervisor_node und _build_graph werden automatisch aktualisiert.
@@ -45,6 +46,7 @@ _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 agent_graph: CompiledStateGraph | None = None
 _db_conn = None
 _init_lock = asyncio.Lock()
+_cleanup_lock = asyncio.Lock()
 
 SUPERVISOR_PROMPT = """Du bist ein Routing-Agent. Deine einzige Aufgabe ist es, eine der folgenden Antworten zurueckzugeben.
 
@@ -216,10 +218,6 @@ def _sanitize_routing_content(content):
 
 
 def _filter_hitl_messages(messages: list) -> list:
-    """
-    Phase 91: Proto.MEMORY_VISION_MARKER statt hardcoded "Bildbeschreibung".
-    """
-    from agent.protocol import Proto
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
@@ -342,26 +340,27 @@ async def cleanup_checkpoints(max_per_thread: int = 200) -> None:
     """Löscht alte Checkpoints – behält nur die letzten max_per_thread pro thread_id."""
     if _db_conn is None:
         return
-    deleted = await _db_conn.execute(
-        """
-        DELETE FROM checkpoints
-        WHERE rowid NOT IN (
-            SELECT rowid FROM (
-                SELECT rowid,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY thread_id ORDER BY checkpoint_id DESC
-                       ) AS rn
-                FROM checkpoints
-            ) WHERE rn <= ?
+    async with _cleanup_lock:
+        deleted = await _db_conn.execute(
+            """
+            DELETE FROM checkpoints
+            WHERE rowid NOT IN (
+                SELECT rowid FROM (
+                    SELECT rowid,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY thread_id ORDER BY checkpoint_id DESC
+                           ) AS rn
+                    FROM checkpoints
+                ) WHERE rn <= ?
+            )
+            """,
+            (max_per_thread,),
         )
-        """,
-        (max_per_thread,),
-    )
-    await _db_conn.execute(
-        "DELETE FROM writes WHERE checkpoint_id NOT IN (SELECT checkpoint_id FROM checkpoints)"
-    )
-    await _db_conn.commit()
-    logger.info(f"Checkpoint-Bereinigung: {deleted.rowcount} Einträge entfernt.")
+        await _db_conn.execute(
+            "DELETE FROM writes WHERE checkpoint_id NOT IN (SELECT checkpoint_id FROM checkpoints)"
+        )
+        await _db_conn.commit()
+        logger.info(f"Checkpoint-Bereinigung: {deleted.rowcount} Einträge entfernt.")
 
 
 async def close_graph() -> None:

@@ -836,6 +836,9 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     except GraphRecursionError:
         await _delete_thinking(thinking)
         await update.message.reply_text("Anfrage zu komplex – bitte anders formulieren.")
+    except RuntimeError:
+        await _delete_thinking(thinking)
+        await update.message.reply_text("Bot noch nicht bereit – bitte kurz warten und nochmal versuchen.")
     except Exception as e:
         logger.error(f"Unexpected agent error: {e}", exc_info=True)
         await _delete_thinking(thinking)
