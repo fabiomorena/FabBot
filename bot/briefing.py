@@ -274,19 +274,17 @@ async def generate_briefing() -> str:
 
     pending_section = f"\n📋 *Offene Punkte:*\n{sections['pending']}\n" if sections["pending"] else ""
 
-    briefing = f"""🌅 *Guten Morgen, Fabio!*
-📅 *{today_str}*
+    briefing = f"""*Guten Morgen, Fabio!*
+*{today_str}*
 
-🌤 *Wetter Berlin:*
+*Wetter Berlin:*
 {sections['weather']}
 
-📆 *Deine Termine heute:*
+*Deine Termine heute:*
 {sections['calendar']}
 {pending_section}
-📰 *Top News:*
-{sections['news']}
-
-Einen guten Tag! 💪"""
+*Top News:*
+{sections['news']}"""
 
     return briefing
 
