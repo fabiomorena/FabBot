@@ -16,6 +16,7 @@ from agent.proactive.heartbeat import (
     set_cooldown,
 )
 from agent.proactive.pending import get_pending_items
+from agent.proactive.api_health import run_api_health_check
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,9 @@ _HEARTBEAT_INTERVAL = 3600  # 1 Stunde
 
 
 async def _run_heartbeat(bot, chat_id: int) -> None:
+    # Issue #102: API-Health-Check läuft immer, unabhängig von Cooldown/Mute
+    await run_api_health_check(bot, chat_id)
+
     if is_on_cooldown() or is_muted():
         return
 
