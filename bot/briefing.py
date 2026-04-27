@@ -318,6 +318,17 @@ async def run_briefing_scheduler(bot, chat_id: int) -> None:
             from bot.tts import speak_and_send, is_tts_enabled
             if is_tts_enabled():
                 await speak_and_send(briefing, bot, chat_id)
+            try:
+                from agent.supervisor import get_graph
+                from langchain_core.messages import AIMessage
+                config = {"configurable": {"thread_id": str(chat_id)}}
+                await get_graph().aupdate_state(
+                    config,
+                    {"messages": [AIMessage(content=briefing)]},
+                    as_node="supervisor",
+                )
+            except Exception as state_err:
+                logger.warning(f"Briefing state update fehlgeschlagen (nicht kritisch): {state_err}")
             logger.info("Morning Briefing erfolgreich gesendet.")
         except Exception as e:
             logger.error(f"Morning Briefing Fehler: {e}")

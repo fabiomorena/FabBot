@@ -314,6 +314,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 162** ✅ Intentions-Extraktion (#107) – Haiku extrahiert Commitments aus User-Nachrichten ("ich muss/sollte/wollte X"), speichert als Pending Items mit Due-Date in ChromaDB; fire-and-forget, fail-safe, Deduplizierung via SHA256; 1291 Tests grün
 - **Phase 163** ✅ Collector-Refactor – "intent" aus ENTITY_TYPES entfernt, Collector zuständig für person/place/event/task, IntentExtractor exklusiv für Commitments; saubere Aufgabentrennung, kein Rauschen mehr durch triviiale Intents; 1291 Tests grün
 - **Phase 164** ✅ Anthropic Prompt Caching – statischer System-Prompt (chat_agent + supervisor) mit cache_control markiert; Anthropic cached server-seitig ~90% günstiger; CHAT_CONTEXT_WINDOW auf 20 reduziert; 1296 Tests grün
+- **Phase 165** ✅ Context-Injection-Fix – proaktive Nachrichten (Morning Briefing, Heartbeat) werden nach dem Senden via aupdate_state in den LangGraph-State geschrieben; chat_agent kennt nun seinen eigenen proaktiven Kontext; Emoji-Verbot und Füllsatz-Verbot explizit in _CHAT_PROMPT_BASE; 1296 Tests grün
 
 ---
 

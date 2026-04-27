@@ -38,8 +38,19 @@ async def _run_heartbeat(bot, chat_id: int) -> None:
     trigger = min(triggered, key=lambda x: x.get("days_until_due", 99))
     message = await generate_proactive_message(trigger)
 
-    await bot.send_message(chat_id=chat_id, text=f"💡 {message}")
+    await bot.send_message(chat_id=chat_id, text=message)
     set_cooldown()
+    try:
+        from agent.supervisor import get_graph
+        from langchain_core.messages import AIMessage
+        config = {"configurable": {"thread_id": str(chat_id)}}
+        await get_graph().aupdate_state(
+            config,
+            {"messages": [AIMessage(content=message)]},
+            as_node="supervisor",
+        )
+    except Exception as state_err:
+        logger.warning(f"Heartbeat state update fehlgeschlagen (nicht kritisch): {state_err}")
     logger.info(f"Proaktive Nachricht gesendet: {trigger.get('name')} ({trigger.get('days_until_due')}d)")
 
 
