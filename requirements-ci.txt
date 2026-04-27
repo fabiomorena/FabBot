@@ -179,6 +179,7 @@ pydantic-core==2.41.5
 pyparsing==3.3.2
     # via httplib2
 pyperclip==1.11.0
+psutil==7.2.2
 pyrect==0.2.0
 python-dotenv==1.2.2
     # via -r requirements.txt
