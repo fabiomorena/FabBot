@@ -525,6 +525,17 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from bot.briefing import generate_briefing
     briefing = await generate_briefing()
     await update.message.reply_text(briefing, parse_mode="Markdown")
+    try:
+        from agent.supervisor import get_graph
+        chat_id = update.effective_chat.id
+        config = {"configurable": {"thread_id": str(chat_id)}}
+        await get_graph().aupdate_state(
+            config,
+            {"messages": [AIMessage(content=briefing)]},
+            as_node="supervisor",
+        )
+    except Exception as e:
+        logger.warning(f"cmd_briefing state update fehlgeschlagen: {e}")
 
 
 @restricted
