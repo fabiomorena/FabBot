@@ -41,10 +41,12 @@ def main() -> None:
 
     # Verhindert Mac-Sleep solange der Bot läuft (ersetzt caffeinate als plist-Parent).
     _caff = subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())])
+    atexit.register(_caff.terminate)
 
     # Phase 70: TTS-Konfiguration validieren NACHDEM Logger konfiguriert ist
-    from bot.tts import _validate_tts_config
-    _validate_tts_config()
+    # (Lazy Import nötig – logging.basicConfig() muss vor dem tts-Import aktiv sein)
+    from bot.tts import validate_tts_config
+    validate_tts_config()
 
     from bot.bot import build_bot
     logger.info("Mac Agent startet...")

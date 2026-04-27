@@ -3,7 +3,7 @@ Text-to-Speech fuer FabBot – Phase 70.
 Provider: OpenAI TTS (primär) → edge-tts (Fallback)
 
 Phase 70 Fixes:
-- _validate_tts_config() – Validierung ausgelagert, wird in main.py aufgerufen
+- validate_tts_config() – Validierung ausgelagert, wird in main.py aufgerufen
 - Spezifischerer Log bei Retry-Erschöpfung vs. echtem API-Fehler
 - _get_tts_voice() + _get_tts_model() lazy getters (konsistent mit _get_openai_api_key)
 """
@@ -61,7 +61,7 @@ def _get_tts_model() -> str:
     return os.getenv("OPENAI_TTS_MODEL", "tts-1")
 
 
-def _validate_tts_config() -> None:
+def validate_tts_config() -> None:
     """
     Prueft TTS-Konfiguration und loggt Warnings bei ungültigen Werten.
 

@@ -81,8 +81,8 @@ def _load_state() -> dict:
     try:
         if STATE_PATH.exists():
             return json.loads(STATE_PATH.read_text())
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"{LOG_PREFIX} State laden fehlgeschlagen: {e}")
     return {"last_status": "unknown", "down_since": None, "notified": False}
 
 
@@ -152,7 +152,9 @@ def _send_telegram(message: str) -> bool:
 
 def main() -> None:
     state = _load_state()
-    bot_up = _is_bot_up()
+    agent_ok = _is_launch_agent_running()
+    proc_ok  = _is_python_process_running()
+    bot_up   = agent_ok and proc_ok
     now = datetime.now().isoformat()
 
     if bot_up:
@@ -186,12 +188,11 @@ def main() -> None:
             except Exception:
                 mins_down = 0
 
-            # Phase 86 Fix #6: _ALERT_DELAY_MINUTES statt Magic Number 9
-            if mins_down >= _ALERT_DELAY_MINUTES - 1:
+            if mins_down >= _ALERT_DELAY_MINUTES:
                 sent = _send_telegram(
                     f"🚨 *FabBot ist DOWN!*\n"
-                    f"Launch Agent: {'✅' if _is_launch_agent_running() else '❌'}\n"
-                    f"Python-Prozess: {'✅' if _is_python_process_running() else '❌'}\n"
+                    f"Launch Agent: {'✅' if agent_ok else '❌'}\n"
+                    f"Python-Prozess: {'✅' if proc_ok else '❌'}\n"
                     f"Seit: {down_since[:16].replace('T', ' ')} Uhr\n\n"
                     f"_Starte neu: `launchctl start com.fabbot.agent`_"
                 )

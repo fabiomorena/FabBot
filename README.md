@@ -310,6 +310,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 158** ✅ system_agent via psutil (#37) + restricted None-Check (#106) – CPU/RAM/Disk-Metriken ohne Shell, Alert-Schwellwerte, Pre-Routing, restricted-Decorator gegen anonymous updates abgesichert; 1257 Tests grün
 - **Phase 159** ✅ API-Health-Check im Heartbeat (#102) – HEAD-Ping auf Anthropic/Tavily/Brave, Zustandsänderungs-Alerts (up→down, down→up), fail-safe, unabhängig vom proaktiven Cooldown; 1272 Tests grün
 - **Phase 160** ✅ Startup-Nachricht bei Bot-Neustart – "🔄 Bot gestartet." nach vollständiger Initialisierung, fail-safe; #103/#104 auf low-priority, #105 via launchd bereits abgedeckt
+- **Phase 161** ✅ Bug-Fixes #110–#114 – _caff atexit-Cleanup, bare except mit Log in watchdog._load_state(), _ALERT_DELAY_MINUTES Off-by-one, doppelte subprocess-Calls gecacht, validate_tts_config öffentliche API; 1272 Tests grün
 
 ---
 

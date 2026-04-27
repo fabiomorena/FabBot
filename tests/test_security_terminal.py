@@ -4961,42 +4961,42 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 
 class TestValidateTtsConfig:
-    """Tests fuer _validate_tts_config()."""
+    """Tests fuer validate_tts_config()."""
 
     def test_valid_config_no_warnings(self, caplog) -> None:
         """Gueltige Voice + Model → keine Warnings."""
-        from bot.tts import _validate_tts_config
+        from bot.tts import validate_tts_config
         with patch("bot.tts._get_tts_voice", return_value="nova"), \
              patch("bot.tts._get_tts_model", return_value="tts-1"), \
              caplog.at_level(logging.WARNING, logger="bot.tts"):
-            _validate_tts_config()
+            validate_tts_config()
         assert not any("Unbekannte" in r.message for r in caplog.records)
 
     def test_invalid_voice_logs_warning(self, caplog) -> None:
         """Ungueltiger Voice → Warning mit erlaubten Werten."""
-        from bot.tts import _validate_tts_config
+        from bot.tts import validate_tts_config
         with patch("bot.tts._get_tts_voice", return_value="invalid-voice"), \
              patch("bot.tts._get_tts_model", return_value="tts-1"), \
              caplog.at_level(logging.WARNING, logger="bot.tts"):
-            _validate_tts_config()
+            validate_tts_config()
         assert any("invalid-voice" in r.message for r in caplog.records)
         assert any("alloy" in r.message or "nova" in r.message for r in caplog.records)
 
     def test_invalid_model_logs_warning(self, caplog) -> None:
         """Ungueltiges Model → Warning mit erlaubten Werten."""
-        from bot.tts import _validate_tts_config
+        from bot.tts import validate_tts_config
         with patch("bot.tts._get_tts_voice", return_value="nova"), \
              patch("bot.tts._get_tts_model", return_value="tts-99"), \
              caplog.at_level(logging.WARNING, logger="bot.tts"):
-            _validate_tts_config()
+            validate_tts_config()
         assert any("tts-99" in r.message for r in caplog.records)
 
     def test_validate_is_function_not_module_level(self) -> None:
-        """_validate_tts_config ist eine Funktion, kein Modul-Level-Code."""
+        """validate_tts_config ist eine Funktion, kein Modul-Level-Code."""
         import inspect
-        from bot.tts import _validate_tts_config
-        assert callable(_validate_tts_config)
-        assert inspect.isfunction(_validate_tts_config)
+        from bot.tts import validate_tts_config
+        assert callable(validate_tts_config)
+        assert inspect.isfunction(validate_tts_config)
 
     def test_no_module_level_validation_warnings(self) -> None:
         """Beim Import von bot.tts werden keine Warnings ausgegeben."""
