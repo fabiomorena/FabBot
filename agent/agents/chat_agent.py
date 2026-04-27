@@ -378,8 +378,8 @@ async def chat_agent(state: AgentState) -> AgentState:
     if human_text and not _is_short_confirmation(human_text):
         retrieval_ctx = await _get_retrieval_context(human_text)
 
-    # Phase 95: Statischer Prompt aus Cache
-    prompt = _build_chat_prompt()
+    # Phase 95: Statischer Prompt aus in-memory Cache
+    static_prompt = _build_chat_prompt()
 
     # Phase 99: Dynamische Teile AUSSERHALB des Caches anhängen
     # - Aktuelles Datum/Uhrzeit (immer frisch – Issue #12)
@@ -387,12 +387,18 @@ async def chat_agent(state: AgentState) -> AgentState:
     last_agent_result = state.get("last_agent_result")
     last_agent_name = state.get("last_agent_name")
     dynamic_suffix = _build_dynamic_prompt_suffix(last_agent_result, last_agent_name)
-    prompt = prompt + dynamic_suffix
+    dynamic_content = dynamic_suffix + (retrieval_ctx if retrieval_ctx else "")
 
-    if retrieval_ctx:
-        prompt = prompt + retrieval_ctx
+    # Phase 164: Anthropic Prompt Caching – statischer Block wird server-seitig gecacht.
+    # cache_control auf Block 1 → Anthropic cached alles bis hier (~90% günstiger).
+    # Dynamische Inhalte (Uhrzeit, Retrieval, last_agent_result) bleiben unkecacht.
+    content_blocks: list[dict] = [
+        {"type": "text", "text": static_prompt, "cache_control": {"type": "ephemeral"}}
+    ]
+    if dynamic_content.strip():
+        content_blocks.append({"type": "text", "text": dynamic_content})
 
-    messages = [SystemMessage(content=prompt)] + trimmed_messages
+    messages = [SystemMessage(content=content_blocks)] + trimmed_messages
 
     response = await llm.ainvoke(messages)
     content = response.content

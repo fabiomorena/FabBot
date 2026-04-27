@@ -313,6 +313,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 161** ✅ Bug-Fixes #110–#114 – _caff atexit-Cleanup, bare except mit Log in watchdog._load_state(), _ALERT_DELAY_MINUTES Off-by-one, doppelte subprocess-Calls gecacht, validate_tts_config öffentliche API; 1272 Tests grün
 - **Phase 162** ✅ Intentions-Extraktion (#107) – Haiku extrahiert Commitments aus User-Nachrichten ("ich muss/sollte/wollte X"), speichert als Pending Items mit Due-Date in ChromaDB; fire-and-forget, fail-safe, Deduplizierung via SHA256; 1291 Tests grün
 - **Phase 163** ✅ Collector-Refactor – "intent" aus ENTITY_TYPES entfernt, Collector zuständig für person/place/event/task, IntentExtractor exklusiv für Commitments; saubere Aufgabentrennung, kein Rauschen mehr durch triviiale Intents; 1291 Tests grün
+- **Phase 164** ✅ Anthropic Prompt Caching – statischer System-Prompt (chat_agent + supervisor) mit cache_control markiert; Anthropic cached server-seitig ~90% günstiger; CHAT_CONTEXT_WINDOW auf 20 reduziert; 1296 Tests grün
 
 ---
 

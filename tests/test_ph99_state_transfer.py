@@ -131,8 +131,13 @@ async def test_chat_agent_uses_last_agent_result():
     system_msgs = [m for m in captured_messages if isinstance(m, SystemMessage)]
     assert system_msgs, "Kein SystemMessage gefunden"
     system_content = system_msgs[0].content
-    assert "Paris ist die Hauptstadt" in system_content
-    assert "web_agent" in system_content
+    # Phase 164: content ist jetzt Liste von Blöcken (Prompt Caching)
+    if isinstance(system_content, list):
+        system_text = " ".join(b.get("text", "") for b in system_content if isinstance(b, dict))
+    else:
+        system_text = system_content
+    assert "Paris ist die Hauptstadt" in system_text
+    assert "web_agent" in system_text
 
 
 @pytest.mark.asyncio

@@ -291,7 +291,12 @@ async def supervisor_node(state: AgentState) -> AgentState:
         HumanMessage(content=_sanitize_routing_content(m.content)) if isinstance(m, HumanMessage) else m
         for m in routing_messages
     ]
-    all_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + sanitized
+    # Phase 164: Anthropic Prompt Caching – SUPERVISOR_PROMPT ist vollständig statisch.
+    all_messages = [
+        SystemMessage(content=[
+            {"type": "text", "text": SUPERVISOR_PROMPT, "cache_control": {"type": "ephemeral"}}
+        ])
+    ] + sanitized
     response = await llm.ainvoke(all_messages)
     content = extract_llm_text(response.content)
     next_agent = content.strip()
