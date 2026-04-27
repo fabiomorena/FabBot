@@ -108,6 +108,8 @@ Regeln:
 - Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
 - Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent
+- Wenn [Letzter Agent: X] im Input steht und die Frage eine kurze Reaktion oder Folgefrage
+  auf das Ergebnis dieses Agents ist (kein neues Thema): IMMER chat_agent
 
 WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes):
 computer_agent
@@ -287,10 +289,17 @@ async def supervisor_node(state: AgentState) -> AgentState:
             logger.info(f"supervisor: Pre-Routing → {agent} ({label}: '{last_content.strip()[:60]}')")
             return {"next_agent": agent}
 
-    sanitized = [
-        HumanMessage(content=_sanitize_routing_content(m.content)) if isinstance(m, HumanMessage) else m
-        for m in routing_messages
-    ]
+    last_agent_name = state.get("last_agent_name")
+    agent_prefix = f"[Letzter Agent: {last_agent_name}]\n" if last_agent_name else ""
+
+    sanitized = []
+    for m in routing_messages:
+        if isinstance(m, HumanMessage):
+            content = _sanitize_routing_content(m.content)
+            sanitized.append(HumanMessage(content=agent_prefix + content))
+        else:
+            sanitized.append(m)
+
     # Phase 164: Anthropic Prompt Caching – SUPERVISOR_PROMPT ist vollständig statisch.
     all_messages = [
         SystemMessage(content=[

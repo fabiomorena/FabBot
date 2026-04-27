@@ -315,6 +315,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 163** ✅ Collector-Refactor – "intent" aus ENTITY_TYPES entfernt, Collector zuständig für person/place/event/task, IntentExtractor exklusiv für Commitments; saubere Aufgabentrennung, kein Rauschen mehr durch triviiale Intents; 1291 Tests grün
 - **Phase 164** ✅ Anthropic Prompt Caching – statischer System-Prompt (chat_agent + supervisor) mit cache_control markiert; Anthropic cached server-seitig ~90% günstiger; CHAT_CONTEXT_WINDOW auf 20 reduziert; 1296 Tests grün
 - **Phase 165** ✅ Context-Injection-Fix – proaktive Nachrichten (Morning Briefing, Heartbeat) werden nach dem Senden via aupdate_state in den LangGraph-State geschrieben; chat_agent kennt nun seinen eigenen proaktiven Kontext; Emoji-Verbot und Füllsatz-Verbot explizit in _CHAT_PROMPT_BASE; 1296 Tests grün
+- **Phase 166** ✅ Supervisor Kontext-Routing – last_agent_name wird als [Letzter Agent: X]-Präfix in die Routing-HumanMessage injiziert; Supervisor erkennt Folgefragen korrekt als chat_agent statt erneut spezialisierte Agents zu rufen; Cache-Optimierung aus Phase 164 bleibt erhalten; 1296 Tests grün
 
 ---
 
