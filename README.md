@@ -312,6 +312,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 160** ✅ Startup-Nachricht bei Bot-Neustart – "🔄 Bot gestartet." nach vollständiger Initialisierung, fail-safe; #103/#104 auf low-priority, #105 via launchd bereits abgedeckt
 - **Phase 161** ✅ Bug-Fixes #110–#114 – _caff atexit-Cleanup, bare except mit Log in watchdog._load_state(), _ALERT_DELAY_MINUTES Off-by-one, doppelte subprocess-Calls gecacht, validate_tts_config öffentliche API; 1272 Tests grün
 - **Phase 162** ✅ Intentions-Extraktion (#107) – Haiku extrahiert Commitments aus User-Nachrichten ("ich muss/sollte/wollte X"), speichert als Pending Items mit Due-Date in ChromaDB; fire-and-forget, fail-safe, Deduplizierung via SHA256; 1291 Tests grün
+- **Phase 163** ✅ Collector-Refactor – "intent" aus ENTITY_TYPES entfernt, Collector zuständig für person/place/event/task, IntentExtractor exklusiv für Commitments; saubere Aufgabentrennung, kein Rauschen mehr durch triviiale Intents; 1291 Tests grün
 
 ---
 

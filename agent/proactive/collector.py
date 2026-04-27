@@ -17,7 +17,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-ENTITY_TYPES = {"person", "place", "event", "intent", "task"}
+ENTITY_TYPES = {"person", "place", "event", "task"}
 
 _CHROMA_PATH = Path.home() / ".fabbot" / "chroma"
 _ENTITIES_COLLECTION = "entities"
@@ -31,13 +31,14 @@ User: {user_message}
 Bot: {bot_response}
 
 Extrahiere alle relevanten Entitäten als JSON-Array. Jede Entität hat:
-- "type": einer von ["person", "place", "event", "intent", "task"]
+- "type": einer von ["person", "place", "event", "task"]
 - "name": kanonischer Name (z.B. "Steffi", "Salvador", "70. Geburtstag")
 - "context": kurzer Kontext-Satz aus der Konversation (max. 100 Zeichen)
 - "due_date": ISO-Datum falls erkennbar (z.B. "2026-05-31"), sonst weglassen
 
 Nur Entitäten mit klarer semantischer Bedeutung extrahieren.
 Keine trivialen Entitäten (z.B. "Bot", "Antwort").
+Keine Absichten oder Verpflichtungen ("ich muss X", "ich wollte Y") – diese werden separat verarbeitet.
 Verwandtschaftsbeziehungen wie "Steffis Vater" oder "der Bruder von X" nur extrahieren wenn ein eigenständiger Name bekannt ist – sonst weglassen.
 Falls keine relevanten Entitäten vorhanden: leeres Array [].
 

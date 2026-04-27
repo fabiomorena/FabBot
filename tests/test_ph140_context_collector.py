@@ -128,7 +128,7 @@ class TestCollectEntities:
 
     async def test_chromadb_error_does_not_raise(self):
         llm_response = json.dumps([
-            {"type": "intent", "name": "Urlaub planen", "context": "Urlaub Ende Mai"}
+            {"type": "task", "name": "Urlaub planen", "context": "Urlaub Ende Mai"}
         ])
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = MagicMock(content=llm_response)
@@ -169,5 +169,5 @@ class TestEntityTypes:
         assert "person" in ENTITY_TYPES
         assert "place" in ENTITY_TYPES
         assert "event" in ENTITY_TYPES
-        assert "intent" in ENTITY_TYPES
         assert "task" in ENTITY_TYPES
+        assert "intent" not in ENTITY_TYPES  # intent → intent_extractor.py
