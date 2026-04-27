@@ -311,6 +311,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 159** ✅ API-Health-Check im Heartbeat (#102) – HEAD-Ping auf Anthropic/Tavily/Brave, Zustandsänderungs-Alerts (up→down, down→up), fail-safe, unabhängig vom proaktiven Cooldown; 1272 Tests grün
 - **Phase 160** ✅ Startup-Nachricht bei Bot-Neustart – "🔄 Bot gestartet." nach vollständiger Initialisierung, fail-safe; #103/#104 auf low-priority, #105 via launchd bereits abgedeckt
 - **Phase 161** ✅ Bug-Fixes #110–#114 – _caff atexit-Cleanup, bare except mit Log in watchdog._load_state(), _ALERT_DELAY_MINUTES Off-by-one, doppelte subprocess-Calls gecacht, validate_tts_config öffentliche API; 1272 Tests grün
+- **Phase 162** ✅ Intentions-Extraktion (#107) – Haiku extrahiert Commitments aus User-Nachrichten ("ich muss/sollte/wollte X"), speichert als Pending Items mit Due-Date in ChromaDB; fire-and-forget, fail-safe, Deduplizierung via SHA256; 1291 Tests grün
 
 ---
 
