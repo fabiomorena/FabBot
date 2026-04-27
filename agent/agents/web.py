@@ -219,8 +219,18 @@ async def _fetch_url(url: str) -> str:
         return text[:MAX_FETCH_SIZE]
 
 
-async def _get_weather() -> str:
-    """Holt aktuelles Wetter via wttr.in – Standort aus Profil, Fallback Berlin."""
+def _forecast_day_index(query: str) -> int:
+    """Gibt den wttr.in weather[]-Index zurück: 0=heute, 1=morgen, 2=übermorgen."""
+    lower = query.lower()
+    if any(w in lower for w in ("übermorgen", "uebermorgen", "in zwei tagen")):
+        return 2
+    if any(w in lower for w in ("morgen", "tomorrow", "nächste nacht", "naechste nacht")):
+        return 1
+    return 0
+
+
+async def _get_weather(query: str = "") -> str:
+    """Holt Wetter via wttr.in – Standort aus Profil, Tag aus query (heute/morgen/übermorgen)."""
     location = "Berlin"
     try:
         profile = load_profile()
@@ -233,20 +243,35 @@ async def _get_weather() -> str:
             resp = await client.get(f"https://wttr.in/{location}?format=j1")
             resp.raise_for_status()
             data = resp.json()
-        current = data["current_condition"][0]
-        desc    = current["weatherDesc"][0]["value"]
-        temp_c  = current["temp_C"]
-        feels   = current["FeelsLikeC"]
-        humidity = current["humidity"]
-        wind    = current["windspeedKmph"]
-        forecast = data.get("weather", [{}])[0]
-        max_c   = forecast.get("maxtempC", "?")
-        min_c   = forecast.get("mintempC", "?")
-        return (
-            f"{location}: {temp_c}°C (gefühlt {feels}°C), {desc}\n"
-            f"Luftfeuchtigkeit: {humidity}%, Wind: {wind} km/h\n"
-            f"Heute: max {max_c}°C / min {min_c}°C"
-        )
+        day_idx = _forecast_day_index(query)
+        forecasts = data.get("weather", [])
+        label = ["Heute", "Morgen", "Übermorgen"][day_idx] if day_idx < 3 else "Heute"
+
+        if day_idx == 0:
+            current = data["current_condition"][0]
+            desc     = current["weatherDesc"][0]["value"]
+            temp_c   = current["temp_C"]
+            feels    = current["FeelsLikeC"]
+            humidity = current["humidity"]
+            wind     = current["windspeedKmph"]
+            forecast = forecasts[0] if forecasts else {}
+            max_c    = forecast.get("maxtempC", "?")
+            min_c    = forecast.get("mintempC", "?")
+            return (
+                f"{location}: {temp_c}°C (gefühlt {feels}°C), {desc}\n"
+                f"Luftfeuchtigkeit: {humidity}%, Wind: {wind} km/h\n"
+                f"Heute: max {max_c}°C / min {min_c}°C"
+            )
+        else:
+            if day_idx >= len(forecasts):
+                return f"Keine Vorhersage für {label} verfügbar."
+            forecast = forecasts[day_idx]
+            desc  = forecast.get("hourly", [{}])[4].get("weatherDesc", [{}])[0].get("value", "?")
+            max_c = forecast.get("maxtempC", "?")
+            min_c = forecast.get("mintempC", "?")
+            return (
+                f"{location} {label}: max {max_c}°C / min {min_c}°C, {desc}"
+            )
     except Exception as e:
         logger.warning(f"wttr.in Fehler: {e}")
         return ""
@@ -336,7 +361,7 @@ async def web_agent(state: AgentState) -> AgentState:
 
     # Issue #24: _is_short_confirmation() Guard vor _is_weather_query()
     if not _is_short_confirmation(last_human_text) and _is_weather_query(last_human_text):
-        weather = await _get_weather()
+        weather = await _get_weather(last_human_text)
         if weather:
             return {
                 "messages": [AIMessage(content=weather)],
