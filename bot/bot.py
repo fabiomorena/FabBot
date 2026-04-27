@@ -974,6 +974,11 @@ async def _post_init(app: Application) -> None:
     except Exception as e:
         logger.warning(f"Retrieval Index-Aufbau fehlgeschlagen (ignoriert): {e}")
 
+    try:
+        await app.bot.send_message(chat_id=chat_id, text="🔄 Bot gestartet.")
+    except Exception as e:
+        logger.warning(f"Startup-Nachricht fehlgeschlagen (ignoriert): {e}")
+
 
 async def _post_shutdown(app: Application) -> None:
     for task in _scheduler_tasks:

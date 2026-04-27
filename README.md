@@ -309,6 +309,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 150–157** ✅ Stabilisierung & Hardening – Briefing-Timeouts sektionsspezifisch, Kalender System-Filter, Modell-IDs zentral (.env), Heartbeat mit Profil/Memory/Session-Kontext, /phase Bot-Neustart, vergiss-Artikel-Pattern-Fix, FOTO-Pre-Routing deterministisch + Agent-Registrierung konsolidiert, RuntimeError-Handler + Proto-Import Top-Level + cleanup_checkpoints Concurrency-Guard; 1245 Tests grün
 - **Phase 158** ✅ system_agent via psutil (#37) + restricted None-Check (#106) – CPU/RAM/Disk-Metriken ohne Shell, Alert-Schwellwerte, Pre-Routing, restricted-Decorator gegen anonymous updates abgesichert; 1257 Tests grün
 - **Phase 159** ✅ API-Health-Check im Heartbeat (#102) – HEAD-Ping auf Anthropic/Tavily/Brave, Zustandsänderungs-Alerts (up→down, down→up), fail-safe, unabhängig vom proaktiven Cooldown; 1272 Tests grün
+- **Phase 160** ✅ Startup-Nachricht bei Bot-Neustart – "🔄 Bot gestartet." nach vollständiger Initialisierung, fail-safe; #103/#104 auf low-priority, #105 via launchd bereits abgedeckt
 
 ---
 
