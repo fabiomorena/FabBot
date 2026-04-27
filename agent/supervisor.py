@@ -21,6 +21,7 @@ from agent.agents.reminder_agent import reminder_agent
 from agent.agents.memory_agent import memory_agent
 from agent.agents.vision_agent import vision_agent
 from agent.agents.whatsapp_agent import whatsapp_agent
+from agent.agents.system_agent import system_agent
 from agent.protocol import Proto
 
 # Issue #98: Single Source of Truth für alle Agenten.
@@ -36,6 +37,7 @@ _AGENTS: dict[str, object] = {
     "chat_agent":     chat_agent,
     "vision_agent":   vision_agent,
     "whatsapp_agent": whatsapp_agent,
+    "system_agent":   system_agent,
 }
 
 logger = logging.getLogger(__name__)
@@ -91,7 +93,8 @@ Verfuegbare Agenten:
 - calendar_agent: Kalendertermine lesen oder erstellen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr')
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
-- terminal_agent: Shell-Befehle, Speicher, CPU, Prozesse – NUR technische Systemabfragen, NICHT fuer Datum/Uhrzeit
+- system_agent: CPU, RAM, Disk-Auslastung abfragen – NUR fuer Systemmetriken, kein Shell-Zugriff
+- terminal_agent: Shell-Befehle, Prozesse – NUR technische Systemabfragen, NICHT fuer CPU/RAM/Disk, NICHT fuer Datum/Uhrzeit
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - vision_agent: Bildanalyse von Fotos. Wird automatisch geroutet wenn Nachricht mit [FOTO] beginnt.
 - whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte.
@@ -115,6 +118,7 @@ calendar_agent
 reminder_agent
 memory_agent
 chat_agent
+system_agent
 FINISH
 """
 
@@ -131,6 +135,17 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
         ("[foto]",),
         "vision_agent",
         "foto-trigger",
+    ),
+    # Issue #37: CPU/RAM/Disk direkt → system_agent, kein LLM-Call nötig
+    (
+        (
+            "cpu", "ram ", "ram-", "arbeitsspeicher", "speicherauslastung",
+            "festplattenplatz", "disk ", "disk-", "system-status", "systemstatus",
+            "wie viel ram", "wie viel cpu", "wie viel disk", "wie viel speicher",
+            "system status", "speicher auslastung",
+        ),
+        "system_agent",
+        "system-stats-trigger",
     ),
     (
         (

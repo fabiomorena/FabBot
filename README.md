@@ -307,6 +307,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 130–139** ✅ Security & Routing Hardening – DNS-Rebinding IPv6, web.py Exception-Handler (404/503/DNS), LLM-Guard Weighted Scoring (starke/schwache Patterns), PID-File Instanzencheck, Health Check auf 11 Komponenten, _PRE_ROUTING_RULES-Tabelle, wrap_agent_node Decorator, _invoke_with_retry Backoff auf APIConnectionError + RateLimitError
 - **Phase 140–149** ✅ Second Brain & Proaktivität – Context Collector (Haiku, ChromaDB entities), Pending Items Tracker (Prioritätsscore), Morning Briefing auf ChromaDB, Context Linking (entity_links), Multi-Agent Briefing Orchestrator (asyncio.gather + 5s Timeout), Heartbeat + Trigger-basierte Proaktivität (Cooldown 6h), Proaktiver Kontext-Aggregator, terminal_agent Self-Correction (MAX_RETRIES=2), Retrieval-Hardening (Rolling Window, Sessions aus Index)
 - **Phase 150–157** ✅ Stabilisierung & Hardening – Briefing-Timeouts sektionsspezifisch, Kalender System-Filter, Modell-IDs zentral (.env), Heartbeat mit Profil/Memory/Session-Kontext, /phase Bot-Neustart, vergiss-Artikel-Pattern-Fix, FOTO-Pre-Routing deterministisch + Agent-Registrierung konsolidiert, RuntimeError-Handler + Proto-Import Top-Level + cleanup_checkpoints Concurrency-Guard; 1245 Tests grün
+- **Phase 158** ✅ system_agent via psutil (#37) + restricted None-Check (#106) – CPU/RAM/Disk-Metriken ohne Shell, Alert-Schwellwerte, Pre-Routing, restricted-Decorator gegen anonymous updates abgesichert; 1257 Tests grün
 
 ---
 

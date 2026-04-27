@@ -43,6 +43,8 @@ def restricted(func):
     """Decorator: blockt alle User die nicht in der Whitelist sind."""
     @wraps(func)
     async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE, *args, **kwargs) -> None:
+        if update.effective_user is None:
+            return
         user_id = update.effective_user.id
         if user_id not in ALLOWED_IDS:
             await update.message.reply_text("⛔ Kein Zugriff.")
