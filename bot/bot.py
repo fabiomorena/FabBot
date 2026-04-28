@@ -34,7 +34,7 @@ from collections import deque
 from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TimedOut, NetworkError, RetryAfter
+from telegram.error import TimedOut, NetworkError, RetryAfter, Conflict
 from langchain_core.messages import HumanMessage, AIMessage
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
 from langgraph.errors import GraphRecursionError
@@ -1052,4 +1052,14 @@ def build_bot() -> Application:
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
+
+    async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if isinstance(context.error, Conflict):
+            logger.warning("Telegram Conflict: andere Bot-Instanz aktiv – dieser Prozess sollte beendet werden.")
+        elif isinstance(context.error, (TimedOut, NetworkError)):
+            logger.debug(f"Telegram Netzwerkfehler (ignoriert): {context.error}")
+        else:
+            logger.error(f"Unbehandelter Fehler: {context.error}", exc_info=context.error)
+
+    app.add_error_handler(_error_handler)
     return app

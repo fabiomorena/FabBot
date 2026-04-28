@@ -17,9 +17,13 @@ file_handler = TimedRotatingFileHandler(
     LOG_FILE, when="midnight", interval=1, backupCount=7, encoding="utf-8"
 )
 file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+logging.basicConfig(level=logging.INFO, handlers=[file_handler])
+
+# Telegram- und httpx-interne Logger dämpfen – reduziert Rauschen im Log
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
