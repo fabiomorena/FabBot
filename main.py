@@ -24,6 +24,23 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
+
+class _ConflictFilter(logging.Filter):
+    """Unterdrückt Conflict-Tracebacks aus dem Telegram-networkloop."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "Conflict" in msg or "terminated by other getUpdates" in msg:
+            return False
+        exc = record.exc_info
+        if exc and exc[1] is not None and "Conflict" in type(exc[1]).__name__:
+            return False
+        return True
+
+
+_conflict_filter = _ConflictFilter()
+logging.getLogger("telegram.ext.Application").addFilter(_conflict_filter)
+logging.getLogger("telegram.ext._utils.networkloop").addFilter(_conflict_filter)
 logger = logging.getLogger(__name__)
 
 
