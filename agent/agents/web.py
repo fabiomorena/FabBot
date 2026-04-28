@@ -266,7 +266,16 @@ async def _get_weather(query: str = "") -> str:
             if day_idx >= len(forecasts):
                 return f"Keine Vorhersage für {label} verfügbar."
             forecast = forecasts[day_idx]
-            desc  = forecast.get("hourly", [{}])[4].get("weatherDesc", [{}])[0].get("value", "?")
+            # wttr.in normally returns 8 hourly slots, but when it
+            # returns fewer (#116) the bare `[4]` index raised
+            # IndexError and the outer except swallowed it, leaving
+            # the user with an empty reply instead of a partial
+            # forecast. Bounds-check before reading slot 4.
+            hourly = forecast.get("hourly", [])
+            if len(hourly) > 4:
+                desc = hourly[4].get("weatherDesc", [{}])[0].get("value", "?")
+            else:
+                desc = "?"
             max_c = forecast.get("maxtempC", "?")
             min_c = forecast.get("mintempC", "?")
             return (
