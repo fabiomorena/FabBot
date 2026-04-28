@@ -418,7 +418,8 @@ class TestWhatsappAgent:
             mock_llm.return_value.ainvoke = AsyncMock(return_value=llm_response)
             result = await whatsapp_agent(_state("Schick Jonas Hallo"))
         content = result["messages"][-1].content
-        assert "whitelist" in content.lower() or "erlaubt" in content.lower()
+        assert "jonas" in content.lower() and "nicht" in content.lower()
+        assert "erlaubte kontakte" not in content.lower()
 
     async def test_valid_contact_returns_hitl(self):
         from agent.agents.whatsapp_agent import whatsapp_agent
