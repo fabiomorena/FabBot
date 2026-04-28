@@ -171,6 +171,7 @@ async def _fetch_raw_news(query: str) -> str:
                     "search_depth": "advanced",
                     "max_results": 5,
                     "include_raw_content": False,
+                    "days": 1,
                 },
             )
             data = resp.json()
