@@ -168,9 +168,14 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
         from langchain_core.messages import HumanMessage as HM
         config     = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
+        # Issue #123: last_agent_name=vision_agent setzen damit #122-Guard Folgefragen zu chat_agent routet
         await get_graph().aupdate_state(
             config,
-            {"messages": [HM(content=human_text), AIMessage(content=result)]},
+            {
+                "messages":        [HM(content=human_text), AIMessage(content=result)],
+                "last_agent_name": "vision_agent",
+                "last_agent_result": result,
+            },
             as_node="supervisor",
         )
     except Exception as e:

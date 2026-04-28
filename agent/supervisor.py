@@ -110,6 +110,9 @@ Regeln:
 - Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent
 - Wenn [Letzter Agent: X] im Input steht und die Frage eine kurze Reaktion oder Folgefrage
   auf das Ergebnis dieses Agents ist (kein neues Thema): IMMER chat_agent
+- Wenn [Letzter Agent: vision_agent] und KEIN explizites Speicher-Wort ('merke dir', 'speichere',
+  'vergiss', 'loesche', 'notiere'): IMMER chat_agent, NIE memory_agent – Kontext-Aussagen
+  wie 'die Person heisst X', 'das ist ein Y', 'er arbeitet bei Z' sind Gespraechskontext, kein Speicher-Befehl
 
 WICHTIG: Antworte AUSSCHLIESSLICH mit einem dieser Woerter (nichts anderes):
 computer_agent
@@ -291,6 +294,17 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     last_agent_name = state.get("last_agent_name")
     agent_prefix = f"[Letzter Agent: {last_agent_name}]\n" if last_agent_name else ""
+
+    # Issue #122: nach vision_agent ohne expliziten Memory-Befehl → chat_agent (deterministisch)
+    if last_agent_name == "vision_agent" and routing_messages:
+        _last = routing_messages[-1]
+        _text = _last.content if isinstance(_last.content, str) else " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in _last.content
+        )
+        _memory_keywords = ("merke dir", "speichere", "vergiss", "loesche", "lösche", "notiere", "füge hinzu", "fuege hinzu")
+        if not any(kw in _text.lower() for kw in _memory_keywords):
+            logger.info("supervisor: Pre-Routing → chat_agent (vision-Kontext, kein Memory-Keyword)")
+            return {"next_agent": "chat_agent"}
 
     sanitized = []
     for m in routing_messages:
