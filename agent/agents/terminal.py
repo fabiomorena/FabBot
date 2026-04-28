@@ -135,8 +135,9 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
                 if search_path == blocked or search_path.startswith(blocked + "/"):
                     return False, f"find in `{args[0]}` ist nicht erlaubt."
 
-    if base_cmd in ("cat", "head", "tail"):
-        for part in args:
+    if base_cmd in ("cat", "head", "tail", "grep", "wc", "sort", "uniq"):
+        file_args = [a for a in args if not a.startswith("-")]
+        for part in file_args:
             expanded = os.path.expanduser(part)
             blocked_files = (
                 os.path.expanduser("~/.ssh/"),
@@ -147,7 +148,6 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
                 if expanded.startswith(blocked) or expanded == blocked.rstrip("/"):
                     return False, f"Zugriff auf `{part}` ist nicht erlaubt."
 
-            # Relative Pfade und Basenames sensitiver Dateien blockieren
             path_parts = Path(part).parts
             if any(p in _FORBIDDEN_FILENAMES for p in path_parts):
                 return False, f"Zugriff auf `{part}` ist nicht erlaubt."
@@ -246,7 +246,8 @@ async def terminal_agent(state: AgentState) -> AgentState:
         if not _is_base_cmd_allowed(command):
             if attempt <= MAX_RETRIES:
                 logger.debug(f"terminal_agent: Versuch {attempt} – Basisbefehl nicht erlaubt: {command!r}")
-                messages = messages + [
+                correction_msgs = [
+                    SystemMessage(content=PROMPT),
                     AIMessage(content=command),
                     HumanMessage(content=(
                         f"Fehler: Der Befehl '{command.split()[0] if command.split() else command}' "
@@ -255,6 +256,7 @@ async def terminal_agent(state: AgentState) -> AgentState:
                         f"Bitte antworte nur mit einem erlaubten Befehl oder UNSUPPORTED."
                     )),
                 ]
+                messages = correction_msgs
                 continue
             msg = "Diese Aktion wird vom Terminal-Agent nicht unterstuetzt."
             return {
@@ -269,13 +271,15 @@ async def terminal_agent(state: AgentState) -> AgentState:
 
         if attempt <= MAX_RETRIES:
             logger.debug(f"terminal_agent: Versuch {attempt} – Sicherheitscheck fehlgeschlagen: {reason}")
-            messages = messages + [
+            correction_msgs = [
+                SystemMessage(content=PROMPT),
                 AIMessage(content=command),
                 HumanMessage(content=(
                     f"Fehler: Der Befehl wurde aus Sicherheitsgründen abgelehnt: {reason}. "
                     f"Bitte generiere einen korrekten, erlaubten Befehl oder antworte mit UNSUPPORTED."
                 )),
             ]
+            messages = correction_msgs
 
     if not allowed:
         log_action("terminal_agent", command[:200], reason,

@@ -222,6 +222,12 @@ _INJECTION_RE = re.compile(
     r'|(system\s*:\s)'
     r'|(<\s*/?\s*system\s*>)'
     r'|(\[system\])'
+    r'|(vergiss\s+(alle?\s+)?(vorherigen?|obigen?)\s+(anweisungen?|regeln?|instruktionen?))'
+    r'|(ignorier\w*\s+(alle?\s+)?(anweisungen?|regeln?|instruktionen?))'
+    r'|(du\s+bist\s+jetzt\s+\w+)'
+    r'|(als\s+(administrator|system|root)\s+(sage|befehle|weise))'
+    r'|(neue\s+instruktion\s*:)'
+    r'|(system\s*-\s*anweisung)'
 )
 
 
@@ -285,14 +291,18 @@ async def supervisor_node(state: AgentState) -> AgentState:
         last_content = routing_messages[-1].content if hasattr(routing_messages[-1], "content") else ""
         if isinstance(last_content, list):
             last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
+        last_content = last_content[:_MAX_ROUTING_LEN]
 
         match = _match_pre_routing(last_content)
         if match:
             agent, label = match
-            logger.info(f"supervisor: Pre-Routing → {agent} ({label}: '{last_content.strip()[:60]}')")
+            sanitized_content = _INJECTION_RE.sub("[X]", last_content[:_MAX_ROUTING_LEN])
+            logger.info(f"supervisor: Pre-Routing → {agent} ({label}: '{sanitized_content.strip()[:60]}')")
             return {"next_agent": agent}
 
-    last_agent_name = state.get("last_agent_name")
+    raw_last_agent = state.get("last_agent_name")
+    valid_agent_names = set(_AGENTS.keys()) | {"FINISH"}
+    last_agent_name = raw_last_agent if raw_last_agent in valid_agent_names else None
     agent_prefix = f"[Letzter Agent: {last_agent_name}]\n" if last_agent_name else ""
 
     # Issue #122: nach vision_agent ohne expliziten Memory-Befehl → chat_agent (deterministisch)

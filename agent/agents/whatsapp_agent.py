@@ -95,23 +95,17 @@ async def whatsapp_agent(state: AgentState) -> AgentState:
     if not message_text:
         return _make_result(f"Was soll ich {contact_name} schreiben?")
 
+    message_text = message_text[:500]
+
     contact = find_contact(contact_name)
     if contact is None:
-        allowed = [
-            c.get("name", "") for c in load_whatsapp_contacts()
-            if isinstance(c, dict)
-        ]
-        allowed_str = ", ".join(allowed) if allowed else "keine Kontakte konfiguriert"
         log_action(
             "whatsapp_agent", "send",
             f"blocked: '{contact_name}' nicht in Whitelist",
             state.get("telegram_chat_id"),
             status="blocked",
         )
-        return _make_result(
-            f"'{contact_name}' ist nicht in der WhatsApp-Whitelist.\n"
-            f"Erlaubte Kontakte: {allowed_str}"
-        )
+        return _make_result(f"'{contact_name}' ist nicht in der WhatsApp-Kontaktliste.")
 
     whatsapp_name = contact.get("whatsapp_name", contact_name)
 
