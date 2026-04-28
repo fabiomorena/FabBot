@@ -220,7 +220,9 @@ async def _fetch_url(url: str) -> str:
 
 
 def _forecast_day_index(query: str) -> int:
-    """Gibt den wttr.in weather[]-Index zurück: 0=heute, 1=morgen, 2=übermorgen."""
+    """Gibt den wttr.in weather[]-Index zurück: 0=heute, 1=morgen, 2=übermorgen.
+    Wird NUR aufgerufen wenn _is_weather_query() bereits True zurückgegeben hat.
+    """
     lower = query.lower()
     if any(w in lower for w in ("übermorgen", "uebermorgen", "in zwei tagen")):
         return 2
@@ -266,7 +268,8 @@ async def _get_weather(query: str = "") -> str:
             if day_idx >= len(forecasts):
                 return f"Keine Vorhersage für {label} verfügbar."
             forecast = forecasts[day_idx]
-            desc  = forecast.get("hourly", [{}])[4].get("weatherDesc", [{}])[0].get("value", "?")
+            hourly = forecast.get("hourly", [])
+            desc   = hourly[4].get("weatherDesc", [{}])[0].get("value", "?") if len(hourly) > 4 else "?"
             max_c = forecast.get("maxtempC", "?")
             min_c = forecast.get("mintempC", "?")
             return (

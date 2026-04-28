@@ -317,6 +317,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 165** ✅ Context-Injection-Fix – proaktive Nachrichten (Morning Briefing, Heartbeat) werden nach dem Senden via aupdate_state in den LangGraph-State geschrieben; chat_agent kennt nun seinen eigenen proaktiven Kontext; Emoji-Verbot und Füllsatz-Verbot explizit in _CHAT_PROMPT_BASE; 1296 Tests grün
 - **Phase 166** ✅ Supervisor Kontext-Routing – last_agent_name wird als [Letzter Agent: X]-Präfix in die Routing-HumanMessage injiziert; Supervisor erkennt Folgefragen korrekt als chat_agent statt erneut spezialisierte Agents zu rufen; Cache-Optimierung aus Phase 164 bleibt erhalten; 1296 Tests grün
 - **Phase 167** ✅ Wetter-Forecast nach Tag – _get_weather() erkennt heute/morgen/übermorgen aus dem Query und liefert den richtigen wttr.in weather[]-Index; vorher lieferte "Wie wird das Wetter morgen?" immer nur Heute-Daten; 1296 Tests grün
+- **Phase 168** ✅ web.py hourly Bounds-Check + _forecast_day_index Docstring – hourly[4] mit len()-Guard gegen IndexError bei unvollständigen wttr.in-Daten; implizite Gate-Abhängigkeit zu _is_weather_query() im Docstring dokumentiert; 1296 Tests grün
 
 ---
 
