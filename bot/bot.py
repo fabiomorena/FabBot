@@ -527,8 +527,10 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("cmd_briefing: manuell ausgelöst")
     from bot.briefing import generate_briefing
     briefing = await generate_briefing()
+    logger.info("cmd_briefing: Briefing gesendet")
     await update.message.reply_text(briefing, parse_mode="Markdown")
     try:
         from agent.supervisor import get_graph
@@ -1055,7 +1057,8 @@ def build_bot() -> Application:
 
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         if isinstance(context.error, Conflict):
-            logger.warning("Telegram Conflict: andere Bot-Instanz aktiv – dieser Prozess sollte beendet werden.")
+            logger.warning("Telegram Conflict: andere Bot-Instanz aktiv – beende diese Instanz.")
+            asyncio.create_task(context.application.stop())
         elif isinstance(context.error, (TimedOut, NetworkError)):
             logger.debug(f"Telegram Netzwerkfehler (ignoriert): {context.error}")
         else:

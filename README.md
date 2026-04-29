@@ -321,6 +321,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 169** ✅ Foto-Folgefragen: Supervisor-Guard + vision_agent_name in State – deterministischer Guard verhindert Fehlrouting zu memory_agent nach Foto-Kontext; _update_vision_memory setzt last_agent_name=vision_agent damit Folgefragen zu chat_agent (mit History) gehen statt zum Stub; 1296 Tests grün
 - **Phase 170** ✅ Security-Fixes + Log-Cleanup – Prompt-Injection-Schutz in supervisor.py (deutsche Pattern, list-Längen-Limit, last_agent_name-Whitelist), grep-Datei-Pfad-Check in terminal_agent, Injection-Guard in memory_agent, WhatsApp-Whitelist-Leak entfernt; httpx/Telegram-Log-Spam reduziert, Conflict-Traceback-Filter; 1296 Tests grün
 - **Phase 171** ✅ Bandit-Scan in CI + wöchentlicher pip-audit-Agent – bandit (HIGH severity) als statischer Security-Scan-Step in test.yml; weekly-audit.yml öffnet montags automatisch GitHub Issue bei pip-audit-Findings; 1296 Tests grün
+- **Phase 172** ✅ Multi-Instanz-Fix + News-Aktualität – fcntl.flock statt PID-File verhindert Race-Condition bei parallelen Starts; Conflict-Handler beendet Instanz via app.stop() statt nur zu loggen; Tavily-News-Query mit tagesaktuellem Datum + topic=news; cmd_briefing-Logging ergänzt; 1296 Tests grün
 
 ---
 

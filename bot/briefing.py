@@ -169,6 +169,7 @@ async def _fetch_raw_news(query: str) -> str:
                     "api_key": tavily_key,
                     "query": query,
                     "search_depth": "advanced",
+                    "topic": "news",
                     "max_results": 5,
                     "include_raw_content": False,
                     "days": 1,
@@ -270,7 +271,7 @@ async def generate_briefing() -> str:
         weather_fn=_get_weather_berlin,
         calendar_fn=lambda: asyncio.to_thread(_get_calendar_today),
         pending_fn=_pending_fn,
-        news_fn=lambda: _fetch_web("Top Nachrichten Deutschland heute"),
+        news_fn=lambda: _fetch_web(f"Nachrichten Deutschland {date.today().strftime('%d.%m.%Y')}"),
     )
 
     pending_section = f"\n📋 *Offene Punkte:*\n{sections['pending']}\n" if sections["pending"] else ""

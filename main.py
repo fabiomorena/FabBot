@@ -45,16 +45,28 @@ logger = logging.getLogger(__name__)
 
 
 def _check_single_instance() -> None:
-    if PID_FILE.exists():
+    import fcntl
+    lock_path = LOG_DIR / "bot.lock"
+    lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Bot läuft bereits (Lock aktiv). Abbruch.")
+        sys.exit(0)
+    my_pid = str(os.getpid())
+    PID_FILE.write_text(my_pid)
+    def _cleanup():
         try:
-            old_pid = int(PID_FILE.read_text().strip())
-            os.kill(old_pid, 0)
-            print(f"Bot läuft bereits (PID {old_pid}). Abbruch.")
-            sys.exit(1)
-        except (ProcessLookupError, PermissionError):
-            pass  # Stale PID-File
-    PID_FILE.write_text(str(os.getpid()))
-    atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
+            if PID_FILE.exists() and PID_FILE.read_text().strip() == my_pid:
+                PID_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
+        except Exception:
+            pass
+    atexit.register(_cleanup)
 
 
 def main() -> None:
