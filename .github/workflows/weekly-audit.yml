@@ -1,0 +1,50 @@
+name: Weekly Security Audit
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run audit
+        id: audit
+        run: |
+          if ! pip-audit -r requirements-ci.txt --format=json -o audit.json; then
+            echo "FINDINGS=true" >> $GITHUB_ENV
+          fi
+
+      - name: Open issue if findings
+        if: env.FINDINGS == 'true'
+        run: |
+          BODY=$(python3 - <<'EOF'
+          import json, sys
+          with open("audit.json") as f:
+              data = json.load(f)
+          lines = ["## pip-audit Findings\n"]
+          for dep in data.get("dependencies", []):
+              for vuln in dep.get("vulns", []):
+                  lines.append(f"- **{dep['name']}** {dep['version']}: [{vuln['id']}] {vuln['description']}")
+          print("\n".join(lines))
+          EOF
+          )
+          gh issue create \
+            --title "Security: pip-audit Findings $(date +%Y-%m-%d)" \
+            --body "$BODY" \
+            --label "security"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

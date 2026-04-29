@@ -29,5 +29,8 @@ jobs:
       - name: Security audit
         run: pip-audit -r requirements-ci.txt
 
+      - name: Static security scan
+        run: bandit -r . --exclude ./.venv,./tests -lll -q
+
       - name: Run tests
         run: pytest tests/ -v
