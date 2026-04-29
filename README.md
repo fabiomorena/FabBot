@@ -337,6 +337,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 172** ✅ Multi-instance fix + news freshness – fcntl.flock instead of PID-File prevents race condition on parallel starts; conflict handler terminates instance via app.stop() instead of just logging; Tavily news query with current date + topic=news; cmd_briefing logging added; 1296 tests green
 - **Phase 173** ✅ _invoke_locks LRU-Eviction + Scheduler Liveness + Data Store Diagram – _invoke_locks as OrderedDict with LRU-Eviction (max 100 entries); Scheduler tasks named (scheduler:briefing etc.); _check_schedulers() as 13th health check component; data store table (6 stores) added to README; 1296 tests green
 - **Phase 174** ✅ ruff CI + codebase formatting – lint.yml with ruff check + ruff format --check; pyproject.toml with E402/E741 ignore rules; 130 auto-fixed violations + 17 manual fixes; entire codebase reformatted (91 files); 1296 tests green
+- **Phase 175** ✅ Supervisor routing pipeline refactor – supervisor_node() split into ordered _pre_route() strategy pipeline (image_data → AIMessage early-return → vision follow-up → pre-routing table → LLM); each strategy is its own function; _PRE_ROUTE_PIPELINE list makes order explicit; 1296 tests green
 
 ---
 
