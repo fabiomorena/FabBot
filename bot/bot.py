@@ -986,9 +986,11 @@ async def _post_init(app: Application) -> None:
     task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id), name="scheduler:briefing")
     _scheduler_tasks.append(task_briefing)
     task_briefing.add_done_callback(
-        lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception()
-        else None
+        lambda t: (
+            logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
     )
 
     from bot.reminders import run_reminder_scheduler
@@ -996,9 +998,11 @@ async def _post_init(app: Application) -> None:
     task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id), name="scheduler:reminders")
     _scheduler_tasks.append(task_reminders)
     task_reminders.add_done_callback(
-        lambda t: logger.error(f"Reminders Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception()
-        else None
+        lambda t: (
+            logger.error(f"Reminders Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
     )
 
     from bot.heartbeat_scheduler import run_heartbeat_scheduler
@@ -1006,9 +1010,11 @@ async def _post_init(app: Application) -> None:
     task_heartbeat = asyncio.create_task(run_heartbeat_scheduler(app.bot, chat_id), name="scheduler:heartbeat")
     _scheduler_tasks.append(task_heartbeat)
     task_heartbeat.add_done_callback(
-        lambda t: logger.error(f"Heartbeat Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception()
-        else None
+        lambda t: (
+            logger.error(f"Heartbeat Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
     )
 
     from bot.health_check import run_health_check_scheduler
@@ -1016,9 +1022,11 @@ async def _post_init(app: Application) -> None:
     task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id), name="scheduler:health_check")
     _scheduler_tasks.append(task_health)
     task_health.add_done_callback(
-        lambda t: logger.error(f"Health-Check Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception()
-        else None
+        lambda t: (
+            logger.error(f"Health-Check Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
     )
 
     from bot.party_report import run_party_report_scheduler
@@ -1026,9 +1034,11 @@ async def _post_init(app: Application) -> None:
     task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id), name="scheduler:party_report")
     _scheduler_tasks.append(task_party)
     task_party.add_done_callback(
-        lambda t: logger.error(f"Party-Report Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception()
-        else None
+        lambda t: (
+            logger.error(f"Party-Report Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
     )
 
     from bot.session_summary import run_session_summary_scheduler
@@ -1038,9 +1048,11 @@ async def _post_init(app: Application) -> None:
     )
     _scheduler_tasks.append(task_summary)
     task_summary.add_done_callback(
-        lambda t: logger.error(f"Session-Summary Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception()
-        else None
+        lambda t: (
+            logger.error(f"Session-Summary Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
     )
 
     try:
@@ -1048,9 +1060,11 @@ async def _post_init(app: Application) -> None:
 
         task_retrieval = asyncio.create_task(index_all())
         task_retrieval.add_done_callback(
-            lambda t: logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
-            if not t.cancelled() and t.exception()
-            else None
+            lambda t: (
+                logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
+                if not t.cancelled() and t.exception()
+                else None
+            )
         )
         logger.info("Retrieval Index-Aufbau gestartet (Background).")
     except ImportError:
