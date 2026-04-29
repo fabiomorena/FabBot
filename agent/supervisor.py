@@ -299,24 +299,80 @@ def _filter_hitl_messages(messages: list) -> list:
     return filtered
 
 
-async def supervisor_node(state: AgentState) -> AgentState:
-    llm = get_fast_llm()
-    messages = state["messages"]
+# ---------------------------------------------------------------------------
+# Pre-Route-Pipeline (Issue #127)
+# Jede Strategie ist eine eigene Funktion. Die Pipeline-Liste bestimmt die Reihenfolge.
+# Neue Sonderfälle: nur eine Funktion ergänzen und in _PRE_ROUTE_PIPELINE eintragen.
+# ---------------------------------------------------------------------------
 
-    # Issue #97: image_data im State → immer vision_agent, kein LLM-Call
+
+def _pre_route_image_data(state: AgentState, _messages: list, _routing: list) -> str | None:
     if state.get("image_data"):
-        logger.info("supervisor: Pre-Routing → vision_agent (image_data gesetzt)")
-        return {"next_agent": "vision_agent"}
+        logger.info("supervisor: Pre-Routing → vision_agent (image_data)")
+        return "vision_agent"
+    return None
 
-    # Phase 109: Early-Return NUR wenn letzte Message eine AIMessage ist
-    # UND keine neue HumanMessage danach kommt.
+
+def _pre_route_ai_message(_state: AgentState, messages: list, _routing: list) -> str | None:
     last_msg = messages[-1] if messages else None
     if last_msg and isinstance(last_msg, AIMessage):
         content = last_msg.content if isinstance(last_msg.content, str) else ""
         if not content.startswith("__MEMORY__:"):
             logger.debug("supervisor: letzte Message ist AIMessage → FINISH")
-            return {"next_agent": "FINISH"}
+            return "FINISH"
+    return None
 
+
+def _pre_route_vision_followup(state: AgentState, _messages: list, routing: list) -> str | None:
+    if state.get("last_agent_name") != "vision_agent" or not routing:
+        return None
+    last = routing[-1]
+    text = (
+        last.content
+        if isinstance(last.content, str)
+        else " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last.content)
+    )
+    _memory_kw = ("merke dir", "speichere", "vergiss", "loesche", "lösche", "notiere", "füge hinzu", "fuege hinzu")
+    if not any(kw in text.lower() for kw in _memory_kw):
+        logger.info("supervisor: Pre-Routing → chat_agent (vision-Kontext, kein Memory-Keyword)")
+        return "chat_agent"
+    return None
+
+
+def _pre_route_table(_state: AgentState, _messages: list, routing: list) -> str | None:
+    if not routing:
+        return None
+    last_content = routing[-1].content if hasattr(routing[-1], "content") else ""
+    if isinstance(last_content, list):
+        last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
+    last_content = last_content[:_MAX_ROUTING_LEN]
+    match = _match_pre_routing(last_content)
+    if match:
+        agent, label = match
+        sanitized = _INJECTION_RE.sub("[X]", last_content)
+        logger.info(f"supervisor: Pre-Routing → {agent} ({label}: '{sanitized.strip()[:60]}')")
+        return agent
+    return None
+
+
+_PRE_ROUTE_PIPELINE = [
+    _pre_route_image_data,
+    _pre_route_ai_message,
+    _pre_route_vision_followup,
+    _pre_route_table,
+]
+
+
+def _pre_route(state: AgentState, messages: list, routing: list) -> str | None:
+    for fn in _PRE_ROUTE_PIPELINE:
+        result = fn(state, messages, routing)
+        if result is not None:
+            return result
+    return None
+
+
+async def supervisor_node(state: AgentState) -> AgentState:
+    messages = state["messages"]
     clean_messages = _filter_hitl_messages(messages)
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
     routing_messages = [last_human[-1]] if last_human else clean_messages[-1:]
@@ -327,48 +383,14 @@ async def supervisor_node(state: AgentState) -> AgentState:
             last_text = str(last_text)[:100]
         logger.info(f"supervisor routing: '{last_text[:100]}' → ?")
 
-    # ---------------------------------------------------------------------------
-    # Deterministisches Pre-Routing vor dem LLM-Call (Issue #55)
-    # ---------------------------------------------------------------------------
-    if routing_messages:
-        last_content = routing_messages[-1].content if hasattr(routing_messages[-1], "content") else ""
-        if isinstance(last_content, list):
-            last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
-        last_content = last_content[:_MAX_ROUTING_LEN]
-
-        match = _match_pre_routing(last_content)
-        if match:
-            agent, label = match
-            sanitized_content = _INJECTION_RE.sub("[X]", last_content[:_MAX_ROUTING_LEN])
-            logger.info(f"supervisor: Pre-Routing → {agent} ({label}: '{sanitized_content.strip()[:60]}')")
-            return {"next_agent": agent}
+    pre_routed = _pre_route(state, messages, routing_messages)
+    if pre_routed is not None:
+        return {"next_agent": pre_routed}
 
     raw_last_agent = state.get("last_agent_name")
     valid_agent_names = set(_AGENTS.keys()) | {"FINISH"}
     last_agent_name = raw_last_agent if raw_last_agent in valid_agent_names else None
     agent_prefix = f"[Letzter Agent: {last_agent_name}]\n" if last_agent_name else ""
-
-    # Issue #122: nach vision_agent ohne expliziten Memory-Befehl → chat_agent (deterministisch)
-    if last_agent_name == "vision_agent" and routing_messages:
-        _last = routing_messages[-1]
-        _text = (
-            _last.content
-            if isinstance(_last.content, str)
-            else " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in _last.content)
-        )
-        _memory_keywords = (
-            "merke dir",
-            "speichere",
-            "vergiss",
-            "loesche",
-            "lösche",
-            "notiere",
-            "füge hinzu",
-            "fuege hinzu",
-        )
-        if not any(kw in _text.lower() for kw in _memory_keywords):
-            logger.info("supervisor: Pre-Routing → chat_agent (vision-Kontext, kein Memory-Keyword)")
-            return {"next_agent": "chat_agent"}
 
     sanitized = []
     for m in routing_messages:
@@ -378,10 +400,10 @@ async def supervisor_node(state: AgentState) -> AgentState:
         else:
             sanitized.append(m)
 
-    # Phase 164: Anthropic Prompt Caching – SUPERVISOR_PROMPT ist vollständig statisch.
     all_messages = [
         SystemMessage(content=[{"type": "text", "text": SUPERVISOR_PROMPT, "cache_control": {"type": "ephemeral"}}])
     ] + sanitized
+    llm = get_fast_llm()
     response = await llm.ainvoke(all_messages)
     content = extract_llm_text(response.content)
     next_agent = content.strip()
