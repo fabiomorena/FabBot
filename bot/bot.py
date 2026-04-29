@@ -30,7 +30,7 @@ import contextlib
 import logging
 import os
 import asyncio
-from collections import deque
+from collections import deque, OrderedDict
 from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -77,7 +77,9 @@ _dedup_lock: asyncio.Lock | None = None
 
 # Phase 104 (Issue #16b): Pro chat_id ein Lock – verhindert concurrent ainvoke()
 # auf denselben LangGraph thread_id (Race Condition im SQLite-Checkpointer).
-_invoke_locks: dict[int, asyncio.Lock] = {}
+# Phase 173 (Issue #130): OrderedDict mit LRU-Eviction (max 100) – kein unbegrenztes Wachstum.
+_MAX_INVOKE_LOCKS = 100
+_invoke_locks: OrderedDict[int, asyncio.Lock] = OrderedDict()
 
 
 def _get_dedup_lock() -> asyncio.Lock:
@@ -88,7 +90,12 @@ def _get_dedup_lock() -> asyncio.Lock:
 
 
 def _get_invoke_lock(chat_id: int) -> asyncio.Lock:
-    return _invoke_locks.setdefault(chat_id, asyncio.Lock())
+    if chat_id not in _invoke_locks:
+        if len(_invoke_locks) >= _MAX_INVOKE_LOCKS:
+            _invoke_locks.popitem(last=False)
+        _invoke_locks[chat_id] = asyncio.Lock()
+    _invoke_locks.move_to_end(chat_id)
+    return _invoke_locks[chat_id]
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -934,7 +941,7 @@ async def _post_init(app: Application) -> None:
         logger.warning(f"WhatsApp Service Start übersprungen: {e}")
 
     from bot.briefing import run_briefing_scheduler
-    task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id))
+    task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id), name="scheduler:briefing")
     _scheduler_tasks.append(task_briefing)
     task_briefing.add_done_callback(
         lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
@@ -942,7 +949,7 @@ async def _post_init(app: Application) -> None:
     )
 
     from bot.reminders import run_reminder_scheduler
-    task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id))
+    task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id), name="scheduler:reminders")
     _scheduler_tasks.append(task_reminders)
     task_reminders.add_done_callback(
         lambda t: logger.error(f"Reminders Scheduler unerwartet beendet: {t.exception()}")
@@ -950,7 +957,7 @@ async def _post_init(app: Application) -> None:
     )
 
     from bot.heartbeat_scheduler import run_heartbeat_scheduler
-    task_heartbeat = asyncio.create_task(run_heartbeat_scheduler(app.bot, chat_id))
+    task_heartbeat = asyncio.create_task(run_heartbeat_scheduler(app.bot, chat_id), name="scheduler:heartbeat")
     _scheduler_tasks.append(task_heartbeat)
     task_heartbeat.add_done_callback(
         lambda t: logger.error(f"Heartbeat Scheduler unerwartet beendet: {t.exception()}")
@@ -958,7 +965,7 @@ async def _post_init(app: Application) -> None:
     )
 
     from bot.health_check import run_health_check_scheduler
-    task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id))
+    task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id), name="scheduler:health_check")
     _scheduler_tasks.append(task_health)
     task_health.add_done_callback(
         lambda t: logger.error(f"Health-Check Scheduler unerwartet beendet: {t.exception()}")
@@ -966,7 +973,7 @@ async def _post_init(app: Application) -> None:
     )
 
     from bot.party_report import run_party_report_scheduler
-    task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id))
+    task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id), name="scheduler:party_report")
     _scheduler_tasks.append(task_party)
     task_party.add_done_callback(
         lambda t: logger.error(f"Party-Report Scheduler unerwartet beendet: {t.exception()}")
@@ -974,7 +981,7 @@ async def _post_init(app: Application) -> None:
     )
 
     from bot.session_summary import run_session_summary_scheduler
-    task_summary = asyncio.create_task(run_session_summary_scheduler(app.bot, chat_id))
+    task_summary = asyncio.create_task(run_session_summary_scheduler(app.bot, chat_id), name="scheduler:session_summary")
     _scheduler_tasks.append(task_summary)
     task_summary.add_done_callback(
         lambda t: logger.error(f"Session-Summary Scheduler unerwartet beendet: {t.exception()}")

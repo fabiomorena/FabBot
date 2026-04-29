@@ -110,6 +110,19 @@ FabBot/
 - cryptography + keyring – At-Rest-Encryption via Fernet + macOS Keychain
 - Python 3.11+, macOS
 
+### Datenspeicher
+
+FabBot verteilt persistenten State auf 6 Speicher:
+
+| Store | Pfad | Inhalt | Wer schreibt | Backup |
+|-------|------|--------|--------------|--------|
+| `personal_profile.yaml` | `~/personal_profile.yaml` | Profil, Präferenzen, Lerneinträge (Fernet-verschlüsselt) | `memory_agent`, `profile_learner` | ja |
+| LangGraph Checkpoints | `~/.fabbot/memory.db` | Gesprächs-Checkpoints (SQLite, AsyncSqliteSaver) | LangGraph intern | ja |
+| ChromaDB | `~/.fabbot/chroma/` | Embeddings, Entitäten, entity_links (3 Collections) | `retrieval`, `collector`, `linker` | ja |
+| Bot-Instruktionen | `~/Documents/Wissen/claude.md` | Persistente System-Instruktionen für chat_agent | manuell / `memory_agent` | optional |
+| Sessions | `~/Documents/Wissen/sessions/` | Tägliche Gesprächszusammenfassungen (Markdown) | `session_summary` | optional |
+| Reminder | `~/.fabbot/reminders.json` | Fällige Erinnerungen mit Zeitstempel | `reminder_agent` | optional |
+
 ---
 
 ## Setup

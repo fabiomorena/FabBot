@@ -277,6 +277,20 @@ async def _check_heartbeat() -> tuple[bool, str]:
         return False, str(e)[:80]
 
 
+async def _check_schedulers() -> tuple[bool, str]:
+    """Prüft ob alle Background-Scheduler-Tasks noch aktiv sind."""
+    try:
+        from bot.bot import _scheduler_tasks
+        if not _scheduler_tasks:
+            return False, "Keine Scheduler registriert"
+        dead = [t.get_name() for t in _scheduler_tasks if t.done()]
+        if dead:
+            return False, f"Gestorben: {', '.join(dead)}"
+        return True, f"{len(_scheduler_tasks)} Scheduler aktiv"
+    except Exception as e:
+        return False, str(e)[:80]
+
+
 async def _check_tts() -> tuple[bool, str]:
     """Prüft ob OpenAI TTS konfiguriert und der Endpoint erreichbar ist."""
     try:
@@ -328,6 +342,7 @@ async def run_health_check(bot, chat_id: int) -> None:
             _check_audit_log(),
             _check_tts(),
             _check_heartbeat(),
+            _check_schedulers(),
             return_exceptions=True,  # Exceptions als Ergebnis, kein crash
         )
 
@@ -344,6 +359,7 @@ async def run_health_check(bot, chat_id: int) -> None:
             "Audit Log",
             "TTS",
             "Heartbeat",
+            "Schedulers",
         ]
 
         lines = ["🤖 *FabBot Health Check*\n"]
