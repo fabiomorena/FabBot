@@ -7,7 +7,6 @@ die Reihenfolge (spezifischer vor generischem) eingehalten wird
 und unbekannte Eingaben None zurückgeben.
 """
 
-import pytest
 from agent.supervisor import _match_pre_routing
 
 

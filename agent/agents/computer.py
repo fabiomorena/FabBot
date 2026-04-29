@@ -12,23 +12,23 @@ SCREENSHOT_PATH = Path.home() / ".fabbot" / "screenshot.png"
 SCREENSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 TYPEWRITE_MAX_CHARS = 500
-TYPEWRITE_ALLOWED_PATTERN = re.compile(r'^[\x20-\x7E\s]+$')
-APP_NAME_PATTERN = re.compile(r'^[A-Za-z0-9\s\-\.]+$')
+TYPEWRITE_ALLOWED_PATTERN = re.compile(r"^[\x20-\x7E\s]+$")
+APP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9\s\-\.]+$")
 APP_NAME_MAX_LENGTH = 64
 
 
 def _parse_intent(text: str) -> dict | None:
     """Phase 114: Intent-Parse via Regex – kein LLM-Call, kein JSONDecodeError möglich."""
     t = text.lower().strip()
-    if re.search(r'screenshot|bildschirm.aufnahme|screen.shot', t):
+    if re.search(r"screenshot|bildschirm.aufnahme|screen.shot", t):
         return {"action": "screenshot"}
-    m = re.search(r'(?:öffne|oeffne|starte|mach\s+auf|launch)\s+([A-Za-z0-9\s\-\.]+?)(?:\s+app)?$', t)
+    m = re.search(r"(?:öffne|oeffne|starte|mach\s+auf|launch)\s+([A-Za-z0-9\s\-\.]+?)(?:\s+app)?$", t)
     if m:
         return {"action": "open_app", "app": m.group(1).strip().title()}
-    m = re.search(r'(?:tippe|schreibe|type|write)\s+(.+)', t)
+    m = re.search(r"(?:tippe|schreibe|type|write)\s+(.+)", t)
     if m:
         return {"action": "type", "text": m.group(1).strip()}
-    m = re.search(r'(?:klick|click)(?:\s+auf)?\s+(\d+)[,\s]+(\d+)', t)
+    m = re.search(r"(?:klick|click)(?:\s+auf)?\s+(\d+)[,\s]+(\d+)", t)
     if m:
         return {"action": "click", "x": int(m.group(1)), "y": int(m.group(2))}
     return None
@@ -37,6 +37,7 @@ def _parse_intent(text: str) -> dict | None:
 def _take_screenshot() -> str | None:
     try:
         import pyautogui
+
         screenshot = pyautogui.screenshot()
         screenshot.save(str(SCREENSHOT_PATH))
         if not SCREENSHOT_PATH.exists() or SCREENSHOT_PATH.stat().st_size == 0:
@@ -97,24 +98,29 @@ async def computer_agent(state: AgentState) -> AgentState:
     action = parsed.get("action")
 
     if action == "screenshot":
-        log_action("computer_agent", "screenshot", "taking screenshot",
-                   state.get("telegram_chat_id"), status="executed")
+        log_action(
+            "computer_agent", "screenshot", "taking screenshot", state.get("telegram_chat_id"), status="executed"
+        )
         img_b64 = _take_screenshot()
         if not img_b64:
             return _err("❌ Screenshot nicht möglich – ist der Bildschirm gesperrt oder der Laptop im Ruhezustand?")
-        analysis_response = await llm.ainvoke([
-            HumanMessage(content=[
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": img_b64,
-                    },
-                },
-                {"type": "text", "text": "Beschreibe kurz was auf dem Screenshot zu sehen ist."},
-            ])
-        ])
+        analysis_response = await llm.ainvoke(
+            [
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": img_b64,
+                            },
+                        },
+                        {"type": "text", "text": "Beschreibe kurz was auf dem Screenshot zu sehen ist."},
+                    ]
+                )
+            ]
+        )
         analysis = analysis_response.content
         if isinstance(analysis, list):
             analysis = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in analysis)
@@ -169,6 +175,7 @@ async def computer_agent(state: AgentState) -> AgentState:
 def computer_agent_execute(action: str, x: int, y: int, text: str, chat_id: int) -> str:
     try:
         import pyautogui
+
         pyautogui.FAILSAFE = True
 
         if action == "click":

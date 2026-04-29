@@ -99,7 +99,7 @@ def decrypt(data: bytes) -> str:
     if not is_encrypted(data):
         raise ValueError("Kein gültiger FabBot-Encrypted-Blob (fehlendes Header).")
     f = _get_fernet()
-    token = data[len(_ENC_HEADER):]
+    token = data[len(_ENC_HEADER) :]
     try:
         return f.decrypt(token).decode("utf-8")
     except InvalidToken as e:

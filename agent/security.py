@@ -20,6 +20,7 @@ Refactorings die versehentlich await-Punkte einführen könnten.
 threading.Lock statt asyncio.Lock: funktioniert in sync und async Kontext,
 ohne die Signatur der Funktionen auf async ändern zu müssen.
 """
+
 import logging
 import re
 import threading
@@ -28,6 +29,7 @@ from time import time
 
 try:
     from homoglyphs import Homoglyphs, STRATEGY_LOAD
+
     _hg = Homoglyphs(strategy=STRATEGY_LOAD)
     _USE_HOMOGLYPHS_LIB = True
 except ImportError:
@@ -44,7 +46,7 @@ MAX_INPUT_LENGTH = 2000
 RATE_LIMIT_MAX = 20
 RATE_LIMIT_WINDOW = 60
 _rate_limit_store: OrderedDict = OrderedDict()
-_rate_limit_lock = threading.Lock()   # Phase 87: schützt Read-Modify-Write
+_rate_limit_lock = threading.Lock()  # Phase 87: schützt Read-Modify-Write
 MAX_STORE_SIZE = 10_000
 
 # ---------------------------------------------------------------------------
@@ -55,9 +57,7 @@ _ACTION_RATE_LIMITS: dict[str, dict] = {
     "destructive": {"max": 10, "window": 60},
 }
 
-_action_rate_stores: dict[str, OrderedDict] = {
-    key: OrderedDict() for key in _ACTION_RATE_LIMITS
-}
+_action_rate_stores: dict[str, OrderedDict] = {key: OrderedDict() for key in _ACTION_RATE_LIMITS}
 _action_rate_lock = threading.Lock()  # Phase 87: schützt alle action stores
 
 # LLM-Guard Prompt fuer Haiku
@@ -81,11 +81,29 @@ Antworte mit "SAFE" bei normalen Anfragen wie:
 # ---------------------------------------------------------------------------
 
 _HOMOGLYPH_MAP = {
-    "а": "a", "е": "e", "і": "i", "о": "o", "р": "p", "с": "c",
-    "х": "x", "у": "y", "А": "A", "В": "B", "Е": "E", "К": "K",
-    "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+    "а": "a",
+    "е": "e",
+    "і": "i",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "х": "x",
+    "у": "y",
+    "А": "A",
+    "В": "B",
+    "Е": "E",
+    "К": "K",
+    "М": "M",
+    "Н": "H",
+    "О": "O",
+    "Р": "P",
+    "С": "C",
+    "Т": "T",
     "Х": "X",
-    "α": "a", "ο": "o", "ρ": "p", "ν": "v",
+    "α": "a",
+    "ο": "o",
+    "ρ": "p",
+    "ν": "v",
     **{chr(0xFF01 + i): chr(0x21 + i) for i in range(94)},
 }
 
@@ -131,18 +149,18 @@ _INJECTION_PATTERNS = [
 # (pattern, weight) – starke Signale (2) triggern LLM-Guard alleine,
 # schwache (1) brauchen Kombination. Threshold: LLM_GUARD_THRESHOLD.
 _SUSPICIOUS_PATTERNS: list[tuple[str, int]] = [
-    (r"\[system\]",                          2),
-    (r"assistant\s*:\s*",                    2),
+    (r"\[system\]", 2),
+    (r"assistant\s*:\s*", 2),
     (r"bypass\s+(security|restrictions|rules)", 2),
-    (r"override\s+(your|all|previous)",      2),
-    (r"new\s+instructions?\s+(are|follow)",  2),
-    (r"system\s*prompt",                     1),
+    (r"override\s+(your|all|previous)", 2),
+    (r"new\s+instructions?\s+(are|follow)", 2),
+    (r"system\s*prompt", 1),
     (r"ignore\s+(all|previous|instructions|your)", 1),
     (r"vergiss\s+(alle|meine|vorherigen|deine)", 1),
     (r"forget\s+(all|your|previous|everything)", 1),
-    (r"pretend\s+(you\s+are|to\s+be)",       1),
-    (r"tu\s+so\s+als\s+ob\s+(du|sie)",       1),
-    (r"disregard\s+(all|previous|your)",     1),
+    (r"pretend\s+(you\s+are|to\s+be)", 1),
+    (r"tu\s+so\s+als\s+ob\s+(du|sie)", 1),
+    (r"disregard\s+(all|previous|your)", 1),
 ]
 
 LLM_GUARD_THRESHOLD = 2
@@ -164,16 +182,20 @@ def _pattern_check(text: str) -> tuple[bool, int, str]:
 # LLM-Guard (Stufe 2)
 # ---------------------------------------------------------------------------
 
+
 async def _llm_guard(text: str) -> bool:
     """Fail-closed: Bei Fehler → False (blockieren)."""
     try:
         from agent.llm import get_fast_llm
         from langchain_core.messages import SystemMessage, HumanMessage
+
         llm = get_fast_llm()
-        response = await llm.ainvoke([
-            SystemMessage(content=_GUARD_PROMPT),
-            HumanMessage(content=text[:500]),
-        ])
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=_GUARD_PROMPT),
+                HumanMessage(content=text[:500]),
+            ]
+        )
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -190,6 +212,7 @@ async def _llm_guard(text: str) -> bool:
 # ---------------------------------------------------------------------------
 # Globales Rate Limiting
 # ---------------------------------------------------------------------------
+
 
 def check_rate_limit(user_id: int) -> bool:
     """
@@ -223,6 +246,7 @@ def check_rate_limit(user_id: int) -> bool:
 # Aktions-spezifisches Rate Limiting (Phase 85)
 # ---------------------------------------------------------------------------
 
+
 def check_action_rate_limit(user_id: int, action_type: str) -> bool:
     """
     Prüft ein aktions-spezifisches Rate Limit zusätzlich zum globalen Limit.
@@ -234,8 +258,8 @@ def check_action_rate_limit(user_id: int, action_type: str) -> bool:
     if not config:
         return True
 
-    now       = time()
-    window    = config["window"]
+    now = time()
+    window = config["window"]
     max_calls = config["max"]
 
     with _action_rate_lock:
@@ -264,6 +288,7 @@ def check_action_rate_limit(user_id: int, action_type: str) -> bool:
 # ---------------------------------------------------------------------------
 # Haupt-Einstiegspunkte
 # ---------------------------------------------------------------------------
+
 
 def sanitize_input(text: str, user_id: int = 0) -> tuple[bool, str]:
     """Synchroner Input-Check. Gibt (True, clean_text) oder (False, reason) zurück.

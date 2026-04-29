@@ -5,8 +5,8 @@ Phase 92 Tests:
 3. llm.py    – _warn_if_unusual() Warning-Log
 4. .env.example – enthält alle wichtigen Variablen
 """
+
 import logging
-import os
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -15,22 +15,26 @@ from unittest.mock import patch, MagicMock
 # 1. crypto.py – keyring Fehlerbehandlung
 # ---------------------------------------------------------------------------
 
+
 class TestCryptoKeyringErrorHandling:
     """Phase 92: _get_fernet() wirft RuntimeError mit klarer Meldung."""
 
     def setup_method(self) -> None:
         """Fernet-Singleton vor jedem Test zurücksetzen."""
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
     def teardown_method(self) -> None:
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
     def test_keyring_get_error_raises_runtime_error(self) -> None:
         """keyring.get_password() wirft → RuntimeError mit Hinweis auf Keychain."""
         from agent.crypto import _get_fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
         with patch("keyring.get_password", side_effect=Exception("DBusException")):
@@ -44,10 +48,13 @@ class TestCryptoKeyringErrorHandling:
         """keyring.set_password() wirft → RuntimeError beim Speichern des Keys."""
         from agent.crypto import _get_fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
-        with patch("keyring.get_password", return_value=None), \
-             patch("keyring.set_password", side_effect=Exception("NoKeyringError")):
+        with (
+            patch("keyring.get_password", return_value=None),
+            patch("keyring.set_password", side_effect=Exception("NoKeyringError")),
+        ):
             with pytest.raises(RuntimeError) as exc_info:
                 _get_fernet()
 
@@ -58,6 +65,7 @@ class TestCryptoKeyringErrorHandling:
         """RuntimeError hat __cause__ (from e) gesetzt."""
         from agent.crypto import _get_fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
         original = Exception("original error")
@@ -72,6 +80,7 @@ class TestCryptoKeyringErrorHandling:
         from agent.crypto import _get_fernet
         from cryptography.fernet import Fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
         key = Fernet.generate_key()
@@ -85,6 +94,7 @@ class TestCryptoKeyringErrorHandling:
         from agent.crypto import _get_fernet
         from cryptography.fernet import Fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
         key = Fernet.generate_key()
@@ -97,17 +107,20 @@ class TestCryptoKeyringErrorHandling:
     def test_encrypt_propagates_runtime_error(self) -> None:
         """encrypt() propagiert RuntimeError wenn Keychain fehlt."""
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
         with patch("keyring.get_password", side_effect=Exception("no keychain")):
             with pytest.raises(RuntimeError):
                 from agent.crypto import encrypt
+
                 encrypt("test")
 
     def test_error_message_mentions_macos(self) -> None:
         """Fehlermeldung enthält Hinweis auf macOS oder kompatiblen Secret Store."""
         from agent.crypto import _get_fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
         with patch("keyring.get_password", side_effect=Exception("test")):
@@ -121,10 +134,10 @@ class TestCryptoKeyringErrorHandling:
         """Wenn kein Key im Keychain → neuer Key wird generiert und gespeichert."""
         from agent.crypto import _get_fernet
         import agent.crypto as crypto_module
+
         crypto_module._fernet = None
 
-        with patch("keyring.get_password", return_value=None), \
-             patch("keyring.set_password") as mock_set:
+        with patch("keyring.get_password", return_value=None), patch("keyring.set_password") as mock_set:
             _get_fernet()
 
         mock_set.assert_called_once()
@@ -138,29 +151,34 @@ class TestCryptoKeyringErrorHandling:
 # 2. audit.py – setup_audit_logger() Idempotenz + Isolation
 # ---------------------------------------------------------------------------
 
+
 class TestAuditSetupLogger:
     """Phase 92: setup_audit_logger() ersetzt Module-Level-Seiteneffekte."""
 
     def setup_method(self) -> None:
         """Audit-State vor jedem Test zurücksetzen."""
         import agent.audit as audit_module
+
         # Alle Handler entfernen
         audit_module.audit_logger.handlers.clear()
         audit_module._audit_initialized = False
 
     def teardown_method(self) -> None:
         import agent.audit as audit_module
+
         audit_module.audit_logger.handlers.clear()
         audit_module._audit_initialized = False
 
     def test_setup_audit_logger_exists(self) -> None:
         """setup_audit_logger ist eine callable Funktion."""
         from agent.audit import setup_audit_logger
+
         assert callable(setup_audit_logger)
 
     def test_no_filehandler_on_import(self) -> None:
         """Beim Import von agent.audit wird kein FileHandler geöffnet."""
         import agent.audit as audit_module
+
         # Nach setup_method sind alle Handler entfernt und Flag False
         # → kein Handler sollte vorhanden sein
         assert len(audit_module.audit_logger.handlers) == 0
@@ -205,12 +223,12 @@ class TestAuditSetupLogger:
     def test_log_action_works_without_setup(self) -> None:
         """log_action() crasht nicht wenn setup_audit_logger() noch nicht aufgerufen wurde."""
         from agent.audit import log_action
+
         # Kein Handler → propagate=False → Message wird verworfen – kein Crash
         log_action("test", "action", "detail", 123, status="executed")
 
     def test_setup_creates_directory(self, tmp_path) -> None:
         """setup_audit_logger() legt das Verzeichnis an wenn es nicht existiert."""
-        import agent.audit as audit_module
         from agent.audit import setup_audit_logger
 
         log_path = tmp_path / "subdir" / "audit.log"
@@ -222,6 +240,7 @@ class TestAuditSetupLogger:
     def test_audit_logger_propagate_false(self) -> None:
         """audit_logger.propagate ist False – keine doppelten Logs."""
         from agent.audit import audit_logger
+
         assert audit_logger.propagate is False
 
 
@@ -229,27 +248,32 @@ class TestAuditSetupLogger:
 # 3. llm.py – _warn_if_unusual() Warning-Log
 # ---------------------------------------------------------------------------
 
+
 class TestLlmModelValidation:
     """Phase 92: _warn_if_unusual() loggt Warning bei ungewöhnlichem Modell-String."""
 
     def setup_method(self) -> None:
         import agent.llm as llm_module
+
         llm_module._llm = None
         llm_module._fast_llm = None
 
     def teardown_method(self) -> None:
         import agent.llm as llm_module
+
         llm_module._llm = None
         llm_module._fast_llm = None
 
     def test_warn_if_unusual_exists(self) -> None:
         """_warn_if_unusual ist eine callable Funktion."""
         from agent.llm import _warn_if_unusual
+
         assert callable(_warn_if_unusual)
 
     def test_valid_sonnet_model_no_warning(self, caplog) -> None:
         """Gültiger Sonnet-String mit Datum → keine Warning."""
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claude-sonnet-4-20250514")
         assert not any("Ungewöhnlicher" in r.message for r in caplog.records)
@@ -257,6 +281,7 @@ class TestLlmModelValidation:
     def test_valid_haiku_model_no_warning(self, caplog) -> None:
         """Gültiger Haiku-String → keine Warning."""
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claude-haiku-4-5-20251001")
         assert not any("Ungewöhnlicher" in r.message for r in caplog.records)
@@ -266,6 +291,7 @@ class TestLlmModelValidation:
         Neue Modelle wie claude-sonnet-4-6, claude-opus-4-7 haben kein YYYYMMDD-Suffix.
         """
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claude-sonnet-4-6")
             _warn_if_unusual("claude-opus-4-7")
@@ -274,6 +300,7 @@ class TestLlmModelValidation:
     def test_typo_triggers_warning(self, caplog) -> None:
         """Tippfehler wie 'claud-sonnet-4-20250514' → Warning."""
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claud-sonnet-4-20250514")
         assert any("Ungewöhnlicher" in r.message for r in caplog.records)
@@ -281,6 +308,7 @@ class TestLlmModelValidation:
     def test_empty_model_triggers_warning(self, caplog) -> None:
         """Leerer String → Warning."""
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("")
         assert any("Ungewöhnlicher" in r.message for r in caplog.records)
@@ -290,6 +318,7 @@ class TestLlmModelValidation:
         (Ersetzt test_missing_date_triggers_warning: Datumssuffix ist seit Phase 116 optional.)
         """
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("claud-sonnet")
         assert any("Ungewöhnlicher" in r.message for r in caplog.records)
@@ -297,6 +326,7 @@ class TestLlmModelValidation:
     def test_warning_contains_model_string(self, caplog) -> None:
         """Warning-Meldung enthält den fehlerhaften Modell-String."""
         from agent.llm import _warn_if_unusual
+
         with caplog.at_level(logging.WARNING, logger="agent.llm"):
             _warn_if_unusual("wrong-model-xyz")
         assert any("wrong-model-xyz" in r.message for r in caplog.records)
@@ -305,43 +335,51 @@ class TestLlmModelValidation:
         """_MODEL_PATTERN ist ein kompilierter Regex."""
         import re
         from agent.llm import _MODEL_PATTERN
+
         assert isinstance(_MODEL_PATTERN, type(re.compile("")))
 
     def test_get_llm_warns_on_bad_model(self, caplog) -> None:
         """get_llm() loggt Warning wenn Modell-String ungewöhnlich ist."""
         import agent.llm as llm_module
+
         llm_module._llm = None
 
-        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "bad-model"}), \
-             caplog.at_level(logging.WARNING, logger="agent.llm"):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "bad-model"}),
+            caplog.at_level(logging.WARNING, logger="agent.llm"),
+        ):
             with patch("langchain_anthropic.ChatAnthropic"):
                 llm_module.get_llm()
 
-        assert any("Ungewöhnlicher" in r.message or "bad-model" in r.message
-                   for r in caplog.records)
+        assert any("Ungewöhnlicher" in r.message or "bad-model" in r.message for r in caplog.records)
 
     def test_get_fast_llm_warns_on_bad_model(self, caplog) -> None:
         """get_fast_llm() loggt Warning wenn Modell-String ungewöhnlich ist."""
         import agent.llm as llm_module
+
         llm_module._fast_llm = None
 
-        with patch.dict("os.environ", {"ANTHROPIC_MODEL_HAIKU": "bad-haiku"}), \
-             caplog.at_level(logging.WARNING, logger="agent.llm"):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_MODEL_HAIKU": "bad-haiku"}),
+            caplog.at_level(logging.WARNING, logger="agent.llm"),
+        ):
             with patch("langchain_anthropic.ChatAnthropic"):
                 llm_module.get_fast_llm()
 
-        assert any("Ungewöhnlicher" in r.message or "bad-haiku" in r.message
-                   for r in caplog.records)
+        assert any("Ungewöhnlicher" in r.message or "bad-haiku" in r.message for r in caplog.records)
 
     def test_valid_model_no_reinitialization_warning(self, caplog) -> None:
         """Gültiges Modell → beim Singleton-Reuse keine Warning."""
         import agent.llm as llm_module
+
         llm_module._llm = None
         model = "claude-sonnet-4-20250514"
 
-        with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": model}), \
-             patch("langchain_anthropic.ChatAnthropic") as MockLLM, \
-             caplog.at_level(logging.WARNING, logger="agent.llm"):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": model}),
+            patch("langchain_anthropic.ChatAnthropic") as MockLLM,
+            caplog.at_level(logging.WARNING, logger="agent.llm"),
+        ):
             mock_instance = MagicMock()
             mock_instance.model = model
             MockLLM.return_value = mock_instance
@@ -356,6 +394,7 @@ class TestLlmModelValidation:
 # 4. .env.example – enthält alle wichtigen Variablen
 # ---------------------------------------------------------------------------
 
+
 class TestEnvExample:
     """Phase 92: .env.example enthält alle dokumentierten Variablen."""
 
@@ -363,6 +402,7 @@ class TestEnvExample:
     def env_content(self) -> str:
         """Lädt .env.example aus dem Projekt-Root."""
         from pathlib import Path
+
         env_path = Path(__file__).parent.parent / ".env.example"
         if not env_path.exists():
             pytest.skip(".env.example nicht gefunden")
@@ -404,6 +444,7 @@ class TestEnvExample:
     def test_no_real_secrets_in_file(self, env_content: str) -> None:
         """Keine echten Keys in .env.example."""
         import re
+
         assert not re.search(r"sk-ant-api03-[A-Za-z0-9]", env_content)
         assert not re.search(r"sk-[A-Za-z0-9]{20,}", env_content)
         assert not re.search(r"ls__[A-Za-z0-9]{20,}", env_content)

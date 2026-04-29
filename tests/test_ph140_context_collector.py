@@ -11,7 +11,6 @@ Testet den Context Collector:
 
 import hashlib
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from agent.proactive.collector import (
     _normalize_name,
@@ -53,10 +52,12 @@ class TestEntityId:
 
 class TestParseEntities:
     def test_valid_json(self):
-        raw = json.dumps([
-            {"type": "person", "name": "Steffi", "context": "Steffi feiert 70. Geburtstag"},
-            {"type": "place", "name": "Salvador", "context": "Reise nach Salvador Ende Mai"},
-        ])
+        raw = json.dumps(
+            [
+                {"type": "person", "name": "Steffi", "context": "Steffi feiert 70. Geburtstag"},
+                {"type": "place", "name": "Salvador", "context": "Reise nach Salvador Ende Mai"},
+            ]
+        )
         entities = _parse_entities(raw)
         assert len(entities) == 2
         assert entities[0]["name"] == "Steffi"
@@ -67,20 +68,24 @@ class TestParseEntities:
         assert entities == []
 
     def test_unknown_type_filtered_out(self):
-        raw = json.dumps([
-            {"type": "unknown_type", "name": "X", "context": "..."},
-            {"type": "person", "name": "Max", "context": "Max ist ein Freund"},
-        ])
+        raw = json.dumps(
+            [
+                {"type": "unknown_type", "name": "X", "context": "..."},
+                {"type": "person", "name": "Max", "context": "Max ist ein Freund"},
+            ]
+        )
         entities = _parse_entities(raw)
         assert len(entities) == 1
         assert entities[0]["name"] == "Max"
 
     def test_missing_fields_filtered_out(self):
-        raw = json.dumps([
-            {"type": "person"},  # name fehlt
-            {"name": "Max"},     # type fehlt
-            {"type": "person", "name": "Lena", "context": "Lena ist meine Schwester"},
-        ])
+        raw = json.dumps(
+            [
+                {"type": "person"},  # name fehlt
+                {"name": "Max"},  # type fehlt
+                {"type": "person", "name": "Lena", "context": "Lena ist meine Schwester"},
+            ]
+        )
         entities = _parse_entities(raw)
         assert len(entities) == 1
 
@@ -88,7 +93,7 @@ class TestParseEntities:
         assert _parse_entities("[]") == []
 
     def test_markdown_json_block(self):
-        raw = "```json\n[{\"type\": \"person\", \"name\": \"Anna\", \"context\": \"Anna ist neu\"}]\n```"
+        raw = '```json\n[{"type": "person", "name": "Anna", "context": "Anna ist neu"}]\n```'
         entities = _parse_entities(raw)
         assert len(entities) == 1
         assert entities[0]["name"] == "Anna"
@@ -96,19 +101,20 @@ class TestParseEntities:
 
 class TestCollectEntities:
     async def test_extracts_and_upserts(self):
-        llm_response = json.dumps([
-            {"type": "person", "name": "Steffi", "context": "Steffi feiert 70. Geburtstag Ende Mai"}
-        ])
+        llm_response = json.dumps(
+            [{"type": "person", "name": "Steffi", "context": "Steffi feiert 70. Geburtstag Ende Mai"}]
+        )
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = MagicMock(content=llm_response)
 
         mock_collection = MagicMock()
 
-        with patch("agent.proactive.collector._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.collector._get_entities_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.collector._get_llm", return_value=mock_llm),
+            patch("agent.proactive.collector._get_entities_collection", return_value=mock_collection),
+        ):
             await collect_entities(
-                user_message="Steffi feiert bald 70.",
-                bot_response="Schön, magst du ihr etwas schenken?"
+                user_message="Steffi feiert bald 70.", bot_response="Schön, magst du ihr etwas schenken?"
             )
 
         assert mock_collection.upsert.called
@@ -121,23 +127,25 @@ class TestCollectEntities:
         mock_llm = AsyncMock()
         mock_llm.ainvoke.side_effect = Exception("LLM down")
 
-        with patch("agent.proactive.collector._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.collector._get_entities_collection", return_value=MagicMock()):
+        with (
+            patch("agent.proactive.collector._get_llm", return_value=mock_llm),
+            patch("agent.proactive.collector._get_entities_collection", return_value=MagicMock()),
+        ):
             await collect_entities(user_message="Hi", bot_response="Hey")
         # Kein Exception
 
     async def test_chromadb_error_does_not_raise(self):
-        llm_response = json.dumps([
-            {"type": "task", "name": "Urlaub planen", "context": "Urlaub Ende Mai"}
-        ])
+        llm_response = json.dumps([{"type": "task", "name": "Urlaub planen", "context": "Urlaub Ende Mai"}])
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = MagicMock(content=llm_response)
 
         mock_collection = MagicMock()
         mock_collection.upsert.side_effect = Exception("ChromaDB down")
 
-        with patch("agent.proactive.collector._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.collector._get_entities_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.collector._get_llm", return_value=mock_llm),
+            patch("agent.proactive.collector._get_entities_collection", return_value=mock_collection),
+        ):
             await collect_entities(user_message="Urlaub planen", bot_response="Wohin?")
         # Kein Exception
 
@@ -148,15 +156,15 @@ class TestCollectEntities:
         assert not mock_llm.ainvoke.called
 
     async def test_upsert_uses_deterministic_id(self):
-        llm_response = json.dumps([
-            {"type": "person", "name": "Max", "context": "Max ist mein Bruder"}
-        ])
+        llm_response = json.dumps([{"type": "person", "name": "Max", "context": "Max ist mein Bruder"}])
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = MagicMock(content=llm_response)
         mock_collection = MagicMock()
 
-        with patch("agent.proactive.collector._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.collector._get_entities_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.collector._get_llm", return_value=mock_llm),
+            patch("agent.proactive.collector._get_entities_collection", return_value=mock_collection),
+        ):
             await collect_entities(user_message="Max ruft an", bot_response="Ok")
 
         ids = mock_collection.upsert.call_args[1]["ids"]

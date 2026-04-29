@@ -25,6 +25,7 @@ deprecated seit 14.04.2026, Retirement 15.06.2026).
 _MODEL_PATTERN erweitert: optionales YYYYMMDD-Suffix (neue Modelle wie sonnet-4-6
 und opus-4-7 haben kein Datums-Suffix mehr).
 """
+
 import logging
 import os
 import re
@@ -33,7 +34,7 @@ from langchain_anthropic import ChatAnthropic
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SONNET = "claude-sonnet-4-6"
-_DEFAULT_HAIKU  = "claude-haiku-4-5-20251001"
+_DEFAULT_HAIKU = "claude-haiku-4-5-20251001"
 
 _llm: ChatAnthropic | None = None
 _fast_llm: ChatAnthropic | None = None
@@ -92,7 +93,7 @@ def validate_models_on_startup() -> None:
     errors: list[str] = []
 
     sonnet = get_sonnet_model()
-    haiku  = get_haiku_model()
+    haiku = get_haiku_model()
 
     for name, model in [("ANTHROPIC_MODEL_SONNET", sonnet), ("ANTHROPIC_MODEL_HAIKU", haiku)]:
         if not model:
@@ -105,7 +106,9 @@ def validate_models_on_startup() -> None:
             )
 
     if errors:
-        msg = "llm.py: Ungültige Model-Konfiguration – Bot wird nicht gestartet:\n" + "\n".join(f"  • {e}" for e in errors)
+        msg = "llm.py: Ungültige Model-Konfiguration – Bot wird nicht gestartet:\n" + "\n".join(
+            f"  • {e}" for e in errors
+        )
         logger.critical(msg)
         raise RuntimeError(msg)
 

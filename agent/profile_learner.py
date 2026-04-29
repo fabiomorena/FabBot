@@ -73,11 +73,14 @@ async def _detect_new_info(human_message: str) -> dict[str, Any]:
     try:
         from agent.llm import get_fast_llm
         from langchain_core.messages import HumanMessage, SystemMessage
+
         llm = get_fast_llm()
-        response = await llm.ainvoke([
-            SystemMessage(content=_DETECTOR_PROMPT),
-            HumanMessage(content=f"User-Nachricht: {human_message[:500]}"),
-        ])
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=_DETECTOR_PROMPT),
+                HumanMessage(content=f"User-Nachricht: {human_message[:500]}"),
+            ]
+        )
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
@@ -200,6 +203,7 @@ async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
     try:
         from agent.llm import get_fast_llm
         from langchain_core.messages import HumanMessage
+
         llm = get_fast_llm()
         prompt = _REVIEWER_PROMPT.format(original=original_yaml[:2000], new=new_yaml[:2000])
         response = await llm.ainvoke([HumanMessage(content=prompt)])

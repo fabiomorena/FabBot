@@ -110,6 +110,7 @@ def _build_chat_prompt() -> str:
     # Block 1: Bot-Instruktionen aus claude.md
     try:
         from agent.claude_md import load_claude_md
+
         claude_md = load_claude_md()
         if claude_md:
             parts.append("\n## Bot-Instruktionen\n" + claude_md)
@@ -119,6 +120,7 @@ def _build_chat_prompt() -> str:
     # Block 2: Letzte Session-Summaries
     try:
         from bot.session_summary import load_session_summaries
+
         sessions = load_session_summaries(n=5)
         if sessions:
             parts.append("\n## Letzte Sessions\n" + sessions)
@@ -128,6 +130,7 @@ def _build_chat_prompt() -> str:
     # Block 3: Persoenliches Profil
     try:
         from agent.profile import get_profile_context_full
+
         ctx = get_profile_context_full()
         if ctx:
             parts.append(
@@ -157,6 +160,7 @@ def _build_dynamic_prompt_suffix(
     """
     from agent.utils import get_current_datetime
     from agent.proactive.context import get_proactive_context
+
     parts = [f"\n[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]"]
 
     proactive_ctx = get_proactive_context()
@@ -189,7 +193,7 @@ def _clean_messages_for_chat(messages: list) -> list:
         if isinstance(content, str) and content.startswith(_HITL_PREFIXES):
             if isinstance(msg, AIMessage):
                 if content.startswith("__CONFIRM_TERMINAL__:"):
-                    cmd = content[len("__CONFIRM_TERMINAL__:"):]
+                    cmd = content[len("__CONFIRM_TERMINAL__:") :]
                     cleaned.append(AIMessage(content=f"[Terminal-Befehl ausgefuehrt: {cmd}]"))
                 elif content.startswith("__CONFIRM_CREATE_EVENT__:"):
                     cleaned.append(AIMessage(content="[Kalendereintrag erstellt]"))
@@ -200,7 +204,7 @@ def _clean_messages_for_chat(messages: list) -> list:
                 elif content.startswith("__SCREENSHOT__:"):
                     cleaned.append(AIMessage(content="[Screenshot erstellt]"))
                 elif content.startswith("__VISION_RESULT__:"):
-                    vision_text = content[len("__VISION_RESULT__:"):]
+                    vision_text = content[len("__VISION_RESULT__:") :]
                     cleaned.append(AIMessage(content=f"[Bildanalyse: {vision_text[:300]}]"))
                 else:
                     cleaned.append(AIMessage(content="[Aktion ausgefuehrt]"))
@@ -230,16 +234,53 @@ def _get_context_window_size() -> int:
         return 40
 
 
-_SHORT_CONFIRMATIONS = frozenset({
-    # Deutsch
-    "genau", "ok", "okay", "alles klar", "danke", "danke schoen", "danke schon",
-    "gut", "super", "verstanden", "ja", "stimmt", "cool", "perfekt", "top",
-    "prima", "toll", "nice", "passt", "klar", "ack", "👍", "ok danke",
-    # Englisch
-    "thanks", "thank you", "got it", "sure", "great", "perfect", "noted",
-    "makes sense", "understood", "sounds good", "good", "awesome", "nice",
-    "yep", "yeah", "yes", "right", "correct",
-})
+_SHORT_CONFIRMATIONS = frozenset(
+    {
+        # Deutsch
+        "genau",
+        "ok",
+        "okay",
+        "alles klar",
+        "danke",
+        "danke schoen",
+        "danke schon",
+        "gut",
+        "super",
+        "verstanden",
+        "ja",
+        "stimmt",
+        "cool",
+        "perfekt",
+        "top",
+        "prima",
+        "toll",
+        "nice",
+        "passt",
+        "klar",
+        "ack",
+        "👍",
+        "ok danke",
+        # Englisch
+        "thanks",
+        "thank you",
+        "got it",
+        "sure",
+        "great",
+        "perfect",
+        "noted",
+        "makes sense",
+        "understood",
+        "sounds good",
+        "good",
+        "awesome",
+        "nice",
+        "yep",
+        "yeah",
+        "yes",
+        "right",
+        "correct",
+    }
+)
 
 
 def _is_short_confirmation(text: str) -> bool:
@@ -249,10 +290,10 @@ def _is_short_confirmation(text: str) -> bool:
 
 _sessions_cache: tuple[float, str] | None = None  # (max_mtime, result)
 
-_SESSION_ALL_THRESHOLD = 20    # bis hier: alle Sessions laden
+_SESSION_ALL_THRESHOLD = 20  # bis hier: alle Sessions laden
 _SESSION_SHORT_THRESHOLD = 50  # ab hier: kürzeres Rolling Window
-_SESSION_DAYS_DEFAULT = 30     # Rolling Window Standard (20–49 Sessions)
-_SESSION_DAYS_SHORT = 14       # Rolling Window kurz (50+ Sessions)
+_SESSION_DAYS_DEFAULT = 30  # Rolling Window Standard (20–49 Sessions)
+_SESSION_DAYS_SHORT = 14  # Rolling Window kurz (50+ Sessions)
 
 
 def _parse_session_date(stem: str) -> date | None:
@@ -275,6 +316,7 @@ def _load_all_sessions(max_days: int | None = None) -> str:
     global _sessions_cache
     try:
         from agent.retrieval import _SESSIONS_DIR
+
         sessions_dir = _SESSIONS_DIR
         if not sessions_dir.exists():
             return ""
@@ -291,10 +333,7 @@ def _load_all_sessions(max_days: int | None = None) -> str:
                 _SESSION_DAYS_SHORT if n >= _SESSION_SHORT_THRESHOLD else _SESSION_DAYS_DEFAULT
             )
             cutoff = date.today() - timedelta(days=effective_days)
-            active_files = [
-                f for f in files
-                if (d := _parse_session_date(f.stem)) is not None and d >= cutoff
-            ]
+            active_files = [f for f in files if (d := _parse_session_date(f.stem)) is not None and d >= cutoff]
             if not active_files:
                 active_files = [files[-1]]  # mindestens die letzte Session
 
@@ -335,6 +374,7 @@ async def _get_retrieval_context(query: str) -> str:
     session_ctx = _load_all_sessions()
     try:
         from agent.retrieval import search
+
         results = await asyncio.wait_for(search(query, n_results=3), timeout=5.0)
         if not results:
             return session_ctx
@@ -396,9 +436,7 @@ async def chat_agent(state: AgentState) -> AgentState:
     # Phase 164: Anthropic Prompt Caching – statischer Block wird server-seitig gecacht.
     # cache_control auf Block 1 → Anthropic cached alles bis hier (~90% günstiger).
     # Dynamische Inhalte (Uhrzeit, Retrieval, last_agent_result) bleiben unkecacht.
-    content_blocks: list[dict] = [
-        {"type": "text", "text": static_prompt, "cache_control": {"type": "ephemeral"}}
-    ]
+    content_blocks: list[dict] = [{"type": "text", "text": static_prompt, "cache_control": {"type": "ephemeral"}}]
     if dynamic_content.strip():
         content_blocks.append({"type": "text", "text": dynamic_content})
 
@@ -419,9 +457,7 @@ async def chat_agent(state: AgentState) -> AgentState:
     if prev_ai_messages:
         last_ai_content = prev_ai_messages[-1].content
         if isinstance(last_ai_content, list):
-            last_ai_content = " ".join(
-                b.get("text", "") if isinstance(b, dict) else str(b) for b in last_ai_content
-            )
+            last_ai_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_ai_content)
         if result == last_ai_content.strip():
             logger.warning("chat_agent: Dedup-Sicherheitsnetz – Wiederholung verhindert.")
             result = "Noch etwas, womit ich helfen kann?"
@@ -430,6 +466,7 @@ async def chat_agent(state: AgentState) -> AgentState:
     try:
         if human_text:
             from agent.profile_learner import apply_learning
+
             task = asyncio.create_task(apply_learning(human_text))
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)

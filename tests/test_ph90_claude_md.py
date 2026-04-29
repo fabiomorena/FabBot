@@ -9,20 +9,21 @@ Testet:
 5. Konsistenz: _APPEND_MAX_LEN == _INSTRUCTION_MAX_LEN (memory_agent)
 """
 
-import asyncio
 import inspect
 import shutil
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock, call
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _reset_cache():
     import agent.claude_md as cmd
+
     cmd._claude_md_cache = None
 
 
@@ -30,34 +31,35 @@ def _reset_cache():
 # 1. Path-Tests
 # ---------------------------------------------------------------------------
 
+
 class TestClaudeMdPath:
     """Phase 90: _CLAUDE_MD_PATH zeigt auf ~/.fabbot/, nicht Repo-Root."""
 
     def test_path_in_fabbot_dir(self) -> None:
         """_CLAUDE_MD_PATH liegt in ~/.fabbot/."""
         from agent.claude_md import _CLAUDE_MD_PATH
-        assert ".fabbot" in str(_CLAUDE_MD_PATH), (
-            f"_CLAUDE_MD_PATH sollte ~/.fabbot/ enthalten, ist: {_CLAUDE_MD_PATH}"
-        )
+
+        assert ".fabbot" in str(_CLAUDE_MD_PATH), f"_CLAUDE_MD_PATH sollte ~/.fabbot/ enthalten, ist: {_CLAUDE_MD_PATH}"
 
     def test_path_not_in_repo_root(self) -> None:
         """_CLAUDE_MD_PATH liegt NICHT direkt im Repo-Root (parent von agent/)."""
         from agent.claude_md import _CLAUDE_MD_PATH
         import agent.claude_md as module
+
         repo_root = Path(inspect.getfile(module)).parent.parent
         # Datei darf nicht direkt im Repo-Root liegen
-        assert _CLAUDE_MD_PATH.parent != repo_root, (
-            f"_CLAUDE_MD_PATH liegt noch im Repo-Root: {_CLAUDE_MD_PATH}"
-        )
+        assert _CLAUDE_MD_PATH.parent != repo_root, f"_CLAUDE_MD_PATH liegt noch im Repo-Root: {_CLAUDE_MD_PATH}"
 
     def test_path_filename_is_claude_md(self) -> None:
         """Dateiname ist exakt 'claude.md'."""
         from agent.claude_md import _CLAUDE_MD_PATH
+
         assert _CLAUDE_MD_PATH.name == "claude.md"
 
     def test_path_parent_is_home_fabbot(self) -> None:
         """Parent-Verzeichnis ist ~/.fabbot."""
         from agent.claude_md import _CLAUDE_MD_PATH
+
         expected = Path.home() / ".fabbot"
         assert _CLAUDE_MD_PATH.parent == expected
 
@@ -65,6 +67,7 @@ class TestClaudeMdPath:
 # ---------------------------------------------------------------------------
 # 2. Migrations-Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMigrateClaudeMd:
     """Phase 90: _migrate_claude_md_if_needed() – einmalige Migration."""
@@ -77,7 +80,6 @@ class TestMigrateClaudeMd:
 
     def test_migration_copies_old_file(self, tmp_path: Path) -> None:
         """Wenn alte Datei existiert und neue nicht → kopieren."""
-        from agent.claude_md import _migrate_claude_md_if_needed
 
         old_path = tmp_path / "repo" / "claude.md"
         old_path.parent.mkdir(parents=True)
@@ -86,15 +88,18 @@ class TestMigrateClaudeMd:
         new_path = tmp_path / ".fabbot" / "claude.md"
         new_path.parent.mkdir(parents=True)
 
-        with patch("agent.claude_md._CLAUDE_MD_PATH", new_path), \
-             patch.object(Path, "exists", lambda self: self == new_path and False or self == old_path):
+        with (
+            patch("agent.claude_md._CLAUDE_MD_PATH", new_path),
+            patch.object(Path, "exists", lambda self: self == new_path and False or self == old_path),
+        ):
             pass  # Migration wurde bereits beim Import ausgeführt
 
         # Direkter Test der Migrationsfunktion
-        import agent.claude_md as cmd
         # Patch old_path-Berechnung
-        with patch("agent.claude_md._CLAUDE_MD_PATH", new_path), \
-             patch("pathlib.Path.parent", new=property(lambda self: self._str_normcase and tmp_path / ".fabbot")):
+        with (
+            patch("agent.claude_md._CLAUDE_MD_PATH", new_path),
+            patch("pathlib.Path.parent", new=property(lambda self: self._str_normcase and tmp_path / ".fabbot")),
+        ):
             pass
 
         # Pragmatischer Test: Funktion läuft ohne Fehler durch
@@ -132,8 +137,10 @@ class TestMigrateClaudeMd:
         new_path = tmp_path / "claude.md"
         nonexistent_old = tmp_path / "old_claude.md"  # existiert bewusst nicht
 
-        with patch("agent.claude_md._CLAUDE_MD_PATH", new_path), \
-             patch("agent.claude_md._CLAUDE_MD_OLD_PATH", nonexistent_old):
+        with (
+            patch("agent.claude_md._CLAUDE_MD_PATH", new_path),
+            patch("agent.claude_md._CLAUDE_MD_OLD_PATH", nonexistent_old),
+        ):
             _migrate_claude_md_if_needed()  # darf nicht crashen
 
         assert not new_path.exists()
@@ -155,12 +162,14 @@ class TestMigrateClaudeMd:
     def test_migrate_function_exists(self) -> None:
         """_migrate_claude_md_if_needed ist eine callable Funktion."""
         from agent.claude_md import _migrate_claude_md_if_needed
+
         assert callable(_migrate_claude_md_if_needed)
 
 
 # ---------------------------------------------------------------------------
 # 3. Race-Fix: load_claude_md() innerhalb des Locks
 # ---------------------------------------------------------------------------
+
 
 class TestLoadInsideLock:
     """Phase 90: load_claude_md() muss innerhalb des Locks in append_to_claude_md() aufgerufen werden."""
@@ -230,6 +239,7 @@ class TestLoadInsideLock:
 # 4. Content-Validierung in append_to_claude_md()
 # ---------------------------------------------------------------------------
 
+
 class TestAppendContentValidation:
     """Phase 90: Defense-in-Depth Validierung gegen Heading-Injection und Forbidden-Patterns."""
 
@@ -243,6 +253,7 @@ class TestAppendContentValidation:
     async def test_markdown_heading_h2_blocked(self, tmp_path: Path) -> None:
         """## heading am Anfang → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -253,6 +264,7 @@ class TestAppendContentValidation:
     async def test_markdown_heading_h3_blocked(self, tmp_path: Path) -> None:
         """### heading → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -263,6 +275,7 @@ class TestAppendContentValidation:
     async def test_markdown_heading_h1_blocked(self, tmp_path: Path) -> None:
         """# heading → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -273,6 +286,7 @@ class TestAppendContentValidation:
     async def test_heading_mid_string_blocked(self, tmp_path: Path) -> None:
         """## heading mitten im String → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -283,6 +297,7 @@ class TestAppendContentValidation:
     async def test_newline_then_heading_blocked(self, tmp_path: Path) -> None:
         """Newline + ## → nach Sanitizing wird ## erhalten (newline → space)."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -294,6 +309,7 @@ class TestAppendContentValidation:
     async def test_ignore_pattern_blocked(self, tmp_path: Path) -> None:
         """'ignore' im Text → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -304,6 +320,7 @@ class TestAppendContentValidation:
     async def test_vergiss_pattern_blocked(self, tmp_path: Path) -> None:
         """'vergiss' im Text → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -314,6 +331,7 @@ class TestAppendContentValidation:
     async def test_system_prompt_pattern_blocked(self, tmp_path: Path) -> None:
         """'system prompt' → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -324,6 +342,7 @@ class TestAppendContentValidation:
     async def test_override_pattern_blocked(self, tmp_path: Path) -> None:
         """'override' → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -334,6 +353,7 @@ class TestAppendContentValidation:
     async def test_jailbreak_pattern_blocked(self, tmp_path: Path) -> None:
         """'jailbreak' → blockiert."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -344,6 +364,7 @@ class TestAppendContentValidation:
     async def test_forbidden_case_insensitive(self, tmp_path: Path) -> None:
         """Forbidden-Pattern ist case-insensitive."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -354,6 +375,7 @@ class TestAppendContentValidation:
     async def test_too_long_blocked(self, tmp_path: Path) -> None:
         """Text über 200 Zeichen → blockiert."""
         from agent.claude_md import append_to_claude_md, _APPEND_MAX_LEN
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -364,6 +386,7 @@ class TestAppendContentValidation:
     async def test_exactly_max_length_allowed(self, tmp_path: Path) -> None:
         """Text mit genau 200 Zeichen (harmlos) → erlaubt."""
         from agent.claude_md import append_to_claude_md, _APPEND_MAX_LEN
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         # 200 Zeichen, kein verbotenes Muster
@@ -376,6 +399,7 @@ class TestAppendContentValidation:
     async def test_normal_instruction_allowed(self, tmp_path: Path) -> None:
         """Normale Bot-Instruktion wird ohne Blockierung geschrieben."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -387,6 +411,7 @@ class TestAppendContentValidation:
     async def test_deploy_sh_instruction_allowed(self, tmp_path: Path) -> None:
         """Typische deploy.sh-Instruktion wird durchgelassen."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -397,6 +422,7 @@ class TestAppendContentValidation:
     async def test_validation_before_file_write(self, tmp_path: Path) -> None:
         """Bei ungültigem Text wird die Datei nicht berührt."""
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         original = "# FabBot\n\n## Kommunikation\n- Direkt"
         md.write_text(original, encoding="utf-8")
@@ -410,6 +436,7 @@ class TestAppendContentValidation:
 # 5. Konstanten-Konsistenz
 # ---------------------------------------------------------------------------
 
+
 class TestConstantsConsistency:
     """Phase 90: _APPEND_MAX_LEN muss mit _INSTRUCTION_MAX_LEN übereinstimmen."""
 
@@ -420,37 +447,42 @@ class TestConstantsConsistency:
         """
         from agent.claude_md import _APPEND_MAX_LEN
         from agent.agents.memory_agent import _INSTRUCTION_MAX_LEN
+
         assert _APPEND_MAX_LEN == _INSTRUCTION_MAX_LEN, (
-            f"Konsistenz-Fehler: _APPEND_MAX_LEN={_APPEND_MAX_LEN} "
-            f"!= _INSTRUCTION_MAX_LEN={_INSTRUCTION_MAX_LEN}"
+            f"Konsistenz-Fehler: _APPEND_MAX_LEN={_APPEND_MAX_LEN} != _INSTRUCTION_MAX_LEN={_INSTRUCTION_MAX_LEN}"
         )
 
     def test_append_forbidden_is_compiled_regex(self) -> None:
         """_APPEND_FORBIDDEN ist ein kompilierter Regex."""
         import re
         from agent.claude_md import _APPEND_FORBIDDEN
+
         assert isinstance(_APPEND_FORBIDDEN, type(re.compile("")))
 
     def test_append_max_len_is_200(self) -> None:
         """_APPEND_MAX_LEN ist 200 (Canonical Value)."""
         from agent.claude_md import _APPEND_MAX_LEN
+
         assert _APPEND_MAX_LEN == 200
 
     def test_append_forbidden_catches_heading(self) -> None:
         """_APPEND_FORBIDDEN erkennt Markdown-Headings."""
         from agent.claude_md import _APPEND_FORBIDDEN
+
         assert _APPEND_FORBIDDEN.search("## System") is not None
         assert _APPEND_FORBIDDEN.search("# Admin") is not None
         assert _APPEND_FORBIDDEN.search("### Sub") is not None
 
     def test_append_forbidden_catches_ignore(self) -> None:
         from agent.claude_md import _APPEND_FORBIDDEN
+
         assert _APPEND_FORBIDDEN.search("ignore all") is not None
         assert _APPEND_FORBIDDEN.search("IGNORE") is not None
 
     def test_append_forbidden_allows_normal(self) -> None:
         """Normale Instruktionen werden nicht blockiert."""
         from agent.claude_md import _APPEND_FORBIDDEN
+
         assert _APPEND_FORBIDDEN.search("Fabio antwortet kurz") is None
         assert _APPEND_FORBIDDEN.search("Deploy-Script immer mitliefern") is None
         assert _APPEND_FORBIDDEN.search("Morgens bevorzugt kurze Antworten") is None
@@ -458,12 +490,14 @@ class TestConstantsConsistency:
     def test_migrate_function_exported(self) -> None:
         """_migrate_claude_md_if_needed ist zugänglich."""
         from agent.claude_md import _migrate_claude_md_if_needed
+
         assert callable(_migrate_claude_md_if_needed)
 
 
 # ---------------------------------------------------------------------------
 # 6. Regression: bestehende append-Funktionalität unverändert
 # ---------------------------------------------------------------------------
+
 
 class TestAppendRegressions:
     """Stellt sicher dass Phase 90 keine bestehenden Funktionen bricht."""
@@ -477,6 +511,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_creates_auto_section_when_missing(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -486,6 +521,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_appends_to_existing_section(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot\n\n## Automatisch gelernt\n- Alte Regel", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -498,6 +534,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_newlines_in_input_sanitized(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -509,6 +546,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_empty_text_returns_false(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -518,6 +556,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_missing_file_returns_false(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md
+
         nonexistent = tmp_path / "nonexistent.md"
         with patch("agent.claude_md._CLAUDE_MD_PATH", nonexistent):
             result = await append_to_claude_md("Test")
@@ -526,6 +565,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_timestamp_included(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md
+
         md = tmp_path / "claude.md"
         md.write_text("# FabBot", encoding="utf-8")
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
@@ -537,6 +577,7 @@ class TestAppendRegressions:
     @pytest.mark.asyncio
     async def test_fifo_trim_still_applied(self, tmp_path: Path) -> None:
         from agent.claude_md import append_to_claude_md, _MAX_AUTO_ENTRIES
+
         _reset_cache()
         entries = "\n".join(f"- Eintrag {i} _(gelernt 01.01.2026)_" for i in range(_MAX_AUTO_ENTRIES))
         md = tmp_path / "claude.md"
@@ -544,7 +585,7 @@ class TestAppendRegressions:
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
             await append_to_claude_md("Neuer Eintrag nach Trim")
         content = md.read_text(encoding="utf-8")
-        entry_lines = [l for l in content.split('\n') if l.strip().startswith('- ')]
+        entry_lines = [l for l in content.split("\n") if l.strip().startswith("- ")]
         assert len(entry_lines) == _MAX_AUTO_ENTRIES
         assert "Neuer Eintrag nach Trim" in content
         assert "Eintrag 0 " not in content  # ältester entfernt

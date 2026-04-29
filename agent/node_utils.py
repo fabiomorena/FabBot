@@ -8,6 +8,7 @@ def wrap_agent_node(agent_name: str):
     Überschreibt keine explizit gesetzten Werte – Agents mit Custom-Logik
     können last_agent_result weiterhin manuell setzen.
     """
+
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(state):
@@ -23,12 +24,11 @@ def wrap_agent_node(agent_name: str):
                 ai_messages = [m for m in messages if isinstance(m, AIMessage)]
                 content = ai_messages[-1].content if ai_messages else None
                 if isinstance(content, list):
-                    content = " ".join(
-                        b.get("text", "") if isinstance(b, dict) else str(b)
-                        for b in content
-                    )
+                    content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
                 result = {**result, "last_agent_result": content}
 
             return result
+
         return wrapper
+
     return decorator

@@ -1,0 +1,8 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+    "E402",  # module-level import not at top – intentional in several modules (lazy imports, circular import avoidance)
+    "E741",  # ambiguous variable name – legacy naming in tests
+]

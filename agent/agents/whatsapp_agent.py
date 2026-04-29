@@ -57,7 +57,7 @@ def _make_result(msg: str) -> AgentState:
 
 async def whatsapp_agent(state: AgentState) -> AgentState:
     """Phase 99: last_agent_result in allen Returns."""
-    from bot.whatsapp import find_contact, is_session_ready, load_whatsapp_contacts
+    from bot.whatsapp import find_contact, is_session_ready
 
     if not is_session_ready():
         return _make_result("WhatsApp nicht eingerichtet. Bitte /wa_setup ausführen.")
@@ -70,10 +70,7 @@ async def whatsapp_agent(state: AgentState) -> AgentState:
     response = await llm.ainvoke(messages)
     content = response.content
     if isinstance(content, list):
-        content = " ".join(
-            b.get("text", "") if isinstance(b, dict) else str(b)
-            for b in content
-        )
+        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
     content = _extract_json(content)
 
     if not content.strip().startswith("{"):
@@ -85,8 +82,7 @@ async def whatsapp_agent(state: AgentState) -> AgentState:
         message_text = parsed.get("message", "").strip()
     except (json.JSONDecodeError, AttributeError):
         return _make_result(
-            "Konnte Kontakt und Nachricht nicht erkennen. "
-            "Beispiel: 'Schick Steffi dass ich 10 Minuten später komme'"
+            "Konnte Kontakt und Nachricht nicht erkennen. Beispiel: 'Schick Steffi dass ich 10 Minuten später komme'"
         )
 
     if not contact_name:
@@ -100,7 +96,8 @@ async def whatsapp_agent(state: AgentState) -> AgentState:
     contact = find_contact(contact_name)
     if contact is None:
         log_action(
-            "whatsapp_agent", "send",
+            "whatsapp_agent",
+            "send",
             f"blocked: '{contact_name}' nicht in Whitelist",
             state.get("telegram_chat_id"),
             status="blocked",
@@ -110,7 +107,8 @@ async def whatsapp_agent(state: AgentState) -> AgentState:
     whatsapp_name = contact.get("whatsapp_name", contact_name)
 
     log_action(
-        "whatsapp_agent", "send",
+        "whatsapp_agent",
+        "send",
         f"contact={contact_name} whatsapp_name={whatsapp_name} len={len(message_text)}",
         state.get("telegram_chat_id"),
         status="pending",

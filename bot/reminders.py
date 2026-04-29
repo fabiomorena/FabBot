@@ -2,9 +2,9 @@
 Reminder-System fuer FabBot.
 Speichert Erinnerungen in SQLite und sendet sie proaktiv per Telegram.
 """
+
 import asyncio
 import logging
-import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -36,8 +36,7 @@ def add_reminder(chat_id: int, text: str, remind_at: datetime) -> int:
     _init_db()
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.execute(
-            "INSERT INTO reminders (chat_id, text, remind_at) VALUES (?, ?, ?)",
-            (chat_id, text, remind_at.isoformat())
+            "INSERT INTO reminders (chat_id, text, remind_at) VALUES (?, ?, ?)", (chat_id, text, remind_at.isoformat())
         )
         conn.commit()
         return cursor.lastrowid
@@ -49,8 +48,7 @@ def get_pending_reminders() -> list[dict]:
     now = datetime.now().isoformat()
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
-            "SELECT id, chat_id, text, remind_at FROM reminders WHERE sent=0 AND remind_at <= ?",
-            (now,)
+            "SELECT id, chat_id, text, remind_at FROM reminders WHERE sent=0 AND remind_at <= ?", (now,)
         ).fetchall()
     return [{"id": r[0], "chat_id": r[1], "text": r[2], "remind_at": r[3]} for r in rows]
 
@@ -62,7 +60,7 @@ def list_reminders(chat_id: int) -> list[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
             "SELECT id, text, remind_at FROM reminders WHERE chat_id=? AND sent=0 AND remind_at > ? ORDER BY remind_at",
-            (chat_id, now)
+            (chat_id, now),
         ).fetchall()
     return [{"id": r[0], "text": r[1], "remind_at": r[2]} for r in rows]
 
@@ -78,10 +76,7 @@ def mark_sent(reminder_id: int) -> None:
 def delete_reminder(reminder_id: int, chat_id: int) -> bool:
     """Löscht eine Erinnerung. Gibt True zurück wenn erfolgreich."""
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute(
-            "DELETE FROM reminders WHERE id=? AND chat_id=? AND sent=0",
-            (reminder_id, chat_id)
-        )
+        cursor = conn.execute("DELETE FROM reminders WHERE id=? AND chat_id=? AND sent=0", (reminder_id, chat_id))
         conn.commit()
         return cursor.rowcount > 0
 

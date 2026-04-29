@@ -11,12 +11,13 @@ Testet:
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
+
 
 def _make_chat_state(text="Was ist die aktuelle Uhrzeit?"):
     return {
@@ -42,6 +43,7 @@ def _extract_system_message(messages: list) -> SystemMessage | None:
 # 1. chat_agent: cache_control auf statischem Block vorhanden
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_chat_agent_static_block_has_cache_control():
     """chat_agent schickt cache_control auf dem ersten (statischen) Content-Block."""
@@ -56,13 +58,14 @@ async def test_chat_agent_static_block_has_cache_control():
     fake_llm = MagicMock()
     fake_llm.ainvoke = fake_ainvoke
 
-    with patch("agent.agents.chat_agent.get_llm", return_value=fake_llm), \
-         patch("agent.agents.chat_agent._build_chat_prompt", return_value="STATISCH"), \
-         patch("agent.agents.chat_agent._build_dynamic_prompt_suffix", return_value="\n[Uhrzeit: 09:00]"), \
-         patch("agent.agents.chat_agent._get_retrieval_context", new=AsyncMock(return_value="")), \
-         patch("agent.agents.chat_agent._is_short_confirmation", return_value=False), \
-         patch("agent.agents.chat_agent._get_context_window_size", return_value=20):
-
+    with (
+        patch("agent.agents.chat_agent.get_llm", return_value=fake_llm),
+        patch("agent.agents.chat_agent._build_chat_prompt", return_value="STATISCH"),
+        patch("agent.agents.chat_agent._build_dynamic_prompt_suffix", return_value="\n[Uhrzeit: 09:00]"),
+        patch("agent.agents.chat_agent._get_retrieval_context", new=AsyncMock(return_value="")),
+        patch("agent.agents.chat_agent._is_short_confirmation", return_value=False),
+        patch("agent.agents.chat_agent._get_context_window_size", return_value=20),
+    ):
         state = _make_chat_state()
         await ca.chat_agent(state)
 
@@ -81,6 +84,7 @@ async def test_chat_agent_static_block_has_cache_control():
 # 2. Dynamischer Block hat kein cache_control
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_chat_agent_dynamic_block_no_cache_control():
     """Dynamischer Suffix-Block (Uhrzeit, Retrieval) hat kein cache_control."""
@@ -95,13 +99,14 @@ async def test_chat_agent_dynamic_block_no_cache_control():
     fake_llm = MagicMock()
     fake_llm.ainvoke = fake_ainvoke
 
-    with patch("agent.agents.chat_agent.get_llm", return_value=fake_llm), \
-         patch("agent.agents.chat_agent._build_chat_prompt", return_value="STATISCH"), \
-         patch("agent.agents.chat_agent._build_dynamic_prompt_suffix", return_value="\n[Uhrzeit: 09:00]"), \
-         patch("agent.agents.chat_agent._get_retrieval_context", new=AsyncMock(return_value="[RAG-Treffer]")), \
-         patch("agent.agents.chat_agent._is_short_confirmation", return_value=False), \
-         patch("agent.agents.chat_agent._get_context_window_size", return_value=20):
-
+    with (
+        patch("agent.agents.chat_agent.get_llm", return_value=fake_llm),
+        patch("agent.agents.chat_agent._build_chat_prompt", return_value="STATISCH"),
+        patch("agent.agents.chat_agent._build_dynamic_prompt_suffix", return_value="\n[Uhrzeit: 09:00]"),
+        patch("agent.agents.chat_agent._get_retrieval_context", new=AsyncMock(return_value="[RAG-Treffer]")),
+        patch("agent.agents.chat_agent._is_short_confirmation", return_value=False),
+        patch("agent.agents.chat_agent._get_context_window_size", return_value=20),
+    ):
         state = _make_chat_state()
         await ca.chat_agent(state)
 
@@ -110,9 +115,7 @@ async def test_chat_agent_dynamic_block_no_cache_control():
     assert len(sys_msg.content) == 2, "Erwartet genau zwei Blöcke (statisch + dynamisch)"
 
     dynamic_block = sys_msg.content[1]
-    assert "cache_control" not in dynamic_block, (
-        f"Dynamischer Block darf kein cache_control haben: {dynamic_block}"
-    )
+    assert "cache_control" not in dynamic_block, f"Dynamischer Block darf kein cache_control haben: {dynamic_block}"
     assert "[Uhrzeit: 09:00]" in dynamic_block["text"]
     assert "[RAG-Treffer]" in dynamic_block["text"]
 
@@ -120,6 +123,7 @@ async def test_chat_agent_dynamic_block_no_cache_control():
 # ---------------------------------------------------------------------------
 # 3. Kein dynamischer Block wenn Suffix leer (z.B. kurze Bestätigung)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_chat_agent_no_dynamic_block_when_suffix_empty():
@@ -135,13 +139,14 @@ async def test_chat_agent_no_dynamic_block_when_suffix_empty():
     fake_llm = MagicMock()
     fake_llm.ainvoke = fake_ainvoke
 
-    with patch("agent.agents.chat_agent.get_llm", return_value=fake_llm), \
-         patch("agent.agents.chat_agent._build_chat_prompt", return_value="STATISCH"), \
-         patch("agent.agents.chat_agent._build_dynamic_prompt_suffix", return_value="   "), \
-         patch("agent.agents.chat_agent._get_retrieval_context", new=AsyncMock(return_value="")), \
-         patch("agent.agents.chat_agent._is_short_confirmation", return_value=True), \
-         patch("agent.agents.chat_agent._get_context_window_size", return_value=20):
-
+    with (
+        patch("agent.agents.chat_agent.get_llm", return_value=fake_llm),
+        patch("agent.agents.chat_agent._build_chat_prompt", return_value="STATISCH"),
+        patch("agent.agents.chat_agent._build_dynamic_prompt_suffix", return_value="   "),
+        patch("agent.agents.chat_agent._get_retrieval_context", new=AsyncMock(return_value="")),
+        patch("agent.agents.chat_agent._is_short_confirmation", return_value=True),
+        patch("agent.agents.chat_agent._get_context_window_size", return_value=20),
+    ):
         state = _make_chat_state("Danke")
         await ca.chat_agent(state)
 
@@ -154,6 +159,7 @@ async def test_chat_agent_no_dynamic_block_when_suffix_empty():
 # ---------------------------------------------------------------------------
 # 4. supervisor: SUPERVISOR_PROMPT mit cache_control
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_supervisor_prompt_has_cache_control():
@@ -197,6 +203,7 @@ async def test_supervisor_prompt_has_cache_control():
 # ---------------------------------------------------------------------------
 # 5. supervisor: User-Message hat kein cache_control
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_supervisor_user_message_no_cache_control():

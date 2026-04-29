@@ -48,31 +48,32 @@ async def analyze_image_direct(
     try:
         llm = get_llm()
         response = await asyncio.wait_for(
-            llm.ainvoke([
-                HumanMessage(content=[
-                    {
-                        "type": "text",
-                        "text": VISION_SYSTEM_PROMPT + f"\n\nFrage: {question}",
-                    },
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": img_b64,
-                        },
-                    },
-                ])
-            ]),
+            llm.ainvoke(
+                [
+                    HumanMessage(
+                        content=[
+                            {
+                                "type": "text",
+                                "text": VISION_SYSTEM_PROMPT + f"\n\nFrage: {question}",
+                            },
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": img_b64,
+                                },
+                            },
+                        ]
+                    )
+                ]
+            ),
             timeout=60,
         )
 
         content = response.content
         if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") if isinstance(b, dict) else str(b)
-                for b in content
-            )
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
 
         result = content.strip()
         log_action(

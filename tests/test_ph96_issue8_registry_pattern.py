@@ -19,6 +19,7 @@ from agent.memory_agent import _apply_memory_update
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def empty_profile():
     return {}
@@ -29,7 +30,9 @@ def full_profile():
     return {
         "identity": {"location": "Berlin, Germany"},
         "people": [{"name": "Steffi", "context": "Freundin"}],
-        "projects": {"active": [{"name": "FabBot", "description": "AI Assistant", "stack": ["Python"], "priority": "high"}]},
+        "projects": {
+            "active": [{"name": "FabBot", "description": "AI Assistant", "stack": ["Python"], "priority": "high"}]
+        },
         "places": [{"name": "Berghain", "type": "bar", "location": "Berlin", "context": "Lieblingsclub"}],
         "media": [{"title": "Autechre", "type": "künstler", "context": "Favorit"}],
         "preferences": {"sprache": "Deutsch"},
@@ -41,6 +44,7 @@ def full_profile():
 # ---------------------------------------------------------------------------
 # Save-Handler Tests
 # ---------------------------------------------------------------------------
+
 
 class TestSavePeople:
     def test_neue_person(self, empty_profile):
@@ -66,7 +70,12 @@ class TestSavePeople:
 
 class TestSaveProject:
     def test_neues_projekt(self, empty_profile):
-        result = _apply_memory_update(empty_profile, "save", "project", {"name": "TestApp", "description": "Test", "stack": ["Python"], "priority": "low"})
+        result = _apply_memory_update(
+            empty_profile,
+            "save",
+            "project",
+            {"name": "TestApp", "description": "Test", "stack": ["Python"], "priority": "low"},
+        )
         assert result is not None
         assert result["projects"]["active"][0]["name"] == "TestApp"
 
@@ -86,7 +95,9 @@ class TestSaveProject:
 
 class TestSavePlace:
     def test_neuer_ort(self, empty_profile):
-        result = _apply_memory_update(empty_profile, "save", "place", {"name": "Tresor", "type": "bar", "location": "Berlin"})
+        result = _apply_memory_update(
+            empty_profile, "save", "place", {"name": "Tresor", "type": "bar", "location": "Berlin"}
+        )
         assert result is not None
         assert result["places"][0]["name"] == "Tresor"
 
@@ -189,6 +200,7 @@ class TestSaveCustom:
 # Delete-Handler Tests
 # ---------------------------------------------------------------------------
 
+
 class TestDeleteHandlers:
     def test_delete_people(self, full_profile):
         result = _apply_memory_update(full_profile, "delete", "people", {"name": "Steffi"})
@@ -224,6 +236,7 @@ class TestDeleteHandlers:
 # Registry Fallback Tests
 # ---------------------------------------------------------------------------
 
+
 class TestRegistryFallback:
     def test_unknown_category_save_returns_none(self, empty_profile):
         result = _apply_memory_update(empty_profile, "save", "unknown_category", {"key": "x"})
@@ -246,6 +259,7 @@ class TestRegistryFallback:
 # ---------------------------------------------------------------------------
 # Immutability Test
 # ---------------------------------------------------------------------------
+
 
 class TestImmutability:
     def test_original_not_mutated(self, full_profile):

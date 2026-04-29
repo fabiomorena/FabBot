@@ -36,6 +36,7 @@ def _get_links_collection():
         return _links_collection
     try:
         import chromadb
+
         _CHROMA_PATH.mkdir(parents=True, exist_ok=True)
         client = chromadb.PersistentClient(path=str(_CHROMA_PATH))
         _links_collection = client.get_or_create_collection(
@@ -61,8 +62,7 @@ def link_entities(entity_ids: list[str], entity_names: dict[str, str]) -> None:
             lid = _link_id(id_a, id_b)
             try:
                 existing = collection.get(ids=[lid])
-                weight = int(existing["metadatas"][0].get("weight", 0)) + 1 \
-                    if existing["ids"] else 1
+                weight = int(existing["metadatas"][0].get("weight", 0)) + 1 if existing["ids"] else 1
             except Exception:
                 weight = 1
             name_a = entity_names.get(id_a, id_a)
@@ -70,12 +70,14 @@ def link_entities(entity_ids: list[str], entity_names: dict[str, str]) -> None:
             collection.upsert(
                 ids=[lid],
                 documents=[f"{name_a} ↔ {name_b}"],
-                metadatas=[{
-                    "entity_id_a": id_a,
-                    "entity_id_b": id_b,
-                    "weight": weight,
-                    "last_seen_at": now,
-                }],
+                metadatas=[
+                    {
+                        "entity_id_a": id_a,
+                        "entity_id_b": id_b,
+                        "weight": weight,
+                        "last_seen_at": now,
+                    }
+                ],
             )
     except Exception as e:
         logger.warning(f"Context Linking Fehler: {e}")
@@ -89,10 +91,12 @@ def get_related_entities(entity_id: str, limit: int = 5) -> list[dict]:
         return []
     try:
         result = links_col.get(
-            where={"$or": [
-                {"entity_id_a": {"$eq": entity_id}},
-                {"entity_id_b": {"$eq": entity_id}},
-            ]},
+            where={
+                "$or": [
+                    {"entity_id_a": {"$eq": entity_id}},
+                    {"entity_id_b": {"$eq": entity_id}},
+                ]
+            },
             include=["metadatas"],
         )
     except Exception as e:

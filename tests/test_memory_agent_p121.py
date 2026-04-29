@@ -8,12 +8,17 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from langchain_core.messages import HumanMessage
 from agent.agents.memory_agent import (
-    _apply_memory_update, MemoryUpdateResult, _ok, _invalid, _reject,
+    _apply_memory_update,
+    _ok,
+    _invalid,
+    _reject,
 )
+
 
 @pytest.fixture
 def empty_profile():
     return {}
+
 
 @pytest.fixture
 def full_profile():
@@ -26,6 +31,7 @@ def full_profile():
         "custom": [{"key": "motto", "value": "Keep it simple"}],
         "work": {"employer": "Freelance", "role": "AI Engineer"},
     }
+
 
 class TestMemoryUpdateResult:
     def test_ok(self):
@@ -49,6 +55,7 @@ class TestMemoryUpdateResult:
         assert r.user_message == "Nicht möglich."
         assert r.updated_profile is None
 
+
 class TestBotInstructionDelete:
     def test_returns_reject(self, empty_profile):
         r = _apply_memory_update(empty_profile, "delete", "bot_instruction", {})
@@ -59,6 +66,7 @@ class TestBotInstructionDelete:
 
     def test_no_profile_mutation(self, full_profile):
         import copy
+
         orig = copy.deepcopy(full_profile)
         r = _apply_memory_update(full_profile, "delete", "bot_instruction", {})
         assert r.updated_profile is None
@@ -68,6 +76,7 @@ class TestBotInstructionDelete:
         r = _apply_memory_update(empty_profile, "save", "bot_instruction", {"text": "x"})
         assert r.success is False
         assert r.allow_fallback is True
+
 
 class TestProjectDelete:
     def test_empty_name_reject(self, full_profile):
@@ -87,16 +96,20 @@ class TestProjectDelete:
         assert r.success is False
         assert "nichtvorhanden" in r.user_message.lower()
 
+
 class TestInvalidInputs:
-    @pytest.mark.parametrize("cat,data", [
-        ("people", {"name": ""}),
-        ("place", {"name": ""}),
-        ("media", {"title": ""}),
-        ("job", {"employer": ""}),
-        ("location", {"location": ""}),
-        ("custom", {"key": "", "value": "x"}),
-        ("custom", {"key": "x", "value": ""}),
-    ])
+    @pytest.mark.parametrize(
+        "cat,data",
+        [
+            ("people", {"name": ""}),
+            ("place", {"name": ""}),
+            ("media", {"title": ""}),
+            ("job", {"employer": ""}),
+            ("location", {"location": ""}),
+            ("custom", {"key": "", "value": "x"}),
+            ("custom", {"key": "x", "value": ""}),
+        ],
+    )
     def test_invalid(self, empty_profile, cat, data):
         r = _apply_memory_update(empty_profile, "save", cat, data)
         assert r.success is False
@@ -106,6 +119,7 @@ class TestInvalidInputs:
         r = _apply_memory_update(empty_profile, "unknown", "custom", {"key": "x", "value": "y"})
         assert r.success is False
         assert r.allow_fallback is True
+
 
 class TestSuccess:
     def test_save_people(self, empty_profile):
@@ -120,9 +134,11 @@ class TestSuccess:
 
     def test_no_mutation(self, full_profile):
         import copy
+
         orig = copy.deepcopy(full_profile)
         _apply_memory_update(full_profile, "save", "people", {"name": "Neu", "context": "Test"})
         assert full_profile == orig
+
 
 class TestMemoryAgentIntegration:
     def _state(self, text):
@@ -131,6 +147,7 @@ class TestMemoryAgentIntegration:
     @pytest.mark.asyncio
     async def test_bot_instruction_delete_no_add_note(self):
         from agent.agents.memory_agent import memory_agent
+
         with (
             patch("agent.agents.memory_agent.load_profile", return_value={}),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock) as mp,
@@ -146,6 +163,7 @@ class TestMemoryAgentIntegration:
     @pytest.mark.asyncio
     async def test_project_empty_name_no_add_note(self):
         from agent.agents.memory_agent import memory_agent
+
         with (
             patch("agent.agents.memory_agent.load_profile", return_value={}),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock) as mp,
@@ -160,6 +178,7 @@ class TestMemoryAgentIntegration:
     @pytest.mark.asyncio
     async def test_invalid_save_uses_add_note(self):
         from agent.agents.memory_agent import memory_agent
+
         with (
             patch("agent.agents.memory_agent.load_profile", return_value={}),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock) as mp,

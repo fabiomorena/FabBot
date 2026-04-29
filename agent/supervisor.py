@@ -29,15 +29,15 @@ from agent.protocol import Proto
 _AGENTS: dict[str, object] = {
     "computer_agent": computer_agent,
     "terminal_agent": terminal_agent,
-    "file_agent":     file_agent,
-    "web_agent":      web_agent,
+    "file_agent": file_agent,
+    "web_agent": web_agent,
     "calendar_agent": calendar_agent,
     "reminder_agent": reminder_agent,
-    "memory_agent":   memory_agent,
-    "chat_agent":     chat_agent,
-    "vision_agent":   vision_agent,
+    "memory_agent": memory_agent,
+    "chat_agent": chat_agent,
+    "vision_agent": vision_agent,
     "whatsapp_agent": whatsapp_agent,
-    "system_agent":   system_agent,
+    "system_agent": system_agent,
 }
 
 logger = logging.getLogger(__name__)
@@ -144,20 +144,39 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
     # Issue #37: CPU/RAM/Disk direkt → system_agent, kein LLM-Call nötig
     (
         (
-            "cpu", "ram ", "ram-", "arbeitsspeicher", "speicherauslastung",
-            "festplattenplatz", "disk ", "disk-", "system-status", "systemstatus",
-            "wie viel ram", "wie viel cpu", "wie viel disk", "wie viel speicher",
-            "system status", "speicher auslastung",
+            "cpu",
+            "ram ",
+            "ram-",
+            "arbeitsspeicher",
+            "speicherauslastung",
+            "festplattenplatz",
+            "disk ",
+            "disk-",
+            "system-status",
+            "systemstatus",
+            "wie viel ram",
+            "wie viel cpu",
+            "wie viel disk",
+            "wie viel speicher",
+            "system status",
+            "speicher auslastung",
         ),
         "system_agent",
         "system-stats-trigger",
     ),
     (
         (
-            "was hälst du", "was haelst du", "was denkst du",
-            "was findest du", "wie findest du", "magst du",
-            "gefällt dir", "gefaellt dir", "deine meinung",
-            "dein urteil", "was ist deine meinung",
+            "was hälst du",
+            "was haelst du",
+            "was denkst du",
+            "was findest du",
+            "wie findest du",
+            "magst du",
+            "gefällt dir",
+            "gefaellt dir",
+            "deine meinung",
+            "dein urteil",
+            "was ist deine meinung",
         ),
         "chat_agent",
         "opinion-trigger",
@@ -165,13 +184,20 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
     (
         # Spezifischer als memory-delete – muss davor stehen
         (
-            "vergiss die instruktion", "vergiss alle instruktionen",
-            "lösch die instruktion", "loesch die instruktion",
-            "lösche die instruktion", "loesche die instruktion",
-            "entferne die instruktion", "alle instruktionen löschen",
-            "alle instruktionen loeschen", "instruktionen zurücksetzen",
-            "instruktionen zuruecksetzen", "instruktion löschen",
-            "instruktion loeschen", "setze instruktionen zurück",
+            "vergiss die instruktion",
+            "vergiss alle instruktionen",
+            "lösch die instruktion",
+            "loesch die instruktion",
+            "lösche die instruktion",
+            "loesche die instruktion",
+            "entferne die instruktion",
+            "alle instruktionen löschen",
+            "alle instruktionen loeschen",
+            "instruktionen zurücksetzen",
+            "instruktionen zuruecksetzen",
+            "instruktion löschen",
+            "instruktion loeschen",
+            "setze instruktionen zurück",
             "setze instruktionen zurueck",
         ),
         "memory_agent",
@@ -180,23 +206,38 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
     (
         (
             # Artikel/Konjunktions-Pattern: explizite Lösch-Absicht (Issue #96: "vergiss " war zu breit)
-            "vergiss den ", "vergiss die ", "vergiss das ",
-            "vergiss diesen ", "vergiss diese ", "vergiss diesem ",
-            "vergiss alles", "vergiss bitte", "vergiss dass ",
-            "lösche aus dem profil", "loesche aus dem profil",
+            "vergiss den ",
+            "vergiss die ",
+            "vergiss das ",
+            "vergiss diesen ",
+            "vergiss diese ",
+            "vergiss diesem ",
+            "vergiss alles",
+            "vergiss bitte",
+            "vergiss dass ",
+            "lösche aus dem profil",
+            "loesche aus dem profil",
             "entferne aus dem profil",
-            "aus dem profil löschen", "aus dem profil loeschen",
-            "aus meinem profil löschen", "aus meinem profil loeschen",
-            "profil eintrag löschen", "profil eintrag loeschen",
+            "aus dem profil löschen",
+            "aus dem profil loeschen",
+            "aus meinem profil löschen",
+            "aus meinem profil loeschen",
+            "profil eintrag löschen",
+            "profil eintrag loeschen",
         ),
         "memory_agent",
         "delete-trigger",
     ),
     (
         (
-            "merke dir dass", "merke dir:", "speichere dass",
-            "füge hinzu:", "fuege hinzu:", "merke dir grundsätzlich",
-            "merke dir grundsaetzlich", "von jetzt an sollst du",
+            "merke dir dass",
+            "merke dir:",
+            "speichere dass",
+            "füge hinzu:",
+            "fuege hinzu:",
+            "merke dir grundsätzlich",
+            "merke dir grundsaetzlich",
+            "von jetzt an sollst du",
         ),
         "memory_agent",
         "save-trigger",
@@ -216,18 +257,18 @@ def _match_pre_routing(text: str) -> tuple[str, str] | None:
 _MAX_ROUTING_LEN = 500
 
 _INJECTION_RE = re.compile(
-    r'(?i)'
-    r'(ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?))'
-    r'|(you\s+are\s+now\s+\w+)'
-    r'|(system\s*:\s)'
-    r'|(<\s*/?\s*system\s*>)'
-    r'|(\[system\])'
-    r'|(vergiss\s+(alle?\s+)?(vorherigen?|obigen?)\s+(anweisungen?|regeln?|instruktionen?))'
-    r'|(ignorier\w*\s+(alle?\s+)?(anweisungen?|regeln?|instruktionen?))'
-    r'|(du\s+bist\s+jetzt\s+\w+)'
-    r'|(als\s+(administrator|system|root)\s+(sage|befehle|weise))'
-    r'|(neue\s+instruktion\s*:)'
-    r'|(system\s*-\s*anweisung)'
+    r"(?i)"
+    r"(ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?))"
+    r"|(you\s+are\s+now\s+\w+)"
+    r"|(system\s*:\s)"
+    r"|(<\s*/?\s*system\s*>)"
+    r"|(\[system\])"
+    r"|(vergiss\s+(alle?\s+)?(vorherigen?|obigen?)\s+(anweisungen?|regeln?|instruktionen?))"
+    r"|(ignorier\w*\s+(alle?\s+)?(anweisungen?|regeln?|instruktionen?))"
+    r"|(du\s+bist\s+jetzt\s+\w+)"
+    r"|(als\s+(administrator|system|root)\s+(sage|befehle|weise))"
+    r"|(neue\s+instruktion\s*:)"
+    r"|(system\s*-\s*anweisung)"
 )
 
 
@@ -237,7 +278,8 @@ def _sanitize_routing_content(content):
     if isinstance(content, list):
         return [
             {**b, "text": _INJECTION_RE.sub("[X]", b["text"][:_MAX_ROUTING_LEN])}
-            if isinstance(b, dict) and "text" in b else b
+            if isinstance(b, dict) and "text" in b
+            else b
             for b in content
         ]
     return content
@@ -247,8 +289,9 @@ def _filter_hitl_messages(messages: list) -> list:
     filtered = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""
-        if (isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__"))) or \
-                (isinstance(content, str) and content.startswith("__MEMORY__") and Proto.MEMORY_VISION_MARKER not in content):
+        if (isinstance(content, str) and content.startswith(("__CONFIRM_", "__SCREENSHOT__"))) or (
+            isinstance(content, str) and content.startswith("__MEMORY__") and Proto.MEMORY_VISION_MARKER not in content
+        ):
             if isinstance(msg, AIMessage):
                 filtered.append(AIMessage(content="[Aktion wurde ausgefuehrt]"))
             continue
@@ -308,10 +351,21 @@ async def supervisor_node(state: AgentState) -> AgentState:
     # Issue #122: nach vision_agent ohne expliziten Memory-Befehl → chat_agent (deterministisch)
     if last_agent_name == "vision_agent" and routing_messages:
         _last = routing_messages[-1]
-        _text = _last.content if isinstance(_last.content, str) else " ".join(
-            b.get("text", "") if isinstance(b, dict) else str(b) for b in _last.content
+        _text = (
+            _last.content
+            if isinstance(_last.content, str)
+            else " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in _last.content)
         )
-        _memory_keywords = ("merke dir", "speichere", "vergiss", "loesche", "lösche", "notiere", "füge hinzu", "fuege hinzu")
+        _memory_keywords = (
+            "merke dir",
+            "speichere",
+            "vergiss",
+            "loesche",
+            "lösche",
+            "notiere",
+            "füge hinzu",
+            "fuege hinzu",
+        )
         if not any(kw in _text.lower() for kw in _memory_keywords):
             logger.info("supervisor: Pre-Routing → chat_agent (vision-Kontext, kein Memory-Keyword)")
             return {"next_agent": "chat_agent"}
@@ -326,9 +380,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
     # Phase 164: Anthropic Prompt Caching – SUPERVISOR_PROMPT ist vollständig statisch.
     all_messages = [
-        SystemMessage(content=[
-            {"type": "text", "text": SUPERVISOR_PROMPT, "cache_control": {"type": "ephemeral"}}
-        ])
+        SystemMessage(content=[{"type": "text", "text": SUPERVISOR_PROMPT, "cache_control": {"type": "ephemeral"}}])
     ] + sanitized
     response = await llm.ainvoke(all_messages)
     content = extract_llm_text(response.content)
@@ -384,6 +436,7 @@ async def init_graph() -> None:
             return
 
         import aiosqlite
+
         _db_conn = await aiosqlite.connect(str(_DB_PATH))
         checkpointer = AsyncSqliteSaver(_db_conn)
         agent_graph = _build_graph().compile(checkpointer=checkpointer)
@@ -409,9 +462,7 @@ async def cleanup_checkpoints(max_per_thread: int = 200) -> None:
             """,
             (max_per_thread,),
         )
-        await _db_conn.execute(
-            "DELETE FROM writes WHERE checkpoint_id NOT IN (SELECT checkpoint_id FROM checkpoints)"
-        )
+        await _db_conn.execute("DELETE FROM writes WHERE checkpoint_id NOT IN (SELECT checkpoint_id FROM checkpoints)")
         await _db_conn.commit()
         logger.info(f"Checkpoint-Bereinigung: {deleted.rowcount} Einträge entfernt.")
 

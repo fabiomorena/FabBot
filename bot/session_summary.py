@@ -106,6 +106,7 @@ Regeln:
 # Interne Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
+
 def _is_safe_session_path(path: Path) -> bool:
     try:
         path.resolve().relative_to(SESSIONS_DIR.resolve())
@@ -121,6 +122,7 @@ def _session_path(target_date: date) -> Path:
 async def _get_messages_from_state(chat_id: int) -> list:
     try:
         from agent.supervisor import agent_graph
+
         if agent_graph is None:
             logger.debug("SessionSummary: agent_graph nicht initialisiert – skip")
             return []
@@ -157,10 +159,7 @@ def _format_for_summary(messages: list) -> str:
         role = "User" if getattr(msg, "type", "") == "human" else "FabBot"
         content = msg.content
         if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") if isinstance(b, dict) else str(b)
-                for b in content
-            )
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
         content = str(content).strip()
         if content:
             lines.append(f"{role}: {content[:500]}")
@@ -172,6 +171,7 @@ def _load_known_context() -> str:
     parts = []
     try:
         from agent.profile import get_profile_context_short
+
         profile = get_profile_context_short()
         if profile:
             parts.append(f"<profil>\n{profile}\n</profil>")
@@ -197,14 +197,18 @@ async def _generate_summary(dialog_text: str) -> str | None:
 
         llm = get_llm()
         response = await asyncio.wait_for(
-            llm.ainvoke([
-                SystemMessage(content=_SUMMARY_PROMPT),
-                HumanMessage(content=(
-                    f"<conversation>\n{dialog_text[:6000]}\n</conversation>"
-                    f"{known_block}\n\n"
-                    "Erstelle die Zusammenfassung. Schreibe nur neue Informationen."
-                )),
-            ]),
+            llm.ainvoke(
+                [
+                    SystemMessage(content=_SUMMARY_PROMPT),
+                    HumanMessage(
+                        content=(
+                            f"<conversation>\n{dialog_text[:6000]}\n</conversation>"
+                            f"{known_block}\n\n"
+                            "Erstelle die Zusammenfassung. Schreibe nur neue Informationen."
+                        )
+                    ),
+                ]
+            ),
             timeout=60,
         )
         return extract_llm_text(response.content).strip() or None
@@ -224,11 +228,7 @@ def _write_summary_file(path: Path, summary: str, target_date: date) -> bool:
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%d.%m.%Y, %H:%M Uhr")
         date_header = target_date.strftime("%d.%m.%Y")
-        content = (
-            f"# Session – {date_header}\n\n"
-            f"{summary}\n\n"
-            f"---\n_Generiert: {timestamp}_\n"
-        )
+        content = f"# Session – {date_header}\n\n{summary}\n\n---\n_Generiert: {timestamp}_\n"
         path.write_text(content, encoding="utf-8")
         logger.info(f"SessionSummary: Zusammenfassung gespeichert: {path.name}")
         return True
@@ -240,6 +240,7 @@ def _write_summary_file(path: Path, summary: str, target_date: date) -> bool:
 # ---------------------------------------------------------------------------
 # Öffentliche API
 # ---------------------------------------------------------------------------
+
 
 async def summarize_session(
     chat_id: int,
@@ -274,10 +275,7 @@ async def summarize_session(
     human_count = _count_human_messages(filtered)
 
     if human_count < MIN_HUMAN_MESSAGES:
-        logger.info(
-            f"SessionSummary: Nur {human_count} HumanMessages "
-            f"(Minimum: {MIN_HUMAN_MESSAGES}) – skip"
-        )
+        logger.info(f"SessionSummary: Nur {human_count} HumanMessages (Minimum: {MIN_HUMAN_MESSAGES}) – skip")
         return False
 
     dialog_text = _format_for_summary(filtered)
@@ -302,6 +300,7 @@ async def summarize_session(
     if success:
         try:
             from agent.agents.chat_agent import invalidate_chat_cache
+
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (summarize_session) fehlgeschlagen (ignoriert): {e}")
@@ -316,7 +315,7 @@ def load_session_summaries(n: int = 5) -> str:
         files = sorted(SESSIONS_DIR.glob("????-??-??.md"), reverse=True)
         if not files:
             return ""
-        selected = files[:min(n, MAX_SESSIONS_LOAD)]
+        selected = files[: min(n, MAX_SESSIONS_LOAD)]
         parts = []
         for f in reversed(selected):
             try:
@@ -335,10 +334,9 @@ def load_session_summaries(n: int = 5) -> str:
 # Scheduler
 # ---------------------------------------------------------------------------
 
+
 async def run_session_summary_scheduler(bot, chat_id: int) -> None:
-    logger.info(
-        f"Session Summary Scheduler gestartet – täglich um {SESSION_SUMMARY_TIME} Uhr"
-    )
+    logger.info(f"Session Summary Scheduler gestartet – täglich um {SESSION_SUMMARY_TIME} Uhr")
 
     while True:
         now = datetime.now()
@@ -349,9 +347,7 @@ async def run_session_summary_scheduler(bot, chat_id: int) -> None:
             target += timedelta(days=1)
 
         wait_seconds = (target - now).total_seconds()
-        logger.info(
-            f"Nächste Session-Zusammenfassung in {wait_seconds / 3600:.1f} Stunden"
-        )
+        logger.info(f"Nächste Session-Zusammenfassung in {wait_seconds / 3600:.1f} Stunden")
         await asyncio.sleep(wait_seconds)
 
         try:

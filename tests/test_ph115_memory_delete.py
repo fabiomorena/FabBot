@@ -10,13 +10,13 @@ kein sys.modules-Patching, keine Seiteneffekte auf andere Tests.
 
 import copy
 import pytest
-import yaml
 from agent.agents.memory_agent import _is_valid_delete
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def full_profile():
@@ -53,8 +53,8 @@ def full_profile():
 # Tests – valide Deletes (alle Kategorien)
 # ---------------------------------------------------------------------------
 
-class TestIsValidDeleteValid:
 
+class TestIsValidDeleteValid:
     def test_delete_people(self, full_profile):
         updated = copy.deepcopy(full_profile)
         updated["people"] = [p for p in updated["people"] if p["name"] != "Alice"]
@@ -97,9 +97,7 @@ class TestIsValidDeleteValid:
 
     def test_delete_project(self, full_profile):
         updated = copy.deepcopy(full_profile)
-        updated["projects"]["active"] = [
-            p for p in updated["projects"]["active"] if p["name"] != "AbletonAI"
-        ]
+        updated["projects"]["active"] = [p for p in updated["projects"]["active"] if p["name"] != "AbletonAI"]
         assert _is_valid_delete(full_profile, updated) is True
 
     def test_delete_all_people(self, full_profile):
@@ -119,8 +117,8 @@ class TestIsValidDeleteValid:
 # Tests – invalide Deletes
 # ---------------------------------------------------------------------------
 
-class TestIsValidDeleteInvalid:
 
+class TestIsValidDeleteInvalid:
     def test_no_change(self, full_profile):
         """Identisches YAML → kein Delete passiert → INVALID."""
         updated = copy.deepcopy(full_profile)
@@ -165,8 +163,8 @@ class TestIsValidDeleteInvalid:
 # Tests – Edge Cases
 # ---------------------------------------------------------------------------
 
-class TestIsValidDeleteEdgeCases:
 
+class TestIsValidDeleteEdgeCases:
     def test_empty_updated_is_valid_subset(self):
         """Leeres updated ist Subset von jedem original (alle Daten gelöscht)."""
         original = {"people": [{"name": "Alice"}], "preferences": {"key": "val"}}

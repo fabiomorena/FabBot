@@ -4,6 +4,7 @@ agent/agents/system_agent.py – Issue #37
 CPU/RAM/Disk-Metriken via psutil ohne Shell-Befehle.
 Nutzbar direkt vom User ("wie hoch ist die CPU?") und vom Heartbeat für Alerts.
 """
+
 import logging
 from dataclasses import dataclass
 
@@ -16,9 +17,9 @@ from agent.audit import log_action
 logger = logging.getLogger(__name__)
 
 # Schwellwerte für proaktive Alerts
-CPU_ALERT_THRESHOLD = 80.0    # %
-RAM_ALERT_THRESHOLD = 85.0    # %
-DISK_ALERT_THRESHOLD = 90.0   # %
+CPU_ALERT_THRESHOLD = 80.0  # %
+RAM_ALERT_THRESHOLD = 85.0  # %
+DISK_ALERT_THRESHOLD = 90.0  # %
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,7 @@ async def system_agent(state: AgentState) -> AgentState:
     """Gibt CPU/RAM/Disk-Status zurück. Kein LLM-Call nötig."""
     try:
         stats = collect_stats()
-        log_action(
-            "system_agent", "stats", "collected",
-            state.get("telegram_chat_id"), status="executed"
-        )
+        log_action("system_agent", "stats", "collected", state.get("telegram_chat_id"), status="executed")
         result = format_stats(stats)
     except Exception as e:
         logger.error(f"system_agent Fehler: {e}")

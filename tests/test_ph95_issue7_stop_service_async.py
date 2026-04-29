@@ -10,26 +10,27 @@ Testet:
 6. _post_shutdown() ruft await stop_service() auf (kein sync-Aufruf)
 """
 
-import asyncio
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
 # 1. stop_service() ist eine Coroutine
 # ---------------------------------------------------------------------------
 
+
 def test_stop_service_is_coroutine():
     """stop_service() muss async sein – gibt Coroutine zurück."""
     import inspect
     from bot.whatsapp import stop_service
-    assert inspect.iscoroutinefunction(stop_service), \
-        "stop_service() sollte async def sein (Issue #7)"
+
+    assert inspect.iscoroutinefunction(stop_service), "stop_service() sollte async def sein (Issue #7)"
 
 
 # ---------------------------------------------------------------------------
 # 2. stop_service() terminiert laufenden Prozess
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_stop_service_terminates_process():
@@ -50,6 +51,7 @@ async def test_stop_service_terminates_process():
 # 3. stop_service() idempotent
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_stop_service_idempotent():
     """Zweimaliges Aufrufen von stop_service() → kein Fehler."""
@@ -67,10 +69,12 @@ async def test_stop_service_idempotent():
 # 4. stop_service() mit None-Prozess
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_stop_service_none_process():
     """stop_service() mit _service_process=None → kein Fehler."""
     import bot.whatsapp as wa
+
     wa._service_process = None
     await wa.stop_service()  # Kein Exception
 
@@ -78,6 +82,7 @@ async def test_stop_service_none_process():
 # ---------------------------------------------------------------------------
 # 5. stop_service() setzt _service_process auf None
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_stop_service_clears_process():
@@ -95,6 +100,7 @@ async def test_stop_service_clears_process():
 # ---------------------------------------------------------------------------
 # 6. stop_service() nicht aufgerufen wenn Prozess bereits beendet
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_stop_service_skips_terminated_process():

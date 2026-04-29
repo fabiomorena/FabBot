@@ -9,7 +9,7 @@ Testet das Multi-Agent Briefing:
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 class TestRunWithTimeout:
@@ -60,14 +60,19 @@ class TestOrchestrateBriefing:
     async def test_returns_all_sections(self):
         from agent.proactive.briefing_agent import orchestrate_briefing
 
-        async def w(): return "Sonnig"
-        async def c(): return "Kein Termin"
-        async def p(): return "✅ Reise planen"
-        async def n(): return "KI-News"
+        async def w():
+            return "Sonnig"
 
-        result = await orchestrate_briefing(
-            weather_fn=w, calendar_fn=c, pending_fn=p, news_fn=n
-        )
+        async def c():
+            return "Kein Termin"
+
+        async def p():
+            return "✅ Reise planen"
+
+        async def n():
+            return "KI-News"
+
+        result = await orchestrate_briefing(weather_fn=w, calendar_fn=c, pending_fn=p, news_fn=n)
         assert result["weather"] == "Sonnig"
         assert result["calendar"] == "Kein Termin"
         assert result["pending"] == "✅ Reise planen"
@@ -77,14 +82,19 @@ class TestOrchestrateBriefing:
     async def test_failing_agent_gets_fallback(self):
         from agent.proactive.briefing_agent import orchestrate_briefing
 
-        async def w(): raise Exception("Wetter kaputt")
-        async def c(): return "Termine"
-        async def p(): return ""
-        async def n(): return "News"
+        async def w():
+            raise Exception("Wetter kaputt")
 
-        result = await orchestrate_briefing(
-            weather_fn=w, calendar_fn=c, pending_fn=p, news_fn=n
-        )
+        async def c():
+            return "Termine"
+
+        async def p():
+            return ""
+
+        async def n():
+            return "News"
+
+        result = await orchestrate_briefing(weather_fn=w, calendar_fn=c, pending_fn=p, news_fn=n)
         assert result["weather"] != ""  # Fallback-Text vorhanden
         assert result["calendar"] == "Termine"
 
@@ -95,13 +105,18 @@ class TestOrchestrateBriefing:
         async def w():
             await asyncio.sleep(10)
             return "never"
-        async def c(): return "Termine"
-        async def p(): return ""
-        async def n(): return "News"
+
+        async def c():
+            return "Termine"
+
+        async def p():
+            return ""
+
+        async def n():
+            return "News"
 
         result = await asyncio.wait_for(
-            orchestrate_briefing(weather_fn=w, calendar_fn=c, pending_fn=p, news_fn=n, timeout=0.05),
-            timeout=2.0
+            orchestrate_briefing(weather_fn=w, calendar_fn=c, pending_fn=p, news_fn=n, timeout=0.05), timeout=2.0
         )
         assert result["calendar"] == "Termine"
         assert result["weather"] != "never"

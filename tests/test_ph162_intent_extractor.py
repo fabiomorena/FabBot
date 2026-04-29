@@ -1,7 +1,7 @@
 """
 Tests für agent/proactive/intent_extractor.py – Phase 162 (Issue #107)
 """
-import asyncio
+
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # _parse_intentions
 # ---------------------------------------------------------------------------
 
+
 class TestParseIntentions:
     def setup_method(self):
         from agent.proactive.intent_extractor import _parse_intentions
+
         self.parse = _parse_intentions
 
     def test_valid_intent(self):
@@ -39,7 +41,7 @@ class TestParseIntentions:
         assert self.parse(raw) == []
 
     def test_markdown_codeblock_stripped(self):
-        raw = "```json\n[{\"name\": \"X\", \"context\": \"Y\"}]\n```"
+        raw = '```json\n[{"name": "X", "context": "Y"}]\n```'
         result = self.parse(raw)
         assert len(result) == 1
 
@@ -54,9 +56,11 @@ class TestParseIntentions:
 # _intent_id
 # ---------------------------------------------------------------------------
 
+
 class TestIntentId:
     def setup_method(self):
         from agent.proactive.intent_extractor import _intent_id
+
         self.intent_id = _intent_id
 
     def test_deterministic(self):
@@ -76,6 +80,7 @@ class TestIntentId:
 # extract_intentions – fire-and-forget
 # ---------------------------------------------------------------------------
 
+
 class TestExtractIntentions:
     def _make_llm_response(self, intentions: list) -> AsyncMock:
         mock_llm = AsyncMock()
@@ -87,6 +92,7 @@ class TestExtractIntentions:
     @pytest.mark.asyncio
     async def test_empty_message_skips_llm(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         with patch("agent.proactive.intent_extractor._get_llm") as mock_get:
             await extract_intentions("   ")
             mock_get.assert_not_called()
@@ -94,22 +100,28 @@ class TestExtractIntentions:
     @pytest.mark.asyncio
     async def test_no_intentions_no_upsert(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         mock_llm = self._make_llm_response([])
         mock_collection = MagicMock()
-        with patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm),
+            patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection),
+        ):
             await extract_intentions("schöner Tag heute")
         mock_collection.upsert.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_intention_saved_to_chroma(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         intentions = [{"name": "Steuererklärung", "context": "ich muss die Steuererklärung machen"}]
         mock_llm = self._make_llm_response(intentions)
         mock_collection = MagicMock()
         mock_collection.get.return_value = {"ids": [], "metadatas": []}
-        with patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm),
+            patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection),
+        ):
             await extract_intentions("ich muss die Steuererklärung machen")
         mock_collection.upsert.assert_called_once()
         call_kwargs = mock_collection.upsert.call_args
@@ -120,12 +132,15 @@ class TestExtractIntentions:
     @pytest.mark.asyncio
     async def test_due_date_stored_when_present(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         intentions = [{"name": "Arzt", "context": "morgen Arzt", "due_date": "2026-04-28"}]
         mock_llm = self._make_llm_response(intentions)
         mock_collection = MagicMock()
         mock_collection.get.return_value = {"ids": [], "metadatas": []}
-        with patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm),
+            patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection),
+        ):
             await extract_intentions("morgen Arzt")
         call_kwargs = mock_collection.upsert.call_args
         metadatas = call_kwargs[1]["metadatas"] if call_kwargs[1] else call_kwargs[0][2]
@@ -134,6 +149,7 @@ class TestExtractIntentions:
     @pytest.mark.asyncio
     async def test_mention_count_incremented_on_duplicate(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         intentions = [{"name": "Sport", "context": "ich sollte mehr Sport machen"}]
         mock_llm = self._make_llm_response(intentions)
         mock_collection = MagicMock()
@@ -141,8 +157,10 @@ class TestExtractIntentions:
             "ids": ["existing_id"],
             "metadatas": [{"mention_count": 3}],
         }
-        with patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection):
+        with (
+            patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm),
+            patch("agent.proactive.intent_extractor._get_collection", return_value=mock_collection),
+        ):
             await extract_intentions("ich sollte mehr Sport machen")
         call_kwargs = mock_collection.upsert.call_args
         metadatas = call_kwargs[1]["metadatas"] if call_kwargs[1] else call_kwargs[0][2]
@@ -151,17 +169,23 @@ class TestExtractIntentions:
     @pytest.mark.asyncio
     async def test_chroma_unavailable_does_not_raise(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         intentions = [{"name": "X", "context": "Y"}]
         mock_llm = self._make_llm_response(intentions)
-        with patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.intent_extractor._get_collection", return_value=None):
+        with (
+            patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm),
+            patch("agent.proactive.intent_extractor._get_collection", return_value=None),
+        ):
             await extract_intentions("ich muss X machen")
 
     @pytest.mark.asyncio
     async def test_llm_exception_does_not_raise(self):
         from agent.proactive.intent_extractor import extract_intentions
+
         mock_llm = AsyncMock()
         mock_llm.ainvoke.side_effect = RuntimeError("LLM down")
-        with patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm), \
-             patch("agent.proactive.intent_extractor._get_collection", return_value=MagicMock()):
+        with (
+            patch("agent.proactive.intent_extractor._get_llm", return_value=mock_llm),
+            patch("agent.proactive.intent_extractor._get_collection", return_value=MagicMock()),
+        ):
             await extract_intentions("ich muss X machen")

@@ -40,21 +40,22 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # ── Konfiguration ─────────────────────────────────────────────────────────
-_SERVICE_PORT    = int(os.getenv("WA_SERVICE_PORT", "8767"))
-_SERVICE_URL     = f"http://127.0.0.1:{_SERVICE_PORT}"
-_TOKEN_PATH      = Path.home() / ".fabbot" / "wa_service_token"
-_STATUS_FILE     = Path.home() / ".fabbot" / "wa_ready"
-_NODE_SERVICE    = Path(__file__).parent.parent / "whatsapp_service" / "server.js"
-_HTTP_TIMEOUT    = 10
+_SERVICE_PORT = int(os.getenv("WA_SERVICE_PORT", "8767"))
+_SERVICE_URL = f"http://127.0.0.1:{_SERVICE_PORT}"
+_TOKEN_PATH = Path.home() / ".fabbot" / "wa_service_token"
+_STATUS_FILE = Path.home() / ".fabbot" / "wa_ready"
+_NODE_SERVICE = Path(__file__).parent.parent / "whatsapp_service" / "server.js"
+_HTTP_TIMEOUT = 10
 
 # Phase 86: Polling-Konfiguration für start_service()
-_STARTUP_POLL_INTERVAL = 0.5   # Sekunden zwischen Versuchen
-_STARTUP_POLL_ATTEMPTS = 20    # max 10 Sekunden warten (20 × 0.5s)
+_STARTUP_POLL_INTERVAL = 0.5  # Sekunden zwischen Versuchen
+_STARTUP_POLL_ATTEMPTS = 20  # max 10 Sekunden warten (20 × 0.5s)
 
 _service_process: subprocess.Popen | None = None
 
 
 # ── Token Management ──────────────────────────────────────────────────────
+
 
 def _get_or_create_token() -> str:
     if _TOKEN_PATH.exists():
@@ -77,6 +78,7 @@ def _auth_headers() -> dict:
 
 # ── Service Lifecycle ─────────────────────────────────────────────────────
 
+
 async def start_service() -> bool:
     """
     Startet den Node.js WhatsApp Service als Subprocess.
@@ -97,10 +99,7 @@ async def start_service() -> bool:
 
     node_modules = _NODE_SERVICE.parent / "node_modules"
     if not node_modules.exists():
-        logger.warning(
-            "whatsapp_service/node_modules fehlt – "
-            "bitte 'cd whatsapp_service && npm install' ausführen."
-        )
+        logger.warning("whatsapp_service/node_modules fehlt – bitte 'cd whatsapp_service && npm install' ausführen.")
         return False
 
     if _service_process and _service_process.poll() is None:
@@ -125,10 +124,7 @@ async def start_service() -> bool:
         await asyncio.sleep(_STARTUP_POLL_INTERVAL)
 
         if _service_process.poll() is not None:
-            logger.error(
-                "WhatsApp Service sofort beendet – "
-                "Check whatsapp_service/node_modules."
-            )
+            logger.error("WhatsApp Service sofort beendet – Check whatsapp_service/node_modules.")
             return False
 
         try:
@@ -176,6 +172,7 @@ async def stop_service() -> None:
 
 # ── Session Status (sync) ─────────────────────────────────────────────────
 
+
 def is_session_ready() -> bool:
     """
     Synchrone Prüfung ob WhatsApp verbunden ist.
@@ -185,6 +182,7 @@ def is_session_ready() -> bool:
 
 
 # ── Service API ───────────────────────────────────────────────────────────
+
 
 async def get_service_status() -> dict:
     """Holt Status vom Node.js Service via HTTP."""
@@ -210,10 +208,12 @@ async def get_qr_code() -> str | None:
 
 # ── Kontakt-Management (Profile YAML) ────────────────────────────────────
 
+
 def load_whatsapp_contacts() -> list[dict]:
     """Lädt whatsapp_contacts aus personal_profile.yaml. Fail-safe."""
     try:
         from agent.profile import load_profile
+
         profile = load_profile()
         contacts = profile.get("whatsapp_contacts", [])
         return contacts if isinstance(contacts, list) else []
@@ -236,15 +236,13 @@ def find_contact(name: str) -> dict | None:
 
 # ── Nachricht senden ──────────────────────────────────────────────────────
 
+
 async def send_whatsapp_message(whatsapp_name: str, text: str) -> tuple[bool, str]:
     """Sendet eine WhatsApp-Nachricht via Node.js Service."""
     if not is_session_ready():
         status = await get_service_status()
         if not status.get("ready"):
-            return False, (
-                "WhatsApp nicht verbunden.\n"
-                "Bitte /wa_setup ausführen um die Session herzustellen."
-            )
+            return False, ("WhatsApp nicht verbunden.\nBitte /wa_setup ausführen um die Session herzustellen.")
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -268,13 +266,15 @@ async def send_whatsapp_message(whatsapp_name: str, text: str) -> tuple[bool, st
 
 # ── Kontakt-Management CRUD ───────────────────────────────────────────────
 
+
 async def add_whatsapp_contact(name: str, whatsapp_name: str) -> tuple[bool, str]:
-    name          = name.strip()
+    name = name.strip()
     whatsapp_name = whatsapp_name.strip()
     if not name or not whatsapp_name:
         return False, "Name und WhatsApp-Name dürfen nicht leer sein."
     try:
         from agent.profile import load_profile, write_profile
+
         profile = load_profile()
         if "whatsapp_contacts" not in profile or not isinstance(profile["whatsapp_contacts"], list):
             profile["whatsapp_contacts"] = []
@@ -296,14 +296,14 @@ async def remove_whatsapp_contact(name: str) -> tuple[bool, str]:
         return False, "Kein Name angegeben."
     try:
         from agent.profile import load_profile, write_profile
-        profile  = load_profile()
+
+        profile = load_profile()
         contacts = profile.get("whatsapp_contacts", [])
         if not isinstance(contacts, list):
             return False, "Keine Kontakte vorhanden."
         original_len = len(contacts)
         profile["whatsapp_contacts"] = [
-            c for c in contacts
-            if not (isinstance(c, dict) and c.get("name", "").lower() == name.lower())
+            c for c in contacts if not (isinstance(c, dict) and c.get("name", "").lower() == name.lower())
         ]
         if len(profile["whatsapp_contacts"]) == original_len:
             return False, f"Kontakt nicht gefunden: {name}"
@@ -320,5 +320,5 @@ def list_whatsapp_contacts_formatted() -> str:
     lines = [f"WhatsApp-Kontakte ({len(contacts)}):"]
     for c in contacts:
         if isinstance(c, dict):
-            lines.append(f"- {c.get('name','?')} → {c.get('whatsapp_name','?')}")
+            lines.append(f"- {c.get('name', '?')} → {c.get('whatsapp_name', '?')}")
     return "\n".join(lines)

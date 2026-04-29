@@ -249,5 +249,6 @@ pytest-asyncio
 homoglyphs
 pip-audit
 bandit
+ruff
 
 keyring

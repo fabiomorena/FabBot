@@ -23,21 +23,18 @@ async def request_confirmation(
     future: asyncio.Future = loop.create_future()
     _pending[confirmation_id] = future
 
-    keyboard = InlineKeyboardMarkup([
+    keyboard = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("Bestaetigen", callback_data=f"confirm:{confirmation_id}"),
-            InlineKeyboardButton("Ablehnen", callback_data=f"reject:{confirmation_id}"),
+            [
+                InlineKeyboardButton("Bestaetigen", callback_data=f"confirm:{confirmation_id}"),
+                InlineKeyboardButton("Ablehnen", callback_data=f"reject:{confirmation_id}"),
+            ]
         ]
-    ])
+    )
 
     await bot.send_message(
         chat_id=chat_id,
-        text=(
-            f"Bestaetigung erforderlich\n\n"
-            f"Agent: {agent}\n"
-            f"Aktion: {action}\n\n"
-            f"Ausfuehren?"
-        ),
+        text=(f"Bestaetigung erforderlich\n\nAgent: {agent}\nAktion: {action}\n\nAusfuehren?"),
         reply_markup=keyboard,
     )
 

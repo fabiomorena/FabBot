@@ -49,6 +49,7 @@ _entities_collection = None
 
 def _get_llm():
     from agent.llm import get_fast_llm
+
     return get_fast_llm()
 
 
@@ -58,6 +59,7 @@ def _get_entities_collection():
         return _entities_collection
     try:
         import chromadb
+
         _CHROMA_PATH.mkdir(parents=True, exist_ok=True)
         client = chromadb.PersistentClient(path=str(_CHROMA_PATH))
         _entities_collection = client.get_or_create_collection(
@@ -113,6 +115,7 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
     try:
         llm = _get_llm()
         from langchain_core.messages import HumanMessage
+
         prompt = _EXTRACTION_PROMPT.format(
             current_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             user_message=user_message[:500],
@@ -138,8 +141,7 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
             # Existing entry check for mention_count
             try:
                 existing = collection.get(ids=[eid])
-                mention_count = int(existing["metadatas"][0].get("mention_count", 0)) + 1 \
-                    if existing["ids"] else 1
+                mention_count = int(existing["metadatas"][0].get("mention_count", 0)) + 1 if existing["ids"] else 1
             except Exception:
                 mention_count = 1
 
@@ -164,6 +166,7 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
 
         if len(ids) >= 2:
             from agent.proactive.linker import link_entities
+
             entity_names = {eid: m["name"] for eid, m in zip(ids, metadatas)}
             link_entities(ids, entity_names)
 

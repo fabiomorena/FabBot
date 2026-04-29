@@ -10,6 +10,7 @@ Geprüfte APIs:
 - Tavily (wenn TAVILY_API_KEY gesetzt)
 - Brave  (wenn BRAVE_API_KEY gesetzt)
 """
+
 import json
 import logging
 import os
@@ -25,14 +26,14 @@ _TIMEOUT = 8.0
 
 _API_ENDPOINTS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com",
-    "tavily":    "https://api.tavily.com",
-    "brave":     "https://api.search.brave.com",
+    "tavily": "https://api.tavily.com",
+    "brave": "https://api.search.brave.com",
 }
 
 _API_LABELS: dict[str, str] = {
     "anthropic": "Anthropic API",
-    "tavily":    "Tavily Search",
-    "brave":     "Brave Search",
+    "tavily": "Tavily Search",
+    "brave": "Brave Search",
 }
 
 
@@ -74,12 +75,10 @@ async def _ping(api_name: str) -> bool:
 async def check_apis() -> dict[str, bool]:
     """Prüft alle aktiven APIs und gibt {name: is_up} zurück."""
     import asyncio
+
     apis = _active_apis()
     results = await asyncio.gather(*[_ping(api) for api in apis], return_exceptions=True)
-    return {
-        api: (result is True)
-        for api, result in zip(apis, results)
-    }
+    return {api: (result is True) for api, result in zip(apis, results)}
 
 
 def get_alert_messages(current: dict[str, bool], previous: dict[str, bool]) -> list[str]:

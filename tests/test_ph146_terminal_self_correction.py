@@ -7,7 +7,7 @@ bis zu MAX_RETRIES Versuche bevor blockiert oder HITL ausgelöst wird.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 
 
 def _make_state(text: str = "zeig mir alle Dateien") -> dict:
@@ -27,22 +27,26 @@ def _llm_response(text: str) -> MagicMock:
 # _extract_command
 # ---------------------------------------------------------------------------
 
-class TestExtractCommand:
 
+class TestExtractCommand:
     def test_plain_command(self) -> None:
         from agent.agents.terminal import _extract_command
+
         assert _extract_command("ls -la") == "ls -la"
 
     def test_strips_backticks(self) -> None:
         from agent.agents.terminal import _extract_command
+
         assert _extract_command("`ls -la`") == "ls -la"
 
     def test_strips_confirm_prefix(self) -> None:
         from agent.agents.terminal import _extract_command
+
         assert _extract_command("__CONFIRM_TERMINAL__:ls -la") == "ls -la"
 
     def test_strips_whitespace(self) -> None:
         from agent.agents.terminal import _extract_command
+
         assert _extract_command("  ls  ") == "ls"
 
 
@@ -50,22 +54,26 @@ class TestExtractCommand:
 # _is_base_cmd_allowed
 # ---------------------------------------------------------------------------
 
-class TestIsBaseCmdAllowed:
 
+class TestIsBaseCmdAllowed:
     def test_allowed_command(self) -> None:
         from agent.agents.terminal import _is_base_cmd_allowed
+
         assert _is_base_cmd_allowed("ls -la") is True
 
     def test_forbidden_command(self) -> None:
         from agent.agents.terminal import _is_base_cmd_allowed
+
         assert _is_base_cmd_allowed("rm -rf /") is False
 
     def test_empty_string(self) -> None:
         from agent.agents.terminal import _is_base_cmd_allowed
+
         assert _is_base_cmd_allowed("") is False
 
     def test_invalid_syntax(self) -> None:
         from agent.agents.terminal import _is_base_cmd_allowed
+
         assert _is_base_cmd_allowed("ls 'unclosed") is False
 
 
@@ -73,8 +81,8 @@ class TestIsBaseCmdAllowed:
 # terminal_agent – Erfolgsfall (kein Retry nötig)
 # ---------------------------------------------------------------------------
 
-class TestTerminalAgentSuccess:
 
+class TestTerminalAgentSuccess:
     @pytest.mark.asyncio
     async def test_valid_command_triggers_hitl(self) -> None:
         mock_llm = AsyncMock()
@@ -82,6 +90,7 @@ class TestTerminalAgentSuccess:
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             result = await terminal_agent(_make_state())
 
         content = result["messages"][0].content
@@ -95,6 +104,7 @@ class TestTerminalAgentSuccess:
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             await terminal_agent(_make_state())
 
         assert mock_llm.ainvoke.call_count == 1
@@ -106,6 +116,7 @@ class TestTerminalAgentSuccess:
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             result = await terminal_agent(_make_state())
 
         assert "nicht unterstuetzt" in result["messages"][0].content
@@ -116,19 +127,22 @@ class TestTerminalAgentSuccess:
 # terminal_agent – Self-Correction bei verbotenem Basisbefehl
 # ---------------------------------------------------------------------------
 
-class TestTerminalAgentSelfCorrectionBase:
 
+class TestTerminalAgentSelfCorrectionBase:
     @pytest.mark.asyncio
     async def test_retries_on_forbidden_base_command(self) -> None:
         """LLM gibt erst 'rm -rf /', dann 'ls' zurück → Retry erfolgreich."""
         mock_llm = AsyncMock()
-        mock_llm.ainvoke = AsyncMock(side_effect=[
-            _llm_response("rm -rf /"),
-            _llm_response("ls"),
-        ])
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[
+                _llm_response("rm -rf /"),
+                _llm_response("ls"),
+            ]
+        )
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             result = await terminal_agent(_make_state())
 
         assert mock_llm.ainvoke.call_count == 2
@@ -150,12 +164,11 @@ class TestTerminalAgentSelfCorrectionBase:
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             await terminal_agent(_make_state())
 
         second_call_messages = captured_messages[1]
-        last_human = next(
-            (m for m in reversed(second_call_messages) if isinstance(m, HumanMessage)), None
-        )
+        last_human = next((m for m in reversed(second_call_messages) if isinstance(m, HumanMessage)), None)
         assert last_human is not None
         assert "Fehler" in last_human.content or "erlaubt" in last_human.content.lower()
 
@@ -163,11 +176,13 @@ class TestTerminalAgentSelfCorrectionBase:
     async def test_blocked_after_max_retries_exceeded(self) -> None:
         """Nach MAX_RETRIES+1 Versuchen mit verbotenem Befehl → blockiert."""
         from agent.agents.terminal import MAX_RETRIES
+
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=_llm_response("rm -rf /"))
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             result = await terminal_agent(_make_state())
 
         assert mock_llm.ainvoke.call_count == MAX_RETRIES + 1
@@ -177,13 +192,16 @@ class TestTerminalAgentSelfCorrectionBase:
     async def test_unsupported_after_retry_stops_immediately(self) -> None:
         """Wenn LLM nach Retry UNSUPPORTED antwortet → sofort stoppen."""
         mock_llm = AsyncMock()
-        mock_llm.ainvoke = AsyncMock(side_effect=[
-            _llm_response("rm -rf /"),
-            _llm_response("UNSUPPORTED"),
-        ])
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[
+                _llm_response("rm -rf /"),
+                _llm_response("UNSUPPORTED"),
+            ]
+        )
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             result = await terminal_agent(_make_state())
 
         assert mock_llm.ainvoke.call_count == 2
@@ -194,19 +212,22 @@ class TestTerminalAgentSelfCorrectionBase:
 # terminal_agent – Self-Correction bei Sicherheitscheck-Fehler
 # ---------------------------------------------------------------------------
 
-class TestTerminalAgentSelfCorrectionSecurity:
 
+class TestTerminalAgentSelfCorrectionSecurity:
     @pytest.mark.asyncio
     async def test_retries_on_security_violation(self) -> None:
         """LLM gibt erst 'find / -name x', dann 'find ~ -name x' zurück."""
         mock_llm = AsyncMock()
-        mock_llm.ainvoke = AsyncMock(side_effect=[
-            _llm_response("find / -name test.txt"),
-            _llm_response("find ~/Documents -name test.txt"),
-        ])
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[
+                _llm_response("find / -name test.txt"),
+                _llm_response("find ~/Documents -name test.txt"),
+            ]
+        )
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             result = await terminal_agent(_make_state("finde test.txt"))
 
         assert mock_llm.ainvoke.call_count == 2
@@ -228,25 +249,26 @@ class TestTerminalAgentSelfCorrectionSecurity:
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
             from agent.agents.terminal import terminal_agent
+
             await terminal_agent(_make_state())
 
         second_call = captured_messages[1]
-        last_human = next(
-            (m for m in reversed(second_call) if isinstance(m, HumanMessage)), None
-        )
+        last_human = next((m for m in reversed(second_call) if isinstance(m, HumanMessage)), None)
         assert last_human is not None
         assert "Sicherheit" in last_human.content or "abgelehnt" in last_human.content
 
     @pytest.mark.asyncio
     async def test_blocked_logged_after_max_retries(self) -> None:
         """log_action wird mit status=blocked aufgerufen nach erschöpften Retries."""
-        from agent.agents.terminal import MAX_RETRIES
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=_llm_response("find / -name x"))
 
-        with patch("agent.agents.terminal.get_llm", return_value=mock_llm), \
-             patch("agent.agents.terminal.log_action") as mock_log:
+        with (
+            patch("agent.agents.terminal.get_llm", return_value=mock_llm),
+            patch("agent.agents.terminal.log_action") as mock_log,
+        ):
             from agent.agents.terminal import terminal_agent
+
             await terminal_agent(_make_state())
 
         assert mock_log.called
@@ -258,13 +280,15 @@ class TestTerminalAgentSelfCorrectionSecurity:
 # MAX_RETRIES Konstante
 # ---------------------------------------------------------------------------
 
-class TestMaxRetries:
 
+class TestMaxRetries:
     def test_max_retries_is_positive_int(self) -> None:
         from agent.agents.terminal import MAX_RETRIES
+
         assert isinstance(MAX_RETRIES, int)
         assert MAX_RETRIES >= 1
 
     def test_max_retries_not_excessive(self) -> None:
         from agent.agents.terminal import MAX_RETRIES
+
         assert MAX_RETRIES <= 5

@@ -52,6 +52,7 @@ _CHECK_TIMEOUT = 10  # Sekunden
 # Einzelne Check-Funktionen
 # ---------------------------------------------------------------------------
 
+
 async def _check_terminal() -> tuple[bool, str]:
     """Prüft ob Shell-Befehle ausführbar sind."""
     try:
@@ -151,6 +152,7 @@ async def _check_profile() -> tuple[bool, str]:
     """Prüft ob personal_profile.yaml ladbar ist."""
     try:
         from agent.profile import load_profile
+
         profile = load_profile()
         if profile:
             name = profile.get("identity", {}).get("name", "?")
@@ -265,7 +267,8 @@ def _audit_write_check(path: Path) -> None:
 async def _check_heartbeat() -> tuple[bool, str]:
     """Prüft Heartbeat-Status: ob Cooldown aktiv oder stummgeschaltet."""
     try:
-        from agent.proactive.heartbeat import is_on_cooldown, is_muted, COOLDOWN_FILE
+        from agent.proactive.heartbeat import is_on_cooldown, is_muted
+
         muted = is_muted()
         on_cooldown = is_on_cooldown()
         if muted:
@@ -281,6 +284,7 @@ async def _check_schedulers() -> tuple[bool, str]:
     """Prüft ob alle Background-Scheduler-Tasks noch aktiv sind."""
     try:
         from bot.bot import _scheduler_tasks
+
         if not _scheduler_tasks:
             return False, "Keine Scheduler registriert"
         dead = [t.get_name() for t in _scheduler_tasks if t.done()]
@@ -319,6 +323,7 @@ async def _check_tts() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Haupt-Check-Funktion
 # ---------------------------------------------------------------------------
+
 
 async def run_health_check(bot, chat_id: int) -> None:
     """
@@ -393,6 +398,7 @@ async def run_health_check(bot, chat_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
+
 
 async def run_health_check_scheduler(bot, chat_id: int) -> None:
     """

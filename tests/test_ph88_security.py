@@ -1,7 +1,7 @@
 """
 Phase 88 Security Tests – Symlink, Tiefenlimit, DNS-Rebinding, Async-Conversion.
 """
-import os
+
 import socket
 import pytest
 from pathlib import Path
@@ -12,8 +12,8 @@ from unittest.mock import patch, AsyncMock, MagicMock
 # file.py – Symlink-Schutz
 # ---------------------------------------------------------------------------
 
-class TestIsPathAllowedSymlink:
 
+class TestIsPathAllowedSymlink:
     def test_symlink_to_external_path_blocked(self, tmp_path: Path) -> None:
         """Symlink in erlaubtem Ordner → verbotenes Ziel → blockiert."""
         allowed_base = tmp_path / "Downloads"
@@ -28,6 +28,7 @@ class TestIsPathAllowedSymlink:
 
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [allowed_base]):
             from agent.agents.file import is_path_allowed
+
             allowed, reason = is_path_allowed(symlink)
 
         assert allowed is False
@@ -44,6 +45,7 @@ class TestIsPathAllowedSymlink:
 
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [allowed_base]):
             from agent.agents.file import is_path_allowed
+
             allowed, _ = is_path_allowed(symlink)
 
         assert allowed is True
@@ -57,6 +59,7 @@ class TestIsPathAllowedSymlink:
 
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [allowed_base]):
             from agent.agents.file import is_path_allowed
+
             allowed, _ = is_path_allowed(regular)
 
         assert allowed is True
@@ -75,6 +78,7 @@ class TestIsPathAllowedSymlink:
 
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [allowed_base]):
             from agent.agents.file import is_path_allowed
+
             allowed, reason = is_path_allowed(symlink)
 
         assert allowed is False
@@ -84,8 +88,8 @@ class TestIsPathAllowedSymlink:
 # file.py – Tiefenlimit
 # ---------------------------------------------------------------------------
 
-class TestIsPathAllowedDepth:
 
+class TestIsPathAllowedDepth:
     def _allowed_base(self, tmp_path: Path) -> Path:
         base = tmp_path / "Downloads"
         base.mkdir()
@@ -97,6 +101,7 @@ class TestIsPathAllowedDepth:
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [base]):
             with patch("agent.agents.file.MAX_PATH_DEPTH", 5):
                 from agent.agents.file import is_path_allowed
+
                 allowed, _ = is_path_allowed(path)
         assert allowed is True
 
@@ -107,6 +112,7 @@ class TestIsPathAllowedDepth:
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [base]):
             with patch("agent.agents.file.MAX_PATH_DEPTH", 5):
                 from agent.agents.file import is_path_allowed
+
                 allowed, _ = is_path_allowed(path)
         assert allowed is True
 
@@ -117,6 +123,7 @@ class TestIsPathAllowedDepth:
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [base]):
             with patch("agent.agents.file.MAX_PATH_DEPTH", 5):
                 from agent.agents.file import is_path_allowed
+
                 allowed, reason = is_path_allowed(path)
         assert allowed is False
         assert "tief" in reason.lower()
@@ -128,12 +135,14 @@ class TestIsPathAllowedDepth:
         with patch("agent.agents.file.ALLOWED_BASE_PATHS", [base]):
             with patch("agent.agents.file.MAX_PATH_DEPTH", 5):
                 from agent.agents.file import is_path_allowed
+
                 allowed, _ = is_path_allowed(path)
         assert allowed is False
 
     def test_max_path_depth_constant_exists(self) -> None:
         """MAX_PATH_DEPTH ist als öffentliche Konstante exportiert."""
         from agent.agents.file import MAX_PATH_DEPTH
+
         assert isinstance(MAX_PATH_DEPTH, int)
         assert MAX_PATH_DEPTH > 0
 
@@ -142,12 +151,13 @@ class TestIsPathAllowedDepth:
 # web.py – DNS-Rebinding-Schutz
 # ---------------------------------------------------------------------------
 
-class TestSSRFDNSRebinding:
 
+class TestSSRFDNSRebinding:
     def test_hostname_resolving_to_private_ip_blocked(self) -> None:
         """Hostname der auf private IP auflöst wird blockiert."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('192.168.1.100', 0))]):
+
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("192.168.1.100", 0))]):
             blocked, reason = _is_ssrf_blocked("http://evil-rebinding.com")
         assert blocked is True
         assert "192.168.1.100" in reason or "DNS" in reason or "Rebinding" in reason
@@ -155,27 +165,31 @@ class TestSSRFDNSRebinding:
     def test_hostname_resolving_to_loopback_blocked(self) -> None:
         """Hostname der auf 127.0.0.1 auflöst wird blockiert."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('127.0.0.1', 0))]):
+
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", 0))]):
             blocked, reason = _is_ssrf_blocked("http://evil.com")
         assert blocked is True
 
     def test_hostname_resolving_to_link_local_blocked(self) -> None:
         """Hostname der auf 169.254.x.x auflöst wird blockiert."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('169.254.0.1', 0))]):
+
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("169.254.0.1", 0))]):
             blocked, reason = _is_ssrf_blocked("http://evil.com")
         assert blocked is True
 
     def test_hostname_resolving_to_public_ip_allowed(self) -> None:
         """Hostname der auf öffentliche IP auflöst wird durchgelassen."""
         from agent.agents.web import _is_ssrf_blocked
-        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('93.184.216.34', 0))]):
+
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
             blocked, _ = _is_ssrf_blocked("http://example.com")
         assert blocked is False
 
     def test_dns_gaierror_allows_through(self) -> None:
         """DNS-Fehler (Host nicht auflösbar) blockiert nicht – httpx scheitert später."""
         from agent.agents.web import _is_ssrf_blocked
+
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
             blocked, _ = _is_ssrf_blocked("http://nonexistent.invalid")
         assert blocked is False
@@ -183,6 +197,7 @@ class TestSSRFDNSRebinding:
     def test_ip_literal_not_dns_resolved(self) -> None:
         """IP-Adressen direkt werden ohne DNS-Auflösung geprüft."""
         from agent.agents.web import _is_ssrf_blocked
+
         with patch("socket.getaddrinfo") as mock_dns:
             blocked, _ = _is_ssrf_blocked("http://192.168.1.1")
         assert blocked is True
@@ -191,13 +206,15 @@ class TestSSRFDNSRebinding:
     def test_clip_agent_dns_rebinding_blocked(self) -> None:
         """Auch clip_agent._is_ssrf_blocked schützt gegen DNS-Rebinding."""
         from agent.agents.clip_agent import _is_ssrf_blocked as clip_ssrf
-        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, '', ('10.0.0.1', 0))]):
+
+        with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("10.0.0.1", 0))]):
             blocked, reason = clip_ssrf("http://evil-clip.com")
         assert blocked is True
 
     def test_localhost_still_blocked_without_dns(self) -> None:
         """localhost wird ohne DNS-Auflösung blockiert (bestehender Check)."""
         from agent.agents.web import _is_ssrf_blocked
+
         with patch("socket.getaddrinfo") as mock_dns:
             blocked, _ = _is_ssrf_blocked("http://localhost/api")
         assert blocked is True
@@ -208,8 +225,8 @@ class TestSSRFDNSRebinding:
 # web.py – Query-Sanitization
 # ---------------------------------------------------------------------------
 
-class TestWebQuerySanitization:
 
+class TestWebQuerySanitization:
     @pytest.mark.asyncio
     async def test_empty_query_returns_error(self) -> None:
         """Leere Query gibt Fehlermeldung zurück statt Suche zu starten."""
@@ -245,9 +262,11 @@ class TestWebQuerySanitization:
         mock_llm.ainvoke = AsyncMock(return_value=llm_response)
 
         state = {"messages": [HumanMessage(content="suche")], "telegram_chat_id": 1}
-        with patch("agent.agents.web.get_llm", return_value=mock_llm), \
-             patch("agent.agents.web._search_tavily", side_effect=fake_search), \
-             patch("agent.agents.web.TAVILY_API_KEY", "fake"):
+        with (
+            patch("agent.agents.web.get_llm", return_value=mock_llm),
+            patch("agent.agents.web._search_tavily", side_effect=fake_search),
+            patch("agent.agents.web.TAVILY_API_KEY", "fake"),
+        ):
             await web_agent(state)
 
         if captured_queries:
@@ -258,35 +277,40 @@ class TestWebQuerySanitization:
 # Async-Konversion – alle Agents
 # ---------------------------------------------------------------------------
 
-class TestAgentAsyncConversion:
 
+class TestAgentAsyncConversion:
     def test_terminal_agent_is_async(self) -> None:
         """terminal_agent ist jetzt eine async-Funktion."""
         import inspect
         from agent.agents.terminal import terminal_agent
-        assert inspect.iscoroutinefunction(terminal_agent), \
+
+        assert inspect.iscoroutinefunction(terminal_agent), (
             "terminal_agent muss async sein – verhindert Event-Loop-Blockierung"
+        )
 
     def test_file_agent_is_async(self) -> None:
         """file_agent ist jetzt eine async-Funktion."""
         import inspect
         from agent.agents.file import file_agent
-        assert inspect.iscoroutinefunction(file_agent), \
-            "file_agent muss async sein – verhindert Event-Loop-Blockierung"
+
+        assert inspect.iscoroutinefunction(file_agent), "file_agent muss async sein – verhindert Event-Loop-Blockierung"
 
     def test_calendar_agent_is_async(self) -> None:
         import inspect
         from agent.agents.calendar import calendar_agent
+
         assert inspect.iscoroutinefunction(calendar_agent)
 
     def test_computer_agent_is_async(self) -> None:
         import inspect
         from agent.agents.computer import computer_agent
+
         assert inspect.iscoroutinefunction(computer_agent)
 
     def test_web_agent_is_async(self) -> None:
         import inspect
         from agent.agents.web import web_agent
+
         assert inspect.iscoroutinefunction(web_agent)
 
     @pytest.mark.asyncio

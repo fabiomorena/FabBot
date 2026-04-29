@@ -3,9 +3,9 @@ Lokaler HTTP-Server fuer Menubar-Kommunikation.
 Laeuft auf localhost:8766.
 Gesichert mit einem Shared Secret Token.
 """
+
 import asyncio
 import logging
-import os
 import secrets
 from pathlib import Path
 from aiohttp import web

@@ -53,20 +53,22 @@ _INSTRUCTION_FORBIDDEN = re.compile(
 # Supervisor-Prompt und memory_agent nutzen dieselbe Quelle.
 # ---------------------------------------------------------------------------
 
-MERKE_DIR_DAS_TRIGGERS = frozenset({
-    "merke dir das",
-    "merk dir das",
-    "merke das",
-    "merk das",
-    "das merken",
-    "bitte merken",
-    "kannst du dir merken",
-    "bitte merk dir das",
-    "merke dir das bitte",
-    "das kannst du dir merken",
-    "das solltest du dir merken",
-    "merk dir das bitte",
-})
+MERKE_DIR_DAS_TRIGGERS = frozenset(
+    {
+        "merke dir das",
+        "merk dir das",
+        "merke das",
+        "merk das",
+        "das merken",
+        "bitte merken",
+        "kannst du dir merken",
+        "bitte merk dir das",
+        "merke dir das bitte",
+        "das kannst du dir merken",
+        "das solltest du dir merken",
+        "merk dir das bitte",
+    }
+)
 
 # Interner Alias – bestehender Code unveraendert
 _MERKE_DIR_DAS_TRIGGERS = MERKE_DIR_DAS_TRIGGERS
@@ -286,6 +288,7 @@ async def _parse_memory_intent(messages: list) -> dict[str, Any]:
 # None bedeutet: ungültige/unvollständige Daten, kein Update.
 # ---------------------------------------------------------------------------
 
+
 def _save_people(updated: dict, data: dict) -> dict | None:
     name = data.get("name", "").strip()
     context = data.get("context", "").strip()
@@ -433,8 +436,7 @@ def _delete_people(updated: dict, data: dict) -> dict | None:
     name = data.get("name", "").strip().lower()
     if "people" in updated and isinstance(updated["people"], list):
         updated["people"] = [
-            p for p in updated["people"]
-            if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+            p for p in updated["people"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)
         ]
     return updated
 
@@ -445,8 +447,7 @@ def _delete_project(updated: dict, data: dict) -> dict | None:
         active = updated["projects"].get("active", [])
         if isinstance(active, list):
             updated["projects"]["active"] = [
-                p for p in active
-                if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+                p for p in active if not (isinstance(p, dict) and p.get("name", "").lower() == name)
             ]
     return updated
 
@@ -455,8 +456,7 @@ def _delete_place(updated: dict, data: dict) -> dict | None:
     name = data.get("name", "").strip().lower()
     if "places" in updated and isinstance(updated["places"], list):
         updated["places"] = [
-            p for p in updated["places"]
-            if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+            p for p in updated["places"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)
         ]
     return updated
 
@@ -465,8 +465,7 @@ def _delete_media(updated: dict, data: dict) -> dict | None:
     title = data.get("title", "").strip().lower()
     if "media" in updated and isinstance(updated["media"], list):
         updated["media"] = [
-            m for m in updated["media"]
-            if not (isinstance(m, dict) and m.get("title", "").lower() == title)
+            m for m in updated["media"] if not (isinstance(m, dict) and m.get("title", "").lower() == title)
         ]
     return updated
 
@@ -475,30 +474,29 @@ def _delete_custom(updated: dict, data: dict) -> dict | None:
     key = data.get("key", "").strip().lower()
     if "custom" in updated and isinstance(updated["custom"], list):
         updated["custom"] = [
-            item for item in updated["custom"]
-            if not (isinstance(item, dict) and item.get("key", "").lower() == key)
+            item for item in updated["custom"] if not (isinstance(item, dict) and item.get("key", "").lower() == key)
         ]
     return updated
 
 
 # Registry: category → handler(updated, data) → dict | None
 _SAVE_HANDLERS: dict[str, Any] = {
-    "people":     _save_people,
-    "project":    _save_project,
-    "place":      _save_place,
-    "media":      _save_media,
+    "people": _save_people,
+    "project": _save_project,
+    "place": _save_place,
+    "media": _save_media,
     "preference": _save_preference,
-    "job":        _save_job,
-    "location":   _save_location,
-    "custom":     _save_custom,
+    "job": _save_job,
+    "location": _save_location,
+    "custom": _save_custom,
 }
 
 _DELETE_HANDLERS: dict[str, Any] = {
-    "people":  _delete_people,
+    "people": _delete_people,
     "project": _delete_project,
-    "place":   _delete_place,
-    "media":   _delete_media,
-    "custom":  _delete_custom,
+    "place": _delete_place,
+    "media": _delete_media,
+    "custom": _delete_custom,
 }
 
 
@@ -532,6 +530,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
 # YAML Review
 # ---------------------------------------------------------------------------
 
+
 async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
     """Haiku reviewt das neue YAML.
     Phase 65 Fix: HumanMessage top-level Import statt lokalem HM-Alias.
@@ -558,9 +557,15 @@ async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
 
 def _build_confirmation(action: str, category: str, data: dict) -> str:
     icons = {
-        "people": "👤", "project": "🚀", "place": "📍",
-        "media": "🎵", "preference": "⚙️", "job": "💼",
-        "location": "🏠", "custom": "📝", "bot_instruction": "🤖",
+        "people": "👤",
+        "project": "🚀",
+        "place": "📍",
+        "media": "🎵",
+        "preference": "⚙️",
+        "job": "💼",
+        "location": "🏠",
+        "custom": "📝",
+        "bot_instruction": "🤖",
     }
     icon = icons.get(category, "✅")
 
@@ -622,21 +627,46 @@ async def memory_agent(state: AgentState) -> AgentState:
         if _is_merke_dir_das(current_human):
             prev_human = _get_prev_human_message(state["messages"])
             if not prev_human:
-                return {"messages": [AIMessage(content="Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content="Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext."
+                        )
+                    ]
+                }
             instruction = await _formulate_bot_instruction_from_context(prev_human)
             if not instruction:
-                return {"messages": [AIMessage(content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content="Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll."
+                        )
+                    ]
+                }
 
             # Phase 89: Auch formulierte Instruktionen validieren
             valid, reason = _validate_instruction(instruction)
             if not valid:
                 logger.warning(f"MemoryAgent Phase89: formulierte Instruktion abgelehnt: {reason}")
-                return {"messages": [AIMessage(content="Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders.")]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content="Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders."
+                        )
+                    ]
+                }
 
             from agent.claude_md import append_to_claude_md
+
             success = await append_to_claude_md(instruction)
             if success:
-                return {"messages": [AIMessage(content=f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig."
+                        )
+                    ]
+                }
             else:
                 return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion.")]}
         # ─────────────────────────────────────────────────────────────────────
@@ -647,13 +677,23 @@ async def memory_agent(state: AgentState) -> AgentState:
         data = parsed.get("data", {})
 
         if action == "error" or not data:
-            return {"messages": [AIMessage(content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")]}
+            return {
+                "messages": [
+                    AIMessage(
+                        content="Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊"
+                    )
+                ]
+            }
 
         # ── Phase 63 + 89: bot_instruction → claude.md mit Validierung ───────
         if action in ("save", "update") and category == "bot_instruction":
             text = data.get("text", "").strip()
             if not text:
-                return {"messages": [AIMessage(content="Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")]}
+                return {
+                    "messages": [
+                        AIMessage(content="Was soll ich mir grundsätzlich merken? Bitte etwas konkreter formulieren.")
+                    ]
+                }
 
             # Phase 89: Längen- und Forbidden-Pattern-Check
             valid, reason = _validate_instruction(text)
@@ -662,6 +702,7 @@ async def memory_agent(state: AgentState) -> AgentState:
                 return {"messages": [AIMessage(content=f"Bot-Instruktion konnte nicht gespeichert werden: {reason}")]}
 
             from agent.claude_md import append_to_claude_md
+
             success = await append_to_claude_md(text)
             if success:
                 return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
@@ -683,7 +724,9 @@ async def memory_agent(state: AgentState) -> AgentState:
 
         is_valid = await _review_yaml(original_yaml, new_yaml)
         if not is_valid:
-            logger.warning(f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
+            logger.warning(
+                f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})"
+            )
             return {"messages": [AIMessage(content="Konnte nicht gespeichert werden – bitte nochmal versuchen.")]}
 
         try:

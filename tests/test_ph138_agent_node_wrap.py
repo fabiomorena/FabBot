@@ -8,7 +8,6 @@ Testet den wrap_agent_node Decorator:
 - Funktioniert mit None-Returns und leeren Messages
 """
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from agent.node_utils import wrap_agent_node
 
@@ -32,11 +31,13 @@ class TestWrapAgentNodeAutoResult:
 
     async def test_uses_last_ai_message_if_multiple(self):
         async def dummy_agent(state):
-            return {"messages": [
-                AIMessage(content="erste"),
-                HumanMessage(content="menschlich"),
-                AIMessage(content="letzte"),
-            ]}
+            return {
+                "messages": [
+                    AIMessage(content="erste"),
+                    HumanMessage(content="menschlich"),
+                    AIMessage(content="letzte"),
+                ]
+            }
 
         wrapped = wrap_agent_node("dummy_agent")(dummy_agent)
         result = await wrapped({})

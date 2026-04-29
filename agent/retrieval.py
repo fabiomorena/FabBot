@@ -106,6 +106,7 @@ def _get_semaphore() -> asyncio.Semaphore:
 # ChromaDB Setup – fail-safe
 # ---------------------------------------------------------------------------
 
+
 def _get_collection():
     """
     Gibt die ChromaDB-Collection zurück (lazy singleton).
@@ -117,22 +118,17 @@ def _get_collection():
     _check_multiprocess_warning()
     try:
         import chromadb
+
         _CHROMA_PATH.mkdir(parents=True, exist_ok=True)
         client = chromadb.PersistentClient(path=str(_CHROMA_PATH))
         _collection = client.get_or_create_collection(
             name=_COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
-        logger.info(
-            f"ChromaDB Collection '{_COLLECTION_NAME}' bereit "
-            f"({_collection.count()} Chunks)"
-        )
+        logger.info(f"ChromaDB Collection '{_COLLECTION_NAME}' bereit ({_collection.count()} Chunks)")
         return _collection
     except ImportError:
-        logger.warning(
-            "chromadb nicht installiert – Retrieval deaktiviert. "
-            "Installieren: pip install chromadb"
-        )
+        logger.warning("chromadb nicht installiert – Retrieval deaktiviert. Installieren: pip install chromadb")
         return None
     except Exception as e:
         logger.error(f"ChromaDB Setup fehlgeschlagen: {e}")
@@ -142,6 +138,7 @@ def _get_collection():
 # ---------------------------------------------------------------------------
 # mtime / Hash-Tracking für Delta-Indexierung
 # ---------------------------------------------------------------------------
+
 
 def _load_meta() -> dict[str, str | float]:
     try:
@@ -168,6 +165,7 @@ def _content_hash(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Chunking
 # ---------------------------------------------------------------------------
+
 
 def _chunk_text(text: str) -> list[str]:
     """
@@ -214,6 +212,7 @@ def _make_chunk_id(source_id: str, chunk_index: int) -> str:
 # Ein httpx.AsyncClient außerhalb der Batch-Schleife (HTTP/2-Connection-Reuse)
 # ---------------------------------------------------------------------------
 
+
 async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     """
     Erstellt Embeddings via OpenAI text-embedding-3-small.
@@ -228,11 +227,12 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
 
     try:
         import httpx
+
         all_embeddings: list[list[float]] = []
 
         async with httpx.AsyncClient(timeout=60) as client:
             for i in range(0, len(texts), _EMBED_BATCH_SIZE):
-                batch = texts[i: i + _EMBED_BATCH_SIZE]
+                batch = texts[i : i + _EMBED_BATCH_SIZE]
                 resp = await client.post(
                     "https://api.openai.com/v1/embeddings",
                     headers={
@@ -254,6 +254,7 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
 # ---------------------------------------------------------------------------
 # Kern-Indexierung
 # ---------------------------------------------------------------------------
+
 
 async def _upsert_chunks(
     chunks: list[str],
@@ -330,9 +331,7 @@ async def _remove_sessions_from_index() -> None:
             meta.pop(k)
         if keys_to_remove:
             _save_meta(meta)
-        logger.info(
-            f"Retrieval: {len(existing['ids'])} Session-Chunks aus ChromaDB entfernt (#35)"
-        )
+        logger.info(f"Retrieval: {len(existing['ids'])} Session-Chunks aus ChromaDB entfernt (#35)")
     except Exception as e:
         logger.debug(f"Retrieval: Session-Cleanup fehlgeschlagen (ignoriert): {e}")
 
@@ -446,8 +445,7 @@ async def _remove_claude_md_from_index() -> None:
             meta.pop("__hash____claude_md__", None)
             _save_meta(meta)
             logger.info(
-                f"Retrieval: {len(existing['ids'])} veraltete claude.md-Chunks "
-                f"aus ChromaDB entfernt (Phase 79)"
+                f"Retrieval: {len(existing['ids'])} veraltete claude.md-Chunks aus ChromaDB entfernt (Phase 79)"
             )
     except Exception as e:
         logger.debug(f"Retrieval: claude.md-Cleanup fehlgeschlagen (ignoriert): {e}")
@@ -498,11 +496,10 @@ async def index_all(force: bool = False) -> None:
     # 1. personal_profile.yaml (virtuell – Hash-Check)
     try:
         from agent.profile import get_profile_context_full
+
         profile_text = await asyncio.to_thread(get_profile_context_full)
         if profile_text:
-            ok = await _index_virtual(
-                profile_text, "__profile__", "profile", "Persönliches Profil", force=force
-            )
+            ok = await _index_virtual(profile_text, "__profile__", "profile", "Persönliches Profil", force=force)
             if ok:
                 total_updated += 1
     except Exception as e:
@@ -518,14 +515,14 @@ async def index_all(force: bool = False) -> None:
     collection = _get_collection()
     total_chunks = collection.count() if collection else 0
     logger.info(
-        f"Retrieval: Index-Durchlauf abgeschlossen – "
-        f"{total_updated} Quellen aktualisiert, {total_chunks} Chunks gesamt"
+        f"Retrieval: Index-Durchlauf abgeschlossen – {total_updated} Quellen aktualisiert, {total_chunks} Chunks gesamt"
     )
 
 
 # ---------------------------------------------------------------------------
 # Semantische Suche
 # ---------------------------------------------------------------------------
+
 
 async def search(query: str, n_results: int = 3) -> list[dict]:
     """
@@ -564,12 +561,14 @@ async def search(query: str, n_results: int = 3) -> list[dict]:
         ):
             if dist > _MAX_DISTANCE:
                 continue
-            output.append({
-                "document": doc,
-                "label": meta.get("label", "Unbekannt"),
-                "type": meta.get("type", "unknown"),
-                "distance": round(dist, 3),
-            })
+            output.append(
+                {
+                    "document": doc,
+                    "label": meta.get("label", "Unbekannt"),
+                    "type": meta.get("type", "unknown"),
+                    "distance": round(dist, 3),
+                }
+            )
 
         return output
 

@@ -33,10 +33,7 @@ def setup_telemetry() -> None:
     tracing = os.getenv("LANGCHAIN_TRACING_V2", "").strip().lower()
 
     if tracing != "true":
-        logger.debug(
-            "LangSmith Telemetry deaktiviert "
-            "(LANGCHAIN_TRACING_V2 nicht gesetzt oder nicht 'true')."
-        )
+        logger.debug("LangSmith Telemetry deaktiviert (LANGCHAIN_TRACING_V2 nicht gesetzt oder nicht 'true').")
         return
 
     api_key = os.getenv("LANGCHAIN_API_KEY", "").strip()
@@ -48,15 +45,13 @@ def setup_telemetry() -> None:
         )
         return
 
-    project  = os.getenv("LANGCHAIN_PROJECT", "FabBot")
+    project = os.getenv("LANGCHAIN_PROJECT", "FabBot")
     endpoint = os.getenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
 
     try:
         import langsmith  # noqa: F401 – prüft ob Paket installiert ist
-        logger.info(
-            f"LangSmith Telemetry aktiv – "
-            f"Projekt: '{project}' | Endpoint: {endpoint}"
-        )
+
+        logger.info(f"LangSmith Telemetry aktiv – Projekt: '{project}' | Endpoint: {endpoint}")
     except ImportError:
         logger.warning(
             "langsmith-Paket nicht installiert – Telemetry nicht verfügbar. "

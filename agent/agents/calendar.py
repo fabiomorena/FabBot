@@ -12,7 +12,7 @@ from agent.utils import extract_llm_text
 
 def _build_prompt() -> str:
     from agent.utils import get_current_datetime
-    today = date.today().strftime("%d.%m.%Y")
+
     weekday = datetime.now().strftime("%A")
     dt = get_current_datetime()
     return f"""Du bist ein spezialisierter Kalender-Agent. Aktuelles Datum/Uhrzeit: {dt} ({weekday})
@@ -57,26 +57,46 @@ def _get_apple_events(date_from: str, date_to: str) -> list[dict]:
 
     cmd = [
         "osascript",
-        "-e", f'set startDate to date "{apple_from}"',
-        "-e", f'set endDate to date "{apple_to}" + (23 * hours) + (59 * minutes)',
-        "-e", 'set output to ""',
-        "-e", 'tell application "Calendar"',
-        "-e", '    repeat with cal in calendars',
-        "-e", '        set evts to (every event of cal whose start date >= startDate and start date <= endDate)',
-        "-e", '        repeat with evt in evts',
-        "-e", '            set evtStart to start date of evt',
-        "-e", '            set h to hours of evtStart as string',
-        "-e", '            set m to minutes of evtStart',
-        "-e", '            if m < 10 then',
-        "-e", '                set mStr to "0" & (m as string)',
-        "-e", '            else',
-        "-e", '                set mStr to m as string',
-        "-e", '            end if',
-        "-e", '            set output to output & (summary of evt) & "|" & h & ":" & mStr & "|" & (name of cal) & linefeed',
-        "-e", '        end repeat',
-        "-e", '    end repeat',
-        "-e", 'end tell',
-        "-e", 'return output',
+        "-e",
+        f'set startDate to date "{apple_from}"',
+        "-e",
+        f'set endDate to date "{apple_to}" + (23 * hours) + (59 * minutes)',
+        "-e",
+        'set output to ""',
+        "-e",
+        'tell application "Calendar"',
+        "-e",
+        "    repeat with cal in calendars",
+        "-e",
+        "        set evts to (every event of cal whose start date >= startDate and start date <= endDate)",
+        "-e",
+        "        repeat with evt in evts",
+        "-e",
+        "            set evtStart to start date of evt",
+        "-e",
+        "            set h to hours of evtStart as string",
+        "-e",
+        "            set m to minutes of evtStart",
+        "-e",
+        "            if m < 10 then",
+        "-e",
+        '                set mStr to "0" & (m as string)',
+        "-e",
+        "            else",
+        "-e",
+        "                set mStr to m as string",
+        "-e",
+        "            end if",
+        "-e",
+        '            set output to output & (summary of evt) & "|" & h & ":" & mStr & "|" & (name of cal) & linefeed',
+        "-e",
+        "        end repeat",
+        "-e",
+        "    end repeat",
+        "-e",
+        "end tell",
+        "-e",
+        "return output",
     ]
 
     try:
@@ -89,12 +109,14 @@ def _get_apple_events(date_from: str, date_to: str) -> list[dict]:
                 continue
             parts = line.split("|")
             if len(parts) >= 3:
-                events.append({
-                    "title": parts[0].strip(),
-                    "start": parts[1].strip(),
-                    "calendar": parts[2].strip(),
-                    "source": "Apple",
-                })
+                events.append(
+                    {
+                        "title": parts[0].strip(),
+                        "start": parts[1].strip(),
+                        "calendar": parts[2].strip(),
+                        "source": "Apple",
+                    }
+                )
         return events
     except Exception:
         return []
@@ -129,11 +151,16 @@ def calendar_event_create(title: str, start_time: str, end_time: str, chat_id: i
         safe_title = _sanitize_applescript_string(title)
         cmd = [
             "osascript",
-            "-e", 'tell application "Calendar"',
-            "-e", '    tell calendar "Kalender"',
-            "-e", f'        set newEvent to make new event with properties {{summary:"{safe_title}", start date:date "{apple_start}", end date:date "{apple_end}"}}',
-            "-e", '    end tell',
-            "-e", 'end tell',
+            "-e",
+            'tell application "Calendar"',
+            "-e",
+            '    tell calendar "Kalender"',
+            "-e",
+            f'        set newEvent to make new event with properties {{summary:"{safe_title}", start date:date "{apple_start}", end date:date "{apple_end}"}}',
+            "-e",
+            "    end tell",
+            "-e",
+            "end tell",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
@@ -174,15 +201,18 @@ async def calendar_agent(state: AgentState) -> AgentState:
         date_from = date.today().isoformat()
         date_to = date_from
 
-    log_action("calendar_agent", action, f"{date_from} to {date_to}",
-               state.get("telegram_chat_id"), status="executed")
+    log_action("calendar_agent", action, f"{date_from} to {date_to}", state.get("telegram_chat_id"), status="executed")
 
     if action == "list_events":
         events = _get_apple_events(date_from, date_to)
         formatted = _format_events(events)
         period = date_from if date_from == date_to else f"{date_from} bis {date_to}"
         result = f"Termine {period}:\n\n{formatted}"
-        return {"messages": [AIMessage(content=result)], "last_agent_result": result, "last_agent_name": "calendar_agent"}
+        return {
+            "messages": [AIMessage(content=result)],
+            "last_agent_result": result,
+            "last_agent_name": "calendar_agent",
+        }
 
     elif action == "create_event":
         title = parsed.get("title", "").strip() if isinstance(parsed, dict) else ""

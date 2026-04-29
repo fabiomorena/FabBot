@@ -43,6 +43,7 @@ async def _run_heartbeat(bot, chat_id: int) -> None:
     try:
         from agent.supervisor import get_graph
         from langchain_core.messages import AIMessage
+
         config = {"configurable": {"thread_id": str(chat_id)}}
         await get_graph().aupdate_state(
             config,

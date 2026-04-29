@@ -15,22 +15,50 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 2  # max. Korrektur-Versuche nach ungültigem Befehl
 
 ALLOWED_COMMANDS = {
-    "ls", "pwd", "cat", "head", "tail", "grep",
-    "df", "du", "top", "ps", "uname", "whoami", "date",
-    "find", "wc", "sort", "uniq", "uptime", "sw_vers",
-    "diskutil", "system_profiler",
+    "ls",
+    "pwd",
+    "cat",
+    "head",
+    "tail",
+    "grep",
+    "df",
+    "du",
+    "top",
+    "ps",
+    "uname",
+    "whoami",
+    "date",
+    "find",
+    "wc",
+    "sort",
+    "uniq",
+    "uptime",
+    "sw_vers",
+    "diskutil",
+    "system_profiler",
 }
 
 FORBIDDEN_ARGS = {
-    "--exec", "-exec", "--delete", "-delete",
+    "--exec",
+    "-exec",
+    "--delete",
+    "-delete",
 }
 
 # Dateinamen/Verzeichnisse die unabhängig vom Pfad blockiert werden
-_FORBIDDEN_FILENAMES = frozenset({
-    ".env", ".env.local", ".env.production", ".env.staging",
-    "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
-    "local_api_token",
-})
+_FORBIDDEN_FILENAMES = frozenset(
+    {
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.staging",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "id_dsa",
+        "local_api_token",
+    }
+)
 _FORBIDDEN_PATH_PARTS = frozenset({".ssh", ".fabbot"})
 
 FORBIDDEN_PATH_PREFIXES = (
@@ -51,17 +79,19 @@ ALLOWED_SYSTEM_PROFILER_TYPES = {
 TIMEOUT_SECONDS = 15
 TERMINAL_MAX_OUTPUT = 3000
 
-_SECRET_ENV_VARS = frozenset({
-    "ANTHROPIC_API_KEY",
-    "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_ALLOWED_USER_IDS",
-    "TELEGRAM_CHAT_ID",
-    "OPENAI_API_KEY",
-    "TAVILY_API_KEY",
-    "BRAVE_API_KEY",
-    "LANGCHAIN_API_KEY",
-    "FABBOT_WA_TOKEN",
-})
+_SECRET_ENV_VARS = frozenset(
+    {
+        "ANTHROPIC_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_ALLOWED_USER_IDS",
+        "TELEGRAM_CHAT_ID",
+        "OPENAI_API_KEY",
+        "TAVILY_API_KEY",
+        "BRAVE_API_KEY",
+        "LANGCHAIN_API_KEY",
+        "FABBOT_WA_TOKEN",
+    }
+)
 
 PROMPT = """Du bist ein spezialisierter Terminal-Agent auf einem Mac.
 
@@ -128,9 +158,15 @@ def is_command_allowed(command: str) -> tuple[bool, str]:
     if base_cmd == "find":
         if args:
             search_path = os.path.expanduser(args[0])
-            blocked_find_paths = ("/", "/etc", "/private", "/System", "/Library",
-                                  os.path.expanduser("~/.ssh"),
-                                  os.path.expanduser("~/.fabbot"))
+            blocked_find_paths = (
+                "/",
+                "/etc",
+                "/private",
+                "/System",
+                "/Library",
+                os.path.expanduser("~/.ssh"),
+                os.path.expanduser("~/.fabbot"),
+            )
             for blocked in blocked_find_paths:
                 if search_path == blocked or search_path.startswith(blocked + "/"):
                     return False, f"find in `{args[0]}` ist nicht erlaubt."
@@ -180,6 +216,7 @@ def execute_command(command: str) -> str:
     try:
         parts = shlex.split(command.strip())
         import pathlib
+
         safe_env = {k: v for k, v in os.environ.items() if k not in _SECRET_ENV_VARS}
         result = subprocess.run(
             parts,
@@ -203,7 +240,7 @@ def _extract_command(response_content) -> str:
     content = extract_llm_text(response_content)
     command = content.strip().strip("`")
     if command.startswith("__CONFIRM_TERMINAL__:"):
-        command = command[len("__CONFIRM_TERMINAL__:"):]
+        command = command[len("__CONFIRM_TERMINAL__:") :]
     return command
 
 
@@ -221,10 +258,15 @@ async def terminal_agent(state: AgentState) -> AgentState:
     MAX_RETRIES Korrektur-Versuche vor dem HITL.
     """
     llm = get_llm()
-    filtered = [m for m in state["messages"] if not (
-        hasattr(m, "content") and isinstance(m.content, str)
-        and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
-    )]
+    filtered = [
+        m
+        for m in state["messages"]
+        if not (
+            hasattr(m, "content")
+            and isinstance(m.content, str)
+            and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
+        )
+    ]
     messages = [SystemMessage(content=PROMPT)] + filtered
 
     command = ""
@@ -249,12 +291,14 @@ async def terminal_agent(state: AgentState) -> AgentState:
                 correction_msgs = [
                     SystemMessage(content=PROMPT),
                     AIMessage(content=command),
-                    HumanMessage(content=(
-                        f"Fehler: Der Befehl '{command.split()[0] if command.split() else command}' "
-                        f"ist nicht in der Erlaubt-Liste. "
-                        f"Erlaubte Befehle: {', '.join(sorted(ALLOWED_COMMANDS))}. "
-                        f"Bitte antworte nur mit einem erlaubten Befehl oder UNSUPPORTED."
-                    )),
+                    HumanMessage(
+                        content=(
+                            f"Fehler: Der Befehl '{command.split()[0] if command.split() else command}' "
+                            f"ist nicht in der Erlaubt-Liste. "
+                            f"Erlaubte Befehle: {', '.join(sorted(ALLOWED_COMMANDS))}. "
+                            f"Bitte antworte nur mit einem erlaubten Befehl oder UNSUPPORTED."
+                        )
+                    ),
                 ]
                 messages = correction_msgs
                 continue
@@ -274,16 +318,17 @@ async def terminal_agent(state: AgentState) -> AgentState:
             correction_msgs = [
                 SystemMessage(content=PROMPT),
                 AIMessage(content=command),
-                HumanMessage(content=(
-                    f"Fehler: Der Befehl wurde aus Sicherheitsgründen abgelehnt: {reason}. "
-                    f"Bitte generiere einen korrekten, erlaubten Befehl oder antworte mit UNSUPPORTED."
-                )),
+                HumanMessage(
+                    content=(
+                        f"Fehler: Der Befehl wurde aus Sicherheitsgründen abgelehnt: {reason}. "
+                        f"Bitte generiere einen korrekten, erlaubten Befehl oder antworte mit UNSUPPORTED."
+                    )
+                ),
             ]
             messages = correction_msgs
 
     if not allowed:
-        log_action("terminal_agent", command[:200], reason,
-                   state.get("telegram_chat_id"), status="blocked")
+        log_action("terminal_agent", command[:200], reason, state.get("telegram_chat_id"), status="blocked")
         msg = f"Blockiert: {reason}"
         return {
             "messages": [AIMessage(content=msg)],

@@ -33,6 +33,7 @@ class TestRetryOnConnectionError:
     @classmethod
     def setup_class(cls):
         from bot.bot import _invoke_with_retry
+
         cls._invoke_with_retry = staticmethod(_invoke_with_retry)
 
     async def test_retries_on_connection_error_then_success(self):
@@ -40,8 +41,7 @@ class TestRetryOnConnectionError:
         mock_graph = AsyncMock()
         mock_graph.ainvoke.side_effect = [_make_connection_error(), expected]
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", new_callable=AsyncMock):
             result = await self._invoke_with_retry({}, {})
 
         assert result == expected
@@ -55,8 +55,7 @@ class TestRetryOnConnectionError:
             _make_connection_error(),
         ]
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(APIConnectionError):
                 await self._invoke_with_retry({}, {})
 
@@ -75,8 +74,7 @@ class TestRetryOnConnectionError:
         async def mock_sleep(delay):
             sleep_calls.append(delay)
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", side_effect=mock_sleep):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", side_effect=mock_sleep):
             await self._invoke_with_retry({}, {})
 
         assert sleep_calls == [2.0, 4.0]
@@ -86,6 +84,7 @@ class TestRetryOnRateLimitError:
     @classmethod
     def setup_class(cls):
         from bot.bot import _invoke_with_retry
+
         cls._invoke_with_retry = staticmethod(_invoke_with_retry)
 
     async def test_retries_on_rate_limit_then_success(self):
@@ -93,8 +92,7 @@ class TestRetryOnRateLimitError:
         mock_graph = AsyncMock()
         mock_graph.ainvoke.side_effect = [_make_rate_limit_error(), expected]
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", new_callable=AsyncMock):
             result = await self._invoke_with_retry({}, {})
 
         assert result == expected
@@ -108,8 +106,7 @@ class TestRetryOnRateLimitError:
             _make_rate_limit_error(),
         ]
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(RateLimitError):
                 await self._invoke_with_retry({}, {})
 
@@ -120,14 +117,14 @@ class TestNoRetryOnFatalErrors:
     @classmethod
     def setup_class(cls):
         from bot.bot import _invoke_with_retry
+
         cls._invoke_with_retry = staticmethod(_invoke_with_retry)
 
     async def test_400_not_retried(self):
         mock_graph = AsyncMock()
         mock_graph.ainvoke.side_effect = _make_api_error(400)
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(APIStatusError) as exc_info:
                 await self._invoke_with_retry({}, {})
 
@@ -136,11 +133,11 @@ class TestNoRetryOnFatalErrors:
 
     async def test_graph_recursion_error_not_retried(self):
         from langgraph.errors import GraphRecursionError
+
         mock_graph = AsyncMock()
         mock_graph.ainvoke.side_effect = GraphRecursionError("too deep")
 
-        with patch("agent.supervisor.agent_graph", mock_graph), \
-             patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent.supervisor.agent_graph", mock_graph), patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(GraphRecursionError):
                 await self._invoke_with_retry({}, {})
 

@@ -113,6 +113,7 @@ def load_profile() -> dict[str, Any]:
     try:
         import yaml
         from agent.crypto import decrypt, is_encrypted, encrypt
+
         raw = _PROFILE_PATH.read_bytes()
         if is_encrypted(raw):
             yaml_text = decrypt(raw)
@@ -165,6 +166,7 @@ async def add_note_to_profile(text: str) -> bool:
     try:
         import yaml
         from agent.crypto import decrypt, is_encrypted, encrypt
+
         async with _profile_write_lock:
             raw = _PROFILE_PATH.read_bytes()
             yaml_text = decrypt(raw) if is_encrypted(raw) else raw.decode("utf-8")
@@ -180,6 +182,7 @@ async def add_note_to_profile(text: str) -> bool:
         # liest das aktualisierte Profil neu ein.
         try:
             from agent.agents.chat_agent import invalidate_chat_cache
+
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (add_note) fehlgeschlagen (ignoriert): {e}")
@@ -207,6 +210,7 @@ async def write_profile(profile: dict[str, Any]) -> bool:
         return False
     try:
         import yaml
+
         async with _profile_write_lock:
             serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
             round_tripped = yaml.safe_load(serialized)
@@ -217,12 +221,14 @@ async def write_profile(profile: dict[str, Any]) -> bool:
                 )
                 return False
             from agent.crypto import encrypt
+
             _write_profile_bytes(encrypt(serialized))
         reload_profile()
         # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
         # liest das aktualisierte Profil neu ein.
         try:
             from agent.agents.chat_agent import invalidate_chat_cache
+
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (write_profile) fehlgeschlagen (ignoriert): {e}")
@@ -252,10 +258,7 @@ def get_profile_context_short() -> str:
         projects = profile.get("projects", {})
         active = projects.get("active", []) if isinstance(projects, dict) else []
         if isinstance(active, list):
-            high = [
-                p["name"] for p in active
-                if isinstance(p, dict) and p.get("priority") == "high" and p.get("name")
-            ]
+            high = [p["name"] for p in active if isinstance(p, dict) and p.get("priority") == "high" and p.get("name")]
             if high:
                 parts.append(f"Aktive Projekte: {', '.join(high)}")
         return "\n".join(parts)

@@ -11,7 +11,6 @@ Testet die Heartbeat-Kontextanreicherung:
 """
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -26,13 +25,16 @@ TRIGGER_ITEM = {
 
 # ── load_all_sessions Public-Export ──────────────────────────────────────────
 
+
 class TestLoadAllSessionsExport:
     def test_is_importable(self):
         from agent.agents.chat_agent import load_all_sessions
+
         assert callable(load_all_sessions)
 
     def test_delegates_to_private(self):
         from agent.agents.chat_agent import load_all_sessions
+
         with patch("agent.agents.chat_agent._load_all_sessions", return_value="session-data") as mock:
             result = load_all_sessions()
         mock.assert_called_once_with(None)
@@ -40,6 +42,7 @@ class TestLoadAllSessionsExport:
 
     def test_passes_max_days(self):
         from agent.agents.chat_agent import load_all_sessions
+
         with patch("agent.agents.chat_agent._load_all_sessions", return_value="") as mock:
             load_all_sessions(max_days=14)
         mock.assert_called_once_with(14)
@@ -47,21 +50,25 @@ class TestLoadAllSessionsExport:
 
 # ── _fetch_profile_ctx ────────────────────────────────────────────────────────
 
+
 class TestFetchProfileCtx:
     async def test_returns_profile_string(self):
         from agent.proactive.heartbeat import _fetch_profile_ctx
+
         with patch("agent.profile.get_profile_context_short", return_value="User: Fabio (Berlin)"):
             result = await _fetch_profile_ctx()
         assert result == "User: Fabio (Berlin)"
 
     async def test_returns_empty_on_exception(self):
         from agent.proactive.heartbeat import _fetch_profile_ctx
+
         with patch("agent.profile.get_profile_context_short", side_effect=Exception("disk error")):
             result = await _fetch_profile_ctx()
         assert result == ""
 
     async def test_returns_empty_when_profile_empty(self):
         from agent.proactive.heartbeat import _fetch_profile_ctx
+
         with patch("agent.profile.get_profile_context_short", return_value=""):
             result = await _fetch_profile_ctx()
         assert result == ""
@@ -69,19 +76,23 @@ class TestFetchProfileCtx:
 
 # ── _fetch_memory_ctx ─────────────────────────────────────────────────────────
 
+
 class TestFetchMemoryCtx:
     async def test_empty_for_short_query(self):
         from agent.proactive.heartbeat import _fetch_memory_ctx
+
         result = await _fetch_memory_ctx("ab")
         assert result == ""
 
     async def test_empty_for_blank_query(self):
         from agent.proactive.heartbeat import _fetch_memory_ctx
+
         result = await _fetch_memory_ctx("")
         assert result == ""
 
     async def test_formats_results_with_label_prefix(self):
         from agent.proactive.heartbeat import _fetch_memory_ctx
+
         mock_results = [
             {"label": "Reise", "document": "Fabio plant Reise nach Salvador."},
             {"label": "Musik", "document": "Projekt FabBot läuft stabil."},
@@ -94,18 +105,21 @@ class TestFetchMemoryCtx:
 
     async def test_returns_empty_on_no_results(self):
         from agent.proactive.heartbeat import _fetch_memory_ctx
+
         with patch("agent.retrieval.search", new_callable=AsyncMock, return_value=[]):
             result = await _fetch_memory_ctx("unbekannt xyz")
         assert result == ""
 
     async def test_returns_empty_on_search_exception(self):
         from agent.proactive.heartbeat import _fetch_memory_ctx
+
         with patch("agent.retrieval.search", new_callable=AsyncMock, side_effect=Exception("chroma down")):
             result = await _fetch_memory_ctx("Salvador")
         assert result == ""
 
     async def test_truncates_long_document(self):
         from agent.proactive.heartbeat import _fetch_memory_ctx
+
         long_doc = "x" * 500
         mock_results = [{"label": "Test", "document": long_doc}]
         with patch("agent.retrieval.search", new_callable=AsyncMock, return_value=mock_results):
@@ -115,9 +129,11 @@ class TestFetchMemoryCtx:
 
 # ── _fetch_session_ctx ────────────────────────────────────────────────────────
 
+
 class TestFetchSessionCtx:
     async def test_filters_by_entity_name(self):
         from agent.proactive.heartbeat import _fetch_session_ctx
+
         fake_sessions = "Zeile mit Salvador hier\nAndere Zeile ohne Treffer\nNochmal Salvador erwähnt"
         with patch("agent.agents.chat_agent._load_all_sessions", return_value=fake_sessions):
             result = await _fetch_session_ctx("Salvador")
@@ -126,6 +142,7 @@ class TestFetchSessionCtx:
 
     async def test_case_insensitive_filter(self):
         from agent.proactive.heartbeat import _fetch_session_ctx
+
         fake_sessions = "salvador kleingeschrieben\nNichts passendes"
         with patch("agent.agents.chat_agent._load_all_sessions", return_value=fake_sessions):
             result = await _fetch_session_ctx("Salvador")
@@ -133,6 +150,7 @@ class TestFetchSessionCtx:
 
     async def test_no_match_returns_empty(self):
         from agent.proactive.heartbeat import _fetch_session_ctx
+
         fake_sessions = "Zeile A\nZeile B\nZeile C"
         with patch("agent.agents.chat_agent._load_all_sessions", return_value=fake_sessions):
             result = await _fetch_session_ctx("XYZnirgends")
@@ -140,6 +158,7 @@ class TestFetchSessionCtx:
 
     async def test_truncates_to_500_chars(self):
         from agent.proactive.heartbeat import _fetch_session_ctx
+
         long_line = "Salvador " + "x " * 300
         fake_sessions = "\n".join([long_line] * 10)
         with patch("agent.agents.chat_agent._load_all_sessions", return_value=fake_sessions):
@@ -148,12 +167,14 @@ class TestFetchSessionCtx:
 
     async def test_returns_empty_on_exception(self):
         from agent.proactive.heartbeat import _fetch_session_ctx
+
         with patch("agent.agents.chat_agent._load_all_sessions", side_effect=Exception("io error")):
             result = await _fetch_session_ctx("Salvador")
         assert result == ""
 
     async def test_returns_empty_when_sessions_empty(self):
         from agent.proactive.heartbeat import _fetch_session_ctx
+
         with patch("agent.agents.chat_agent._load_all_sessions", return_value=""):
             result = await _fetch_session_ctx("Salvador")
         assert result == ""
@@ -161,13 +182,21 @@ class TestFetchSessionCtx:
 
 # ── _gather_heartbeat_context ─────────────────────────────────────────────────
 
+
 class TestGatherHeartbeatContext:
     async def test_returns_all_three_keys(self):
         from agent.proactive.heartbeat import _gather_heartbeat_context
+
         with (
             patch("agent.proactive.heartbeat._fetch_profile_ctx", new_callable=AsyncMock, return_value="Fabio Berlin"),
-            patch("agent.proactive.heartbeat._fetch_memory_ctx", new_callable=AsyncMock, return_value="[Reise] Salvador"),
-            patch("agent.proactive.heartbeat._fetch_session_ctx", new_callable=AsyncMock, return_value="Session: Salvador 2026"),
+            patch(
+                "agent.proactive.heartbeat._fetch_memory_ctx", new_callable=AsyncMock, return_value="[Reise] Salvador"
+            ),
+            patch(
+                "agent.proactive.heartbeat._fetch_session_ctx",
+                new_callable=AsyncMock,
+                return_value="Session: Salvador 2026",
+            ),
         ):
             ctx = await _gather_heartbeat_context(TRIGGER_ITEM)
         assert ctx["profile"] == "Fabio Berlin"
@@ -193,6 +222,7 @@ class TestGatherHeartbeatContext:
 
 # ── generate_proactive_message (Prompt-Aufbau) ───────────────────────────────
 
+
 class TestGenerateProactiveMessageContext:
     async def test_prompt_contains_all_three_sections(self):
         from agent.proactive.heartbeat import generate_proactive_message
@@ -208,9 +238,21 @@ class TestGenerateProactiveMessageContext:
 
         with (
             patch("agent.proactive.heartbeat._get_llm", return_value=mock_llm),
-            patch("agent.proactive.heartbeat._fetch_profile_ctx", new_callable=AsyncMock, return_value="User: Fabio (Berlin)"),
-            patch("agent.proactive.heartbeat._fetch_memory_ctx", new_callable=AsyncMock, return_value="[Reise] Salvador info"),
-            patch("agent.proactive.heartbeat._fetch_session_ctx", new_callable=AsyncMock, return_value="Session: Reise besprochen"),
+            patch(
+                "agent.proactive.heartbeat._fetch_profile_ctx",
+                new_callable=AsyncMock,
+                return_value="User: Fabio (Berlin)",
+            ),
+            patch(
+                "agent.proactive.heartbeat._fetch_memory_ctx",
+                new_callable=AsyncMock,
+                return_value="[Reise] Salvador info",
+            ),
+            patch(
+                "agent.proactive.heartbeat._fetch_session_ctx",
+                new_callable=AsyncMock,
+                return_value="Session: Reise besprochen",
+            ),
         ):
             result = await generate_proactive_message(TRIGGER_ITEM)
 
@@ -222,6 +264,7 @@ class TestGenerateProactiveMessageContext:
 
     async def test_fallback_on_llm_error_with_context(self):
         from agent.proactive.heartbeat import generate_proactive_message
+
         mock_llm = MagicMock()
         mock_llm.ainvoke = AsyncMock(side_effect=Exception("LLM down"))
 

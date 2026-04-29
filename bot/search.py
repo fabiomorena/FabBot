@@ -1,7 +1,6 @@
 import os
 import re
 from pathlib import Path
-from datetime import datetime
 
 KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
 MAX_RESULTS = 5
@@ -18,9 +17,7 @@ def _extract_meta(content: str, filepath: Path) -> dict:
     source_match = re.search(r"\*\*Quelle:\*\*\s*(.+)$", content, re.MULTILINE)
     source = source_match.group(1).strip() if source_match else ""
 
-    summary_match = re.search(
-        r"##\s+Zusammenfassung\s*\n(.+?)(?=\n##|\Z)", content, re.DOTALL
-    )
+    summary_match = re.search(r"##\s+Zusammenfassung\s*\n(.+?)(?=\n##|\Z)", content, re.DOTALL)
     summary = summary_match.group(1).strip()[:200] if summary_match else ""
 
     return {

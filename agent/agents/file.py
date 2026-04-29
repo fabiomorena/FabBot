@@ -31,16 +31,21 @@ def _build_allowed_paths() -> list[Path]:
         extra_path = Path(ep)
         if not extra_path.exists():
             import logging
+
             logging.getLogger(__name__).warning(f"FABBOT_EXTRA_PATHS: Pfad existiert nicht – ignoriert: {ep}")
             continue
-        if any(str(extra_path.resolve()).startswith(str(b.resolve())) for b in [
-            Path.home() / ".ssh",
-            Path.home() / ".fabbot",
-            Path.home() / "Library",
-            Path("/etc"),
-            Path("/private"),
-        ]):
+        if any(
+            str(extra_path.resolve()).startswith(str(b.resolve()))
+            for b in [
+                Path.home() / ".ssh",
+                Path.home() / ".fabbot",
+                Path.home() / "Library",
+                Path("/etc"),
+                Path("/private"),
+            ]
+        ):
             import logging
+
             logging.getLogger(__name__).warning(f"FABBOT_EXTRA_PATHS: Blockierter Pfad – ignoriert: {ep}")
             continue
         paths.append(extra_path)
@@ -221,8 +226,13 @@ def _read_file(path: Path, state: AgentState) -> AgentState:
         text = path.read_text(encoding="utf-8", errors="replace")
         if len(text) > 3000:
             text = text[:3000] + "\n... (Inhalt gekuerzt)"
-        log_action("file_agent", "read", f"path={path} size={path.stat().st_size}b",
-                   state.get("telegram_chat_id"), status="executed")
+        log_action(
+            "file_agent",
+            "read",
+            f"path={path} size={path.stat().st_size}b",
+            state.get("telegram_chat_id"),
+            status="executed",
+        )
         result = f"Inhalt von {path.name}:\n\n{text}"
         return {"messages": [AIMessage(content=result)], "last_agent_result": result, "last_agent_name": "file_agent"}
     except PermissionError:

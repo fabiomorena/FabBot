@@ -26,6 +26,7 @@ Phase 92: setup_audit_logger() in _post_init() aufgerufen.
 Phase 91: asyncio.create_task(index_file(...)) in cmd_clip ohne Referenz-Haltung gefixt.
 Phase 84 Änderungen: handle_message_text aufgeteilt, _delete_thinking mit suppress, etc.
 """
+
 import contextlib
 import logging
 import os
@@ -54,16 +55,22 @@ from agent.agents.computer import computer_agent_execute, _screenshot_to_telegra
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
 from bot.whatsapp import (
-    send_whatsapp_message, is_session_ready,
-    add_whatsapp_contact, remove_whatsapp_contact, list_whatsapp_contacts_formatted,
-    get_service_status, get_qr_code, start_service, stop_service,
+    send_whatsapp_message,
+    is_session_ready,
+    add_whatsapp_contact,
+    remove_whatsapp_contact,
+    list_whatsapp_contacts_formatted,
+    get_service_status,
+    get_qr_code,
+    start_service,
+    stop_service,
 )
 
 logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
 
-_IMAGE_MAX_PX    = 1920
+_IMAGE_MAX_PX = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5 MB
 
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
@@ -103,6 +110,7 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
     try:
         from PIL import Image
         import io
+
         img = Image.open(io.BytesIO(img_bytes))
         if max(img.width, img.height) <= _IMAGE_MAX_PX:
             return img_bytes, mime_type
@@ -144,22 +152,20 @@ async def _is_duplicate(update: Update) -> bool:
 _scheduler_tasks: list = []
 
 _RETRY_MAX_ATTEMPTS = 3
-_RETRY_BASE_DELAY   = 2.0
+_RETRY_BASE_DELAY = 2.0
 
 
 def _extract_content(msg) -> str:
     content = msg.content
     if isinstance(content, list):
-        return " ".join(
-            b.get("text", "") if isinstance(b, dict) else str(b)
-            for b in content
-        ).strip()
+        return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content).strip()
     return str(content).strip()
 
 
 async def _update_memory(chat_id: int, result_text: str) -> None:
     try:
         from agent.supervisor import get_graph
+
         config = {"configurable": {"thread_id": str(chat_id)}}
         await get_graph().aupdate_state(
             config,
@@ -173,13 +179,14 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
     try:
         from agent.supervisor import get_graph
         from langchain_core.messages import HumanMessage as HM
-        config     = {"configurable": {"thread_id": str(chat_id)}}
+
+        config = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
         # Issue #123: last_agent_name=vision_agent setzen damit #122-Guard Folgefragen zu chat_agent routet
         await get_graph().aupdate_state(
             config,
             {
-                "messages":        [HM(content=human_text), AIMessage(content=result)],
+                "messages": [HM(content=human_text), AIMessage(content=result)],
                 "last_agent_name": "vision_agent",
                 "last_agent_result": result,
             },
@@ -194,6 +201,7 @@ _TRANSIENT_EXCEPTIONS = (APIConnectionError, RateLimitError)
 
 async def _invoke_with_retry(state: dict, config: dict) -> dict:
     from agent.supervisor import get_graph
+
     last_exception = None
     for attempt in range(_RETRY_MAX_ATTEMPTS):
         try:
@@ -207,10 +215,9 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
             else:
                 raise
 
-        delay = _RETRY_BASE_DELAY * (2 ** attempt)
+        delay = _RETRY_BASE_DELAY * (2**attempt)
         logger.warning(
-            f"{type(last_exception).__name__} – Versuch {attempt + 1}/{_RETRY_MAX_ATTEMPTS}, "
-            f"warte {delay:.0f}s..."
+            f"{type(last_exception).__name__} – Versuch {attempt + 1}/{_RETRY_MAX_ATTEMPTS}, warte {delay:.0f}s..."
         )
         if attempt < _RETRY_MAX_ATTEMPTS - 1:
             await asyncio.sleep(delay)
@@ -221,6 +228,7 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Phase 84: Shared Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _delete_thinking(thinking) -> None:
     with contextlib.suppress(Exception):
@@ -254,9 +262,9 @@ async def _invoke_and_extract(state: dict, config: dict) -> str:
         default=-1,
     )
     ai_messages = [
-        m for m in messages[last_human_idx + 1:]
-        if isinstance(m, AIMessage)
-        and not str(m.content).startswith("__MEMORY__")
+        m
+        for m in messages[last_human_idx + 1 :]
+        if isinstance(m, AIMessage) and not str(m.content).startswith("__MEMORY__")
     ]
     response_msg = _extract_content(ai_messages[-1]) if ai_messages else ""
     if not response_msg:
@@ -283,8 +291,9 @@ async def _dispatch_response(response_msg: str, bot: Bot, chat_id: int, update: 
 # Private HITL-Handler
 # ---------------------------------------------------------------------------
 
+
 async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    analysis         = response_msg[len(Proto.SCREENSHOT):]
+    analysis = response_msg[len(Proto.SCREENSHOT) :]
     screenshot_bytes = _screenshot_to_telegram_bytes()
     if screenshot_bytes:
         await bot.send_photo(chat_id=chat_id, photo=screenshot_bytes, caption=analysis)
@@ -298,12 +307,12 @@ async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> 
 
 
 async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts    = response_msg[len(Proto.CONFIRM_COMPUTER):].split(":", 3)
-    action   = parts[0] if len(parts) > 0 else ""
-    x        = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-    y        = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    parts = response_msg[len(Proto.CONFIRM_COMPUTER) :].split(":", 3)
+    action = parts[0] if len(parts) > 0 else ""
+    x = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    y = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
     text_arg = parts[3] if len(parts) > 3 else ""
-    display  = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
+    display = f"{action}: {text_arg}" if text_arg else f"{action} @ ({x}, {y})"
     confirmed = await request_confirmation(bot, chat_id, "computer_agent", display)
     if confirmed:
         if not check_action_rate_limit(chat_id, "destructive"):
@@ -318,7 +327,7 @@ async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **
 
 
 async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    command   = response_msg[len(Proto.CONFIRM_TERMINAL):]
+    command = response_msg[len(Proto.CONFIRM_TERMINAL) :]
     confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
     if confirmed:
         if not check_action_rate_limit(chat_id, "destructive"):
@@ -335,14 +344,11 @@ async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **
 
 
 async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts      = response_msg[len(Proto.CONFIRM_CREATE_EVENT):].split("::")
-    title      = parts[0] if len(parts) > 0 else ""
+    parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT) :].split("::")
+    title = parts[0] if len(parts) > 0 else ""
     start_time = parts[1] if len(parts) > 1 else ""
-    end_time   = parts[2] if len(parts) > 2 else ""
-    confirmed  = await request_confirmation(
-        bot, chat_id, "calendar_agent",
-        f"Neuer Termin: {title} am {start_time}"
-    )
+    end_time = parts[2] if len(parts) > 2 else ""
+    confirmed = await request_confirmation(bot, chat_id, "calendar_agent", f"Neuer Termin: {title} am {start_time}")
     if confirmed:
         output = calendar_event_create(title, start_time, end_time, chat_id)
         await bot.send_message(chat_id=chat_id, text=output)
@@ -354,10 +360,10 @@ async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int
 
 
 async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts        = response_msg[len(Proto.CONFIRM_FILE_WRITE):].split("::", 1)
-    path_str     = parts[0]
+    parts = response_msg[len(Proto.CONFIRM_FILE_WRITE) :].split("::", 1)
+    path_str = parts[0]
     file_content = parts[1] if len(parts) > 1 else ""
-    confirmed    = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
+    confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
     if confirmed:
         if not check_action_rate_limit(chat_id, "destructive"):
             await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
@@ -373,12 +379,11 @@ async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, 
 
 
 async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts         = response_msg[len(Proto.CONFIRM_WHATSAPP):].split("::", 1)
+    parts = response_msg[len(Proto.CONFIRM_WHATSAPP) :].split("::", 1)
     whatsapp_name = parts[0] if len(parts) > 0 else ""
-    message_text  = parts[1] if len(parts) > 1 else ""
+    message_text = parts[1] if len(parts) > 1 else ""
     confirmed = await request_confirmation(
-        bot, chat_id, "whatsapp_agent",
-        f"WhatsApp an {whatsapp_name}:\n{message_text}"
+        bot, chat_id, "whatsapp_agent", f"WhatsApp an {whatsapp_name}:\n{message_text}"
     )
     if confirmed:
         if not check_action_rate_limit(chat_id, "destructive"):
@@ -388,25 +393,31 @@ async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **
         success, detail = await send_whatsapp_message(whatsapp_name, message_text)
         await bot.send_message(chat_id=chat_id, text=detail)
         await _update_memory(chat_id, f"WhatsApp gesendet an {whatsapp_name}: {message_text}")
-        log_action("whatsapp_agent", "send", f"to={whatsapp_name} len={len(message_text)}", chat_id,
-                   status="executed" if success else "error")
+        log_action(
+            "whatsapp_agent",
+            "send",
+            f"to={whatsapp_name} len={len(message_text)}",
+            chat_id,
+            status="executed" if success else "error",
+        )
     else:
         log_action("whatsapp_agent", "send", f"user rejected: {whatsapp_name}", chat_id, status="rejected")
 
 
 _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
-    (Proto.SCREENSHOT,           _handle_screenshot),
-    (Proto.CONFIRM_COMPUTER,     _handle_confirm_computer),
-    (Proto.CONFIRM_TERMINAL,     _handle_confirm_terminal),
+    (Proto.SCREENSHOT, _handle_screenshot),
+    (Proto.CONFIRM_COMPUTER, _handle_confirm_computer),
+    (Proto.CONFIRM_TERMINAL, _handle_confirm_terminal),
     (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
-    (Proto.CONFIRM_FILE_WRITE,   _handle_confirm_file_write),
-    (Proto.CONFIRM_WHATSAPP,     _handle_confirm_whatsapp),
+    (Proto.CONFIRM_FILE_WRITE, _handle_confirm_file_write),
+    (Proto.CONFIRM_WHATSAPP, _handle_confirm_whatsapp),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Command Handlers
 # ---------------------------------------------------------------------------
+
 
 @restricted
 async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -424,7 +435,7 @@ async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(list_whatsapp_contacts_formatted())
     elif subcmd == "add":
         if len(ctx.args) < 3:
-            await update.message.reply_text('Verwendung: /wa_contact add <Name> <WhatsApp-Name>')
+            await update.message.reply_text("Verwendung: /wa_contact add <Name> <WhatsApp-Name>")
             return
         name = ctx.args[1]
         whatsapp_name = " ".join(ctx.args[2:])
@@ -442,7 +453,7 @@ async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
 @restricted
 async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    chat_id  = update.effective_chat.id
+    chat_id = update.effective_chat.id
     thinking = await update.message.reply_text("Prüfe WhatsApp Status...")
     try:
         status = await get_service_status()
@@ -462,8 +473,9 @@ async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 try:
                     import qrcode as qrcode_lib
                     import io
+
                     qr_img = qrcode_lib.make(qr_string)
-                    buf    = io.BytesIO()
+                    buf = io.BytesIO()
                     qr_img.save(buf, format="PNG")
                     buf.seek(0)
                     await thinking.delete()
@@ -483,7 +495,9 @@ async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     return
             await thinking.edit_text("QR-Code konnte nicht abgerufen werden.")
             return
-        await thinking.edit_text("⏳ WhatsApp Service läuft, QR-Code wird generiert...\nBitte nochmal /wa_setup ausführen.")
+        await thinking.edit_text(
+            "⏳ WhatsApp Service läuft, QR-Code wird generiert...\nBitte nochmal /wa_setup ausführen."
+        )
     except Exception as e:
         logger.error(f"cmd_wa_setup Fehler: {e}", exc_info=True)
         with contextlib.suppress(Exception):
@@ -514,10 +528,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     tts_status = "aktiviert" if is_tts_enabled() else "deaktiviert"
-    wa_status  = "✅ verbunden" if is_session_ready() else "❌ nicht verbunden"
+    wa_status = "✅ verbunden" if is_session_ready() else "❌ nicht verbunden"
     try:
         from agent.retrieval import _get_collection
-        col              = _get_collection()
+
+        col = _get_collection()
         retrieval_status = f"aktiv ({col.count()} Chunks)" if col else "deaktiviert"
     except Exception:
         retrieval_status = "nicht verfügbar"
@@ -529,6 +544,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from bot.health_check import run_health_check
+
     await run_health_check(ctx.bot, update.effective_chat.id)
 
 
@@ -536,11 +552,13 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info("cmd_briefing: manuell ausgelöst")
     from bot.briefing import generate_briefing
+
     briefing = await generate_briefing()
     logger.info("cmd_briefing: Briefing gesendet")
     await update.message.reply_text(briefing, parse_mode="Markdown")
     try:
         from agent.supervisor import get_graph
+
         chat_id = update.effective_chat.id
         config = {"configurable": {"thread_id": str(chat_id)}}
         await get_graph().aupdate_state(
@@ -555,13 +573,14 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from agent.proactive.pending import mark_done
+
     query = " ".join(ctx.args or []).strip()
     if not query:
         await update.message.reply_text("Verwendung: /done <Name oder Teil des Namens>")
         return
     matched = await asyncio.to_thread(mark_done, query)
     if not matched:
-        await update.message.reply_text(f"Kein offenes Item gefunden für: \"{query}\"")
+        await update.message.reply_text(f'Kein offenes Item gefunden für: "{query}"')
     elif len(matched) == 1:
         await update.message.reply_text(f"✅ Erledigt: {matched[0]}")
     else:
@@ -571,7 +590,8 @@ async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    from agent.proactive.heartbeat import mute_proactive, unmute_proactive, is_muted
+    from agent.proactive.heartbeat import mute_proactive, unmute_proactive
+
     args = ctx.args or []
     if args and args[0].lower() == "off":
         unmute_proactive()
@@ -579,7 +599,9 @@ async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     else:
         hours = int(args[0]) if args and args[0].isdigit() else 24
         mute_proactive(hours)
-        await update.message.reply_text(f"Proaktive Nachrichten für {hours}h stummgeschaltet. /mute_proactive off zum Reaktivieren.")
+        await update.message.reply_text(
+            f"Proaktive Nachrichten für {hours}h stummgeschaltet. /mute_proactive off zum Reaktivieren."
+        )
 
 
 @restricted
@@ -630,22 +652,21 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
         await update.message.reply_text("Verwendung: /clip <URL>")
         return
-    url      = ctx.args[0]
-    chat_id  = update.effective_chat.id
+    url = ctx.args[0]
+    chat_id = update.effective_chat.id
     thinking = await update.message.reply_text(f"Lese {url} ...")
     result = await clip_agent(url, chat_id)
     if not result["ok"]:
         await thinking.edit_text(f"Fehler: {result['error']}")
         return
-    await thinking.edit_text(
-        f"Vorschau:\n\n{result['preview']}\n\nSpeichern als: {result['filename']}"
-    )
+    await thinking.edit_text(f"Vorschau:\n\n{result['preview']}\n\nSpeichern als: {result['filename']}")
     confirmed = await request_confirmation(ctx.bot, chat_id, "clip_agent", f"Speichern: {result['filename']}")
     if confirmed:
         output = clip_agent_write(result["path"], result["content"], chat_id)
         await ctx.bot.send_message(chat_id=chat_id, text=output)
         try:
             from agent.retrieval import index_file
+
             task = asyncio.create_task(index_file(result["path"]))
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)
@@ -670,6 +691,7 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Verwendung: /remember <was ich mir merken soll>")
         return
     from agent.profile import add_note_to_profile
+
     success = await add_note_to_profile(text)
     if success:
         await update.message.reply_text(f"✅ Gemerkt: {text}")
@@ -682,8 +704,9 @@ async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Indexiere Wissensbasis (force=True)...")
     try:
         from agent.retrieval import index_all, _get_collection
+
         await index_all(force=True)
-        col   = _get_collection()
+        col = _get_collection()
         count = col.count() if col else 0
         await thinking.edit_text(f"✅ Wissensbasis neu indexiert – {count} Chunks gesamt.")
     except ImportError:
@@ -696,6 +719,7 @@ async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 # Media Handlers
 # ---------------------------------------------------------------------------
+
 
 @restricted
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -714,11 +738,12 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Analysiere Bild...")
     try:
         import base64
-        photo     = update.message.photo[-1]
-        tg_file   = await ctx.bot.get_file(photo.file_id)
+
+        photo = update.message.photo[-1]
+        tg_file = await ctx.bot.get_file(photo.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), "image/jpeg")
-        img_b64   = base64.standard_b64encode(resized).decode("utf-8")
+        img_b64 = base64.standard_b64encode(resized).decode("utf-8")
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
@@ -736,7 +761,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    doc     = update.message.document
+    doc = update.message.document
     if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
         await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
         return
@@ -754,7 +779,8 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     thinking = await update.message.reply_text("Analysiere Bild...")
     try:
         import base64
-        tg_file   = await ctx.bot.get_file(doc.file_id)
+
+        tg_file = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
         resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
@@ -782,10 +808,10 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     thinking = await update.message.reply_text("Transkribiere...")
     try:
-        voice       = update.message.voice
-        tg_file     = await ctx.bot.get_file(voice.file_id)
+        voice = update.message.voice
+        tg_file = await ctx.bot.get_file(voice.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
-        text        = await transcribe_audio(bytes(audio_bytes))
+        text = await transcribe_audio(bytes(audio_bytes))
         if not text:
             await update.message.reply_text("Transkription fehlgeschlagen.")
             return
@@ -807,6 +833,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # Core message handler
 # ---------------------------------------------------------------------------
 
+
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
@@ -818,9 +845,9 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     thinking = await update.message.reply_text("Denke nach...")
     try:
         state = {
-            "messages":         [HumanMessage(content=clean_text)],
+            "messages": [HumanMessage(content=clean_text)],
             "telegram_chat_id": chat_id,
-            "next_agent":       None,
+            "next_agent": None,
         }
         config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
         # Phase 104 (Issue #16b): Lock verhindert concurrent ainvoke() auf denselben
@@ -833,10 +860,13 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         if response_msg:
             from agent.proactive.collector import collect_entities
             from agent.proactive.intent_extractor import extract_intentions
-            asyncio.create_task(collect_entities(
-                user_message=clean_text,
-                bot_response=response_msg,
-            ))
+
+            asyncio.create_task(
+                collect_entities(
+                    user_message=clean_text,
+                    bot_response=response_msg,
+                )
+            )
             asyncio.create_task(extract_intentions(user_message=clean_text))
 
     except RateLimitError:
@@ -876,23 +906,28 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
 # Lifecycle Hooks
 # ---------------------------------------------------------------------------
 
+
 async def _post_init(app: Application) -> None:
     from agent.supervisor import init_graph, cleanup_checkpoints
+
     await init_graph()
     logger.info("SqliteSaver-Checkpointer initialisiert.")
     await cleanup_checkpoints(max_per_thread=200)
 
     # Phase 92: Audit-Logger erst jetzt initialisieren (nach logging.basicConfig()).
     from agent.audit import setup_audit_logger
+
     setup_audit_logger()
     logger.info("Audit-Logger initialisiert.")
 
     # Phase 95 (Issue #6): Harte Model-Validierung beim Start.
     from agent.llm import validate_models_on_startup
+
     validate_models_on_startup()
     logger.info("LLM Model-Validierung abgeschlossen.")
 
     from agent.telemetry import setup_telemetry
+
     setup_telemetry()
 
     # Whisper-Modell vorladen – verzögert damit ChromaDB-Init abgeschlossen ist.
@@ -901,28 +936,34 @@ async def _post_init(app: Application) -> None:
         try:
             loop = asyncio.get_event_loop()
             from bot.transcribe import _get_model
+
             await loop.run_in_executor(None, _get_model)
             logger.info("Whisper-Modell vorgeladen.")
         except Exception as e:
             logger.warning(f"Whisper-Warmup fehlgeschlagen (ignoriert): {e}")
+
     asyncio.create_task(_warmup_whisper_delayed())
 
     async def _warmup_profile():
         try:
             loop = asyncio.get_running_loop()
             from agent.profile import load_profile
+
             await asyncio.wait_for(loop.run_in_executor(None, load_profile), timeout=5.0)
             logger.info("Profil vorgeladen (Keychain-Zugriff abgeschlossen).")
         except asyncio.TimeoutError:
-            logger.warning("Profil-Warmup Timeout (5s) – Keychain möglicherweise gesperrt. Profil wird beim ersten Aufruf erneut versucht.")
+            logger.warning(
+                "Profil-Warmup Timeout (5s) – Keychain möglicherweise gesperrt. Profil wird beim ersten Aufruf erneut versucht."
+            )
         except Exception as e:
             logger.warning(f"Profil-Warmup fehlgeschlagen (ignoriert): {e}")
+
     asyncio.create_task(_warmup_profile())
 
     chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if not chat_id_str:
         fallback_raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
-        chat_id_str  = fallback_raw.split(",")[0].strip() if fallback_raw else ""
+        chat_id_str = fallback_raw.split(",")[0].strip() if fallback_raw else ""
 
     if not chat_id_str:
         logger.critical("Weder TELEGRAM_CHAT_ID noch TELEGRAM_ALLOWED_USER_IDS gesetzt – Scheduler nicht gestartet.")
@@ -941,59 +982,75 @@ async def _post_init(app: Application) -> None:
         logger.warning(f"WhatsApp Service Start übersprungen: {e}")
 
     from bot.briefing import run_briefing_scheduler
+
     task_briefing = asyncio.create_task(run_briefing_scheduler(app.bot, chat_id), name="scheduler:briefing")
     _scheduler_tasks.append(task_briefing)
     task_briefing.add_done_callback(
         lambda t: logger.error(f"Briefing Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
+        if not t.cancelled() and t.exception()
+        else None
     )
 
     from bot.reminders import run_reminder_scheduler
+
     task_reminders = asyncio.create_task(run_reminder_scheduler(app.bot, chat_id), name="scheduler:reminders")
     _scheduler_tasks.append(task_reminders)
     task_reminders.add_done_callback(
         lambda t: logger.error(f"Reminders Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
+        if not t.cancelled() and t.exception()
+        else None
     )
 
     from bot.heartbeat_scheduler import run_heartbeat_scheduler
+
     task_heartbeat = asyncio.create_task(run_heartbeat_scheduler(app.bot, chat_id), name="scheduler:heartbeat")
     _scheduler_tasks.append(task_heartbeat)
     task_heartbeat.add_done_callback(
         lambda t: logger.error(f"Heartbeat Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
+        if not t.cancelled() and t.exception()
+        else None
     )
 
     from bot.health_check import run_health_check_scheduler
+
     task_health = asyncio.create_task(run_health_check_scheduler(app.bot, chat_id), name="scheduler:health_check")
     _scheduler_tasks.append(task_health)
     task_health.add_done_callback(
         lambda t: logger.error(f"Health-Check Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
+        if not t.cancelled() and t.exception()
+        else None
     )
 
     from bot.party_report import run_party_report_scheduler
+
     task_party = asyncio.create_task(run_party_report_scheduler(app.bot, chat_id), name="scheduler:party_report")
     _scheduler_tasks.append(task_party)
     task_party.add_done_callback(
         lambda t: logger.error(f"Party-Report Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
+        if not t.cancelled() and t.exception()
+        else None
     )
 
     from bot.session_summary import run_session_summary_scheduler
-    task_summary = asyncio.create_task(run_session_summary_scheduler(app.bot, chat_id), name="scheduler:session_summary")
+
+    task_summary = asyncio.create_task(
+        run_session_summary_scheduler(app.bot, chat_id), name="scheduler:session_summary"
+    )
     _scheduler_tasks.append(task_summary)
     task_summary.add_done_callback(
         lambda t: logger.error(f"Session-Summary Scheduler unerwartet beendet: {t.exception()}")
-        if not t.cancelled() and t.exception() else None
+        if not t.cancelled() and t.exception()
+        else None
     )
 
     try:
         from agent.retrieval import index_all
+
         task_retrieval = asyncio.create_task(index_all())
         task_retrieval.add_done_callback(
             lambda t: logger.error(f"Retrieval Index-Aufbau fehlgeschlagen: {t.exception()}")
-            if not t.cancelled() and t.exception() else None
+            if not t.cancelled() and t.exception()
+            else None
         )
         logger.info("Retrieval Index-Aufbau gestartet (Background).")
     except ImportError:
@@ -1016,6 +1073,7 @@ async def _post_shutdown(app: Application) -> None:
     except Exception as e:
         logger.warning(f"WhatsApp Service Stop fehlgeschlagen (ignoriert): {e}")
     from agent.supervisor import close_graph
+
     await close_graph()
     logger.info("SqliteSaver-Verbindung geschlossen.")
 
@@ -1023,6 +1081,7 @@ async def _post_shutdown(app: Application) -> None:
 # ---------------------------------------------------------------------------
 # Bot setup
 # ---------------------------------------------------------------------------
+
 
 def build_bot() -> Application:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -1040,24 +1099,24 @@ def build_bot() -> Application:
         .pool_timeout(5)
         .build()
     )
-    app.add_handler(CommandHandler("health",          cmd_health,          block=False))
-    app.add_handler(CommandHandler("briefing",        cmd_briefing,        block=False))
-    app.add_handler(CommandHandler("done",            cmd_done,            block=False))
-    app.add_handler(CommandHandler("mute_proactive",  cmd_mute_proactive,  block=False))
-    app.add_handler(CommandHandler("start",      cmd_start))
-    app.add_handler(CommandHandler("status",     cmd_status))
-    app.add_handler(CommandHandler("auditlog",   cmd_auditlog))
-    app.add_handler(CommandHandler("tts",        cmd_tts))
-    app.add_handler(CommandHandler("stop",       cmd_stop))
-    app.add_handler(CommandHandler("ask",        cmd_ask,        block=False))
-    app.add_handler(CommandHandler("clip",       cmd_clip,       block=False))
-    app.add_handler(CommandHandler("search",     cmd_search,     block=False))
-    app.add_handler(CommandHandler("remember",   cmd_remember,   block=False))
-    app.add_handler(CommandHandler("reindex",    cmd_reindex,    block=False))
-    app.add_handler(CommandHandler("wa_setup",   cmd_wa_setup,   block=False))
+    app.add_handler(CommandHandler("health", cmd_health, block=False))
+    app.add_handler(CommandHandler("briefing", cmd_briefing, block=False))
+    app.add_handler(CommandHandler("done", cmd_done, block=False))
+    app.add_handler(CommandHandler("mute_proactive", cmd_mute_proactive, block=False))
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("auditlog", cmd_auditlog))
+    app.add_handler(CommandHandler("tts", cmd_tts))
+    app.add_handler(CommandHandler("stop", cmd_stop))
+    app.add_handler(CommandHandler("ask", cmd_ask, block=False))
+    app.add_handler(CommandHandler("clip", cmd_clip, block=False))
+    app.add_handler(CommandHandler("search", cmd_search, block=False))
+    app.add_handler(CommandHandler("remember", cmd_remember, block=False))
+    app.add_handler(CommandHandler("reindex", cmd_reindex, block=False))
+    app.add_handler(CommandHandler("wa_setup", cmd_wa_setup, block=False))
     app.add_handler(CommandHandler("wa_contact", cmd_wa_contact, block=False))
-    app.add_handler(MessageHandler(filters.VOICE,          on_voice,    block=False))
-    app.add_handler(MessageHandler(filters.PHOTO,          on_photo,    block=False))
+    app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
+    app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)

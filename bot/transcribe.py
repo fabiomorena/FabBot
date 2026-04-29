@@ -11,6 +11,7 @@ def _get_model():
     global _model
     if _model is None:
         import whisper
+
         logger.info("Lade Whisper-Modell 'small'...")
         _model = whisper.load_model("small")
         logger.info("Whisper-Modell geladen.")

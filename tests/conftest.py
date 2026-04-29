@@ -31,6 +31,7 @@ def reset_rate_limit_store():
     Verhindert dass Rate-Limit-Tests sich gegenseitig beeinflussen.
     """
     from agent.security import _rate_limit_store
+
     _rate_limit_store.clear()
     yield
     _rate_limit_store.clear()
@@ -42,6 +43,7 @@ def reset_tts_state():
     Verhindert dass toggle-Tests den State für nachfolgende Tests verändern.
     """
     import bot.tts as tts_module
+
     original_enabled = tts_module._tts_enabled
     tts_module._current_afplay = None
     yield
@@ -57,6 +59,7 @@ def reset_profile_cache():
     gespeicherten Original-Cache verändern.
     """
     import agent.profile as profile_module
+
     original_cache = copy.deepcopy(profile_module._profile_cache)
     yield
     profile_module._profile_cache = original_cache
@@ -68,6 +71,7 @@ def reset_confirm_pending():
     Verhindert dass hängende Futures aus einem Test den nächsten blockieren.
     """
     from bot.confirm import _pending
+
     _pending.clear()
     yield
     _pending.clear()
@@ -80,6 +84,7 @@ def mock_keychain():
     """
     from cryptography.fernet import Fernet
     import agent.crypto as crypto_module
+
     original_fernet = crypto_module._fernet
     crypto_module._fernet = Fernet(Fernet.generate_key())
     yield

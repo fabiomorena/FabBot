@@ -7,6 +7,7 @@ Phase 70 Fixes:
 - Spezifischerer Log bei Retry-Erschöpfung vs. echtem API-Fehler
 - _get_tts_voice() + _get_tts_model() lazy getters (konsistent mit _get_openai_api_key)
 """
+
 import asyncio
 import logging
 import os
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # edge-tts Fallback
 TTS_VOICE = "de-DE-KatjaNeural"
-TTS_RATE  = "+0%"
+TTS_RATE = "+0%"
 
 TTS_MAX_CHARS = 1000
 
@@ -43,7 +44,7 @@ OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
 OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
 
 _TTS_RETRY_STATUS = {429, 503}
-_TTS_RETRY_DELAY  = 0.5
+_TTS_RETRY_DELAY = 0.5
 
 
 def _get_openai_api_key() -> str:
@@ -71,15 +72,9 @@ def validate_tts_config() -> None:
     voice = _get_tts_voice()
     model = _get_tts_model()
     if voice not in _VALID_VOICES:
-        logger.warning(
-            f"Unbekannte OPENAI_TTS_VOICE: {voice!r} – "
-            f"erlaubte Werte: {sorted(_VALID_VOICES)}"
-        )
+        logger.warning(f"Unbekannte OPENAI_TTS_VOICE: {voice!r} – erlaubte Werte: {sorted(_VALID_VOICES)}")
     if model not in _VALID_MODELS:
-        logger.warning(
-            f"Unbekanntes OPENAI_TTS_MODEL: {model!r} – "
-            f"erlaubte Werte: {sorted(_VALID_MODELS)}"
-        )
+        logger.warning(f"Unbekanntes OPENAI_TTS_MODEL: {model!r} – erlaubte Werte: {sorted(_VALID_MODELS)}")
 
 
 def is_tts_enabled() -> bool:
@@ -116,7 +111,7 @@ def _clean_for_tts(text: str) -> str:
             break
         cleaned_lines.append(line)
     text = "\n".join(cleaned_lines)
-    text = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', text, flags=re.UNICODE)
+    text = re.sub(r"[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]", "", text, flags=re.UNICODE)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -124,6 +119,7 @@ def _clean_for_tts(text: str) -> str:
 # ---------------------------------------------------------------------------
 # OpenAI TTS
 # ---------------------------------------------------------------------------
+
 
 async def _synthesize_openai(text: str) -> bytes | None:
     """
@@ -141,6 +137,7 @@ async def _synthesize_openai(text: str) -> bytes | None:
 
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=30) as client:
             for attempt in range(2):
                 resp = await client.post(
@@ -153,31 +150,19 @@ async def _synthesize_openai(text: str) -> bytes | None:
                 )
 
                 if resp.status_code == 200:
-                    logger.info(
-                        f"OpenAI TTS: {len(resp.content)} bytes, "
-                        f"voice={voice}, model={model}"
-                    )
+                    logger.info(f"OpenAI TTS: {len(resp.content)} bytes, voice={voice}, model={model}")
                     return resp.content
 
                 if resp.status_code in _TTS_RETRY_STATUS and attempt == 0:
-                    logger.warning(
-                        f"OpenAI TTS {resp.status_code} – "
-                        f"Retry in {_TTS_RETRY_DELAY}s..."
-                    )
+                    logger.warning(f"OpenAI TTS {resp.status_code} – Retry in {_TTS_RETRY_DELAY}s...")
                     await asyncio.sleep(_TTS_RETRY_DELAY)
                     continue
 
                 # Phase 70: unterscheide Retry-Erschoepfung von echtem Fehler
                 if resp.status_code in _TTS_RETRY_STATUS:
-                    logger.warning(
-                        f"OpenAI TTS: Retry erschoepft nach {resp.status_code} – "
-                        f"Fallback zu edge-tts"
-                    )
+                    logger.warning(f"OpenAI TTS: Retry erschoepft nach {resp.status_code} – Fallback zu edge-tts")
                 else:
-                    logger.warning(
-                        f"OpenAI TTS API Fehler: {resp.status_code} – "
-                        f"Fallback zu edge-tts"
-                    )
+                    logger.warning(f"OpenAI TTS API Fehler: {resp.status_code} – Fallback zu edge-tts")
                 return None
 
     except Exception as e:
@@ -189,9 +174,11 @@ async def _synthesize_openai(text: str) -> bytes | None:
 # edge-tts Fallback
 # ---------------------------------------------------------------------------
 
+
 def _is_edge_tts_available() -> bool:
     try:
         import edge_tts  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -206,6 +193,7 @@ async def _synthesize_edge_tts(text: str) -> bytes | None:
         return None
     try:
         import edge_tts
+
         communicate = edge_tts.Communicate(text, TTS_VOICE, rate=TTS_RATE)
         audio_bytes = b""
         async for chunk in communicate.stream():
@@ -220,6 +208,7 @@ async def _synthesize_edge_tts(text: str) -> bytes | None:
 # ---------------------------------------------------------------------------
 # Haupt-Synthesize
 # ---------------------------------------------------------------------------
+
 
 async def synthesize(text: str) -> bytes | None:
     text = _clean_for_tts(text)
@@ -279,6 +268,7 @@ async def speak_and_send(text: str, bot, chat_id: int) -> bool:
 async def _play_on_mac(path: Path) -> None:
     global _current_afplay
     try:
+
         def _run() -> None:
             global _current_afplay
             _current_afplay = subprocess.Popen(["afplay", str(path)])
@@ -289,6 +279,7 @@ async def _play_on_mac(path: Path) -> None:
                 logger.warning("afplay Timeout nach 300s.")
             finally:
                 _current_afplay = None
+
         await asyncio.to_thread(_run)
     except Exception as e:
         logger.warning(f"afplay Fehler (nicht kritisch): {e}")

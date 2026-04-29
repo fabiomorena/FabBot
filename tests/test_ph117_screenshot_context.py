@@ -7,6 +7,7 @@ Phase 117 Tests – Issue #45: Screenshot-Analyse in last_agent_result + Memory.
 4. _handle_screenshot: _update_memory wird aufgerufen
 5. _handle_screenshot: Analyse-Text korrekt extrahiert
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,11 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # 1–3: computer_agent last_agent_result
 # ---------------------------------------------------------------------------
 
+
 class TestComputerAgentScreenshotContext:
     """Phase 117: last_agent_result wird mit Screenshot-Analyse befüllt."""
 
     def _make_state(self, text: str = "mache einen screenshot") -> dict:
         from langchain_core.messages import HumanMessage
+
         return {
             "messages": [HumanMessage(content=text)],
             "telegram_chat_id": 12345,
@@ -40,8 +43,10 @@ class TestComputerAgentScreenshotContext:
         """last_agent_result ist nicht None nach Screenshot."""
         from agent.agents.computer import computer_agent
 
-        with patch("agent.agents.computer._take_screenshot", return_value="base64data"), \
-             self._make_llm_patch("DuckDuckGo Startseite im Chrome Browser."):
+        with (
+            patch("agent.agents.computer._take_screenshot", return_value="base64data"),
+            self._make_llm_patch("DuckDuckGo Startseite im Chrome Browser."),
+        ):
             result = await computer_agent(self._make_state())
 
         assert result["last_agent_result"] is not None
@@ -53,8 +58,10 @@ class TestComputerAgentScreenshotContext:
         from agent.agents.computer import computer_agent
 
         analysis_text = "DuckDuckGo Startseite im Chrome Browser."
-        with patch("agent.agents.computer._take_screenshot", return_value="base64data"), \
-             self._make_llm_patch(analysis_text):
+        with (
+            patch("agent.agents.computer._take_screenshot", return_value="base64data"),
+            self._make_llm_patch(analysis_text),
+        ):
             result = await computer_agent(self._make_state())
 
         assert result["last_agent_result"] == analysis_text
@@ -64,8 +71,10 @@ class TestComputerAgentScreenshotContext:
         """last_agent_name ist 'computer_agent'."""
         from agent.agents.computer import computer_agent
 
-        with patch("agent.agents.computer._take_screenshot", return_value="base64data"), \
-             self._make_llm_patch("Analyse"):
+        with (
+            patch("agent.agents.computer._take_screenshot", return_value="base64data"),
+            self._make_llm_patch("Analyse"),
+        ):
             result = await computer_agent(self._make_state())
 
         assert result["last_agent_name"] == "computer_agent"
@@ -77,8 +86,10 @@ class TestComputerAgentScreenshotContext:
         from agent.protocol import Proto
         from langchain_core.messages import AIMessage
 
-        with patch("agent.agents.computer._take_screenshot", return_value="base64data"), \
-             self._make_llm_patch("Analyse"):
+        with (
+            patch("agent.agents.computer._take_screenshot", return_value="base64data"),
+            self._make_llm_patch("Analyse"),
+        ):
             result = await computer_agent(self._make_state())
 
         ai_msg = result["messages"][0]
@@ -92,8 +103,10 @@ class TestComputerAgentScreenshotContext:
         from agent.protocol import Proto
 
         analysis_text = "Safari ist geöffnet."
-        with patch("agent.agents.computer._take_screenshot", return_value="base64data"), \
-             self._make_llm_patch(analysis_text):
+        with (
+            patch("agent.agents.computer._take_screenshot", return_value="base64data"),
+            self._make_llm_patch(analysis_text),
+        ):
             result = await computer_agent(self._make_state())
 
         content = result["messages"][0].content
@@ -117,8 +130,10 @@ class TestComputerAgentScreenshotContext:
         from agent.protocol import Proto
 
         analysis_text = "Terminal ist offen."
-        with patch("agent.agents.computer._take_screenshot", return_value="base64data"), \
-             self._make_llm_patch(analysis_text):
+        with (
+            patch("agent.agents.computer._take_screenshot", return_value="base64data"),
+            self._make_llm_patch(analysis_text),
+        ):
             result = await computer_agent(self._make_state())
 
         assert result["last_agent_result"] == analysis_text
@@ -128,6 +143,7 @@ class TestComputerAgentScreenshotContext:
 # ---------------------------------------------------------------------------
 # 4–5: _handle_screenshot memory update
 # ---------------------------------------------------------------------------
+
 
 class TestHandleScreenshotMemory:
     """Phase 117: _handle_screenshot ruft _update_memory auf."""
@@ -143,9 +159,12 @@ class TestHandleScreenshotMemory:
         mock_bot = AsyncMock()
         mock_screenshot_bytes = b"fakepng"
 
-        with patch("bot.bot._screenshot_to_telegram_bytes", return_value=mock_screenshot_bytes), \
-             patch("bot.bot._update_memory", new_callable=AsyncMock) as mock_memory:
+        with (
+            patch("bot.bot._screenshot_to_telegram_bytes", return_value=mock_screenshot_bytes),
+            patch("bot.bot._update_memory", new_callable=AsyncMock) as mock_memory,
+        ):
             from bot.bot import _handle_screenshot
+
             await _handle_screenshot(response_msg=response_msg, bot=mock_bot, chat_id=12345)
 
         mock_memory.assert_called_once()
@@ -163,9 +182,12 @@ class TestHandleScreenshotMemory:
 
         mock_bot = AsyncMock()
 
-        with patch("bot.bot._screenshot_to_telegram_bytes", return_value=b"fakepng"), \
-             patch("bot.bot._update_memory", new_callable=AsyncMock) as mock_memory:
+        with (
+            patch("bot.bot._screenshot_to_telegram_bytes", return_value=b"fakepng"),
+            patch("bot.bot._update_memory", new_callable=AsyncMock) as mock_memory,
+        ):
             from bot.bot import _handle_screenshot
+
             await _handle_screenshot(response_msg=response_msg, bot=mock_bot, chat_id=99)
 
         memory_text = mock_memory.call_args[0][1]
@@ -181,9 +203,12 @@ class TestHandleScreenshotMemory:
 
         mock_bot = AsyncMock()
 
-        with patch("bot.bot._screenshot_to_telegram_bytes", return_value=None), \
-             patch("bot.bot._update_memory", new_callable=AsyncMock) as mock_memory:
+        with (
+            patch("bot.bot._screenshot_to_telegram_bytes", return_value=None),
+            patch("bot.bot._update_memory", new_callable=AsyncMock) as mock_memory,
+        ):
             from bot.bot import _handle_screenshot
+
             await _handle_screenshot(response_msg=response_msg, bot=mock_bot, chat_id=42)
 
         mock_memory.assert_called_once()

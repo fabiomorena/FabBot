@@ -23,6 +23,7 @@ from unittest.mock import patch
 # Hilfsfunktion
 # ---------------------------------------------------------------------------
 
+
 def _run_validate(sonnet=None, haiku=None):
     """Führt validate_models_on_startup() mit gepatchten Env-Vars aus."""
     env = {}
@@ -34,7 +35,7 @@ def _run_validate(sonnet=None, haiku=None):
     # Defaults wenn nicht gesetzt
     defaults = {
         "ANTHROPIC_MODEL_SONNET": "claude-sonnet-4-6",
-        "ANTHROPIC_MODEL_HAIKU":  "claude-haiku-4-5-20251001",
+        "ANTHROPIC_MODEL_HAIKU": "claude-haiku-4-5-20251001",
     }
     for k, v in defaults.items():
         if k not in env:
@@ -43,6 +44,7 @@ def _run_validate(sonnet=None, haiku=None):
     with patch.dict("os.environ", env, clear=False):
         import importlib
         import agent.llm as llm_mod
+
         importlib.reload(llm_mod)
         llm_mod.validate_models_on_startup()
 
@@ -50,6 +52,7 @@ def _run_validate(sonnet=None, haiku=None):
 # ---------------------------------------------------------------------------
 # 1. Valide Default-Models
 # ---------------------------------------------------------------------------
+
 
 def test_valid_defaults():
     """Default-Models sind valide – kein Fehler."""
@@ -59,6 +62,7 @@ def test_valid_defaults():
 # ---------------------------------------------------------------------------
 # 2. Valider Custom-Model-String
 # ---------------------------------------------------------------------------
+
 
 def test_valid_custom_models():
     """Valide Custom-Strings passieren ohne Fehler.
@@ -82,6 +86,7 @@ def test_valid_models_without_date():
 # 3. Leerer SONNET-String
 # ---------------------------------------------------------------------------
 
+
 def test_empty_sonnet_raises():
     """Leerer SONNET-String → RuntimeError."""
     with pytest.raises(RuntimeError, match="ANTHROPIC_MODEL_SONNET"):
@@ -91,6 +96,7 @@ def test_empty_sonnet_raises():
 # ---------------------------------------------------------------------------
 # 4. Leerer HAIKU-String
 # ---------------------------------------------------------------------------
+
 
 def test_empty_haiku_raises():
     """Leerer HAIKU-String → RuntimeError."""
@@ -102,6 +108,7 @@ def test_empty_haiku_raises():
 # 5. Tippfehler im Prefix
 # ---------------------------------------------------------------------------
 
+
 def test_typo_prefix_raises():
     """'claud-sonnet-4-20250514' (fehlendes 'e') → RuntimeError."""
     with pytest.raises(RuntimeError, match="ANTHROPIC_MODEL_SONNET"):
@@ -111,6 +118,7 @@ def test_typo_prefix_raises():
 # ---------------------------------------------------------------------------
 # 6. Fehlender claude-Prefix → RuntimeError
 # ---------------------------------------------------------------------------
+
 
 def test_missing_claude_prefix_raises():
     """String ohne 'claude-' Prefix → RuntimeError.
@@ -126,6 +134,7 @@ def test_missing_claude_prefix_raises():
 # 7. Beide ungültig → beide im Fehlertext
 # ---------------------------------------------------------------------------
 
+
 def test_both_invalid_raises_with_both_errors():
     """Beide ungültig → RuntimeError enthält beide Env-Var-Namen."""
     with pytest.raises(RuntimeError) as exc_info:
@@ -139,6 +148,7 @@ def test_both_invalid_raises_with_both_errors():
 # 8. Fehlermeldung enthält den ungültigen String
 # ---------------------------------------------------------------------------
 
+
 def test_error_message_contains_invalid_string():
     """RuntimeError-Meldung enthält den tatsächlich konfigurierten String."""
     bad_model = "claud-typo-20250514"
@@ -151,6 +161,7 @@ def test_error_message_contains_invalid_string():
 # 9. _warn_if_unusual() – valide Models → keine Warning
 # ---------------------------------------------------------------------------
 
+
 def test_warn_if_unusual_valid_no_warning(caplog):
     """Valide Model-Strings erzeugen keine Warning.
     Phase 116: auch Models ohne Datumssuffix sind valide.
@@ -158,6 +169,7 @@ def test_warn_if_unusual_valid_no_warning(caplog):
     import logging
     import importlib
     import agent.llm as llm_mod
+
     importlib.reload(llm_mod)
 
     with caplog.at_level(logging.WARNING, logger="agent.llm"):
@@ -173,11 +185,13 @@ def test_warn_if_unusual_valid_no_warning(caplog):
 # 10. _warn_if_unusual() – ungültiger String → Warning
 # ---------------------------------------------------------------------------
 
+
 def test_warn_if_unusual_invalid_logs_warning(caplog):
     """Ungültiger Model-String → Warning wird geloggt."""
     import logging
     import importlib
     import agent.llm as llm_mod
+
     importlib.reload(llm_mod)
 
     with caplog.at_level(logging.WARNING, logger="agent.llm"):

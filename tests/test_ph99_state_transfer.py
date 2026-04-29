@@ -15,16 +15,17 @@ Testet:
 """
 
 import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 
 # ─── 1. State-Schema ─────────────────────────────────────────────────────────
 
+
 def test_agent_state_has_last_agent_result_field():
     """AgentState TypedDict hat last_agent_result und last_agent_name."""
     from agent.state import AgentState
+
     hints = AgentState.__annotations__
     assert "last_agent_result" in hints, "last_agent_result fehlt in AgentState"
     assert "last_agent_name" in hints, "last_agent_name fehlt in AgentState"
@@ -33,20 +34,22 @@ def test_agent_state_has_last_agent_result_field():
 def test_agent_state_last_agent_result_nullable():
     """last_agent_result und last_agent_name sind Optional (str | None)."""
     from agent.state import AgentState
+
     hints = AgentState.__annotations__
     # TypedDict speichert Union-Typen – wir prüfen dass None erlaubt ist
-    import typing
     result_type = hints["last_agent_result"]
-    name_type = hints["last_agent_name"]
+    _ = hints["last_agent_name"]
     # str | None wird als UnionType oder Optional[str] gespeichert
     assert "None" in str(result_type) or type(None) in getattr(result_type, "__args__", ())
 
 
 # ─── 2. _build_dynamic_prompt_suffix ─────────────────────────────────────────
 
+
 def test_dynamic_suffix_contains_datetime():
     """_build_dynamic_prompt_suffix() enthält Datum/Uhrzeit."""
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+
     suffix = _build_dynamic_prompt_suffix(None, None)
     assert "Aktuelles Datum/Uhrzeit" in suffix
 
@@ -54,6 +57,7 @@ def test_dynamic_suffix_contains_datetime():
 def test_dynamic_suffix_no_agent_result_no_block():
     """Kein last_agent_result → kein '## Ergebnis' Block im Suffix."""
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+
     suffix = _build_dynamic_prompt_suffix(None, None)
     assert "## Ergebnis" not in suffix
 
@@ -61,6 +65,7 @@ def test_dynamic_suffix_no_agent_result_no_block():
 def test_dynamic_suffix_empty_result_no_block():
     """Leerer last_agent_result → kein Injection-Block."""
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+
     suffix = _build_dynamic_prompt_suffix("", "web_agent")
     assert "## Ergebnis" not in suffix
 
@@ -68,6 +73,7 @@ def test_dynamic_suffix_empty_result_no_block():
 def test_dynamic_suffix_with_agent_result():
     """last_agent_result vorhanden → Injection-Block im Suffix."""
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+
     suffix = _build_dynamic_prompt_suffix("Berlin hat 3,7 Millionen Einwohner.", "web_agent")
     assert "## Kontext: Ergebnis des web_agent" in suffix
     assert "Berlin hat 3,7 Millionen Einwohner." in suffix
@@ -76,6 +82,7 @@ def test_dynamic_suffix_with_agent_result():
 def test_dynamic_suffix_with_unknown_agent():
     """Kein agent_name → Fallback 'vorheriger Agent'."""
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix
+
     suffix = _build_dynamic_prompt_suffix("Ergebnis XYZ", None)
     assert "vorheriger Agent" in suffix
 
@@ -87,6 +94,7 @@ def test_dynamic_suffix_datetime_is_fresh():
     aber der Wert kommt aus get_current_datetime() nicht aus Cache.
     """
     from agent.agents.chat_agent import _build_dynamic_prompt_suffix, invalidate_chat_cache
+
     # Cache leeren um sicherzustellen dass _build_chat_prompt() neu baut
     invalidate_chat_cache()
     s1 = _build_dynamic_prompt_suffix(None, None)
@@ -97,6 +105,7 @@ def test_dynamic_suffix_datetime_is_fresh():
 
 
 # ─── 3. chat_agent() Integration ─────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_chat_agent_uses_last_agent_result():
@@ -120,12 +129,14 @@ async def test_chat_agent_uses_last_agent_result():
         "image_media_type": None,
     }
 
-    with patch("agent.agents.chat_agent.get_llm", return_value=mock_llm), \
-         patch("agent.agents.chat_agent._get_retrieval_context", new_callable=AsyncMock, return_value=""), \
-         patch("agent.agents.chat_agent._build_chat_prompt", return_value="BASE PROMPT"):
-
+    with (
+        patch("agent.agents.chat_agent.get_llm", return_value=mock_llm),
+        patch("agent.agents.chat_agent._get_retrieval_context", new_callable=AsyncMock, return_value=""),
+        patch("agent.agents.chat_agent._build_chat_prompt", return_value="BASE PROMPT"),
+    ):
         from agent.agents.chat_agent import chat_agent
-        result = await chat_agent(state)
+
+        await chat_agent(state)
 
     # System-Prompt muss last_agent_result enthalten
     system_msgs = [m for m in captured_messages if isinstance(m, SystemMessage)]
@@ -156,11 +167,13 @@ async def test_chat_agent_resets_last_agent_result():
         "image_media_type": None,
     }
 
-    with patch("agent.agents.chat_agent.get_llm", return_value=mock_llm), \
-         patch("agent.agents.chat_agent._get_retrieval_context", new_callable=AsyncMock, return_value=""), \
-         patch("agent.agents.chat_agent._build_chat_prompt", return_value="BASE"):
-
+    with (
+        patch("agent.agents.chat_agent.get_llm", return_value=mock_llm),
+        patch("agent.agents.chat_agent._get_retrieval_context", new_callable=AsyncMock, return_value=""),
+        patch("agent.agents.chat_agent._build_chat_prompt", return_value="BASE"),
+    ):
         from agent.agents.chat_agent import chat_agent
+
         result = await chat_agent(state)
 
     assert result.get("last_agent_result") is None
@@ -189,11 +202,13 @@ async def test_chat_agent_no_last_result_no_injection():
         "image_media_type": None,
     }
 
-    with patch("agent.agents.chat_agent.get_llm", return_value=mock_llm), \
-         patch("agent.agents.chat_agent._get_retrieval_context", new_callable=AsyncMock, return_value=""), \
-         patch("agent.agents.chat_agent._build_chat_prompt", return_value="BASE"):
-
+    with (
+        patch("agent.agents.chat_agent.get_llm", return_value=mock_llm),
+        patch("agent.agents.chat_agent._get_retrieval_context", new_callable=AsyncMock, return_value=""),
+        patch("agent.agents.chat_agent._build_chat_prompt", return_value="BASE"),
+    ):
         from agent.agents.chat_agent import chat_agent
+
         await chat_agent(state)
 
     system_msgs = [m for m in captured_messages if isinstance(m, SystemMessage)]
@@ -202,6 +217,7 @@ async def test_chat_agent_no_last_result_no_injection():
 
 
 # ─── 4. web_agent() Return ───────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_web_agent_sets_last_agent_result_on_unsupported():
@@ -221,6 +237,7 @@ async def test_web_agent_sets_last_agent_result_on_unsupported():
 
     with patch("agent.agents.web.get_llm", return_value=mock_llm):
         from agent.agents.web import web_agent
+
         result = await web_agent(state)
 
     assert result.get("last_agent_name") == "web_agent"
@@ -255,12 +272,17 @@ async def test_web_agent_sets_last_agent_result_on_success():
         "image_media_type": None,
     }
 
-    with patch("agent.agents.web.get_llm", return_value=mock_llm), \
-         patch("agent.agents.web._search_tavily", new_callable=AsyncMock,
-               return_value=[{"title": "Berlin", "url": "https://example.com", "content": "3,7 Mio"}]), \
-         patch("agent.agents.web.TAVILY_API_KEY", "fake-key"):
-
+    with (
+        patch("agent.agents.web.get_llm", return_value=mock_llm),
+        patch(
+            "agent.agents.web._search_tavily",
+            new_callable=AsyncMock,
+            return_value=[{"title": "Berlin", "url": "https://example.com", "content": "3,7 Mio"}],
+        ),
+        patch("agent.agents.web.TAVILY_API_KEY", "fake-key"),
+    ):
         from agent.agents.web import web_agent
+
         result = await web_agent(state)
 
     assert result.get("last_agent_name") == "web_agent"
@@ -268,6 +290,7 @@ async def test_web_agent_sets_last_agent_result_on_success():
 
 
 # ─── 5. terminal_agent() Return ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_terminal_agent_sets_last_agent_result_on_unsupported():
@@ -287,6 +310,7 @@ async def test_terminal_agent_sets_last_agent_result_on_unsupported():
 
     with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
         from agent.agents.terminal import terminal_agent
+
         result = await terminal_agent(state)
 
     assert result.get("last_agent_name") == "terminal_agent"

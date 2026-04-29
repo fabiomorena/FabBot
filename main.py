@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 from dotenv import load_dotenv
+
 load_dotenv()
 
 LOG_DIR = Path.home() / ".fabbot"
@@ -13,9 +14,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "fabbot.log"
 PID_FILE = LOG_DIR / "bot.pid"
 
-file_handler = TimedRotatingFileHandler(
-    LOG_FILE, when="midnight", interval=1, backupCount=7, encoding="utf-8"
-)
+file_handler = TimedRotatingFileHandler(LOG_FILE, when="midnight", interval=1, backupCount=7, encoding="utf-8")
 file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[file_handler])
 
@@ -28,6 +27,7 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 class _ConflictFilter(logging.Filter):
     """Unterdrückt Conflict-Tracebacks aus dem Telegram-networkloop."""
+
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if "Conflict" in msg or "terminated by other getUpdates" in msg:
@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 def _check_single_instance() -> None:
     import fcntl
+
     lock_path = LOG_DIR / "bot.lock"
     lock_file = open(lock_path, "w")
     try:
@@ -55,6 +56,7 @@ def _check_single_instance() -> None:
         sys.exit(0)
     my_pid = str(os.getpid())
     PID_FILE.write_text(my_pid)
+
     def _cleanup():
         try:
             if PID_FILE.exists() and PID_FILE.read_text().strip() == my_pid:
@@ -66,6 +68,7 @@ def _check_single_instance() -> None:
             lock_file.close()
         except Exception:
             pass
+
     atexit.register(_cleanup)
 
 
@@ -79,9 +82,11 @@ def main() -> None:
     # Phase 70: TTS-Konfiguration validieren NACHDEM Logger konfiguriert ist
     # (Lazy Import nötig – logging.basicConfig() muss vor dem tts-Import aktiv sein)
     from bot.tts import validate_tts_config
+
     validate_tts_config()
 
     from bot.bot import build_bot
+
     logger.info("Mac Agent startet...")
     logger.info(f"Logs werden geschrieben nach: {LOG_FILE}")
     app = build_bot()

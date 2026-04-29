@@ -17,7 +17,7 @@ import copy
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import yaml
@@ -37,20 +37,22 @@ _INSTRUCTION_FORBIDDEN = re.compile(
     re.I,
 )
 
-MERKE_DIR_DAS_TRIGGERS = frozenset({
-    "merke dir das",
-    "merk dir das",
-    "merke das",
-    "merk das",
-    "das merken",
-    "bitte merken",
-    "kannst du dir merken",
-    "bitte merk dir das",
-    "merke dir das bitte",
-    "das kannst du dir merken",
-    "das solltest du dir merken",
-    "merk dir das bitte",
-})
+MERKE_DIR_DAS_TRIGGERS = frozenset(
+    {
+        "merke dir das",
+        "merk dir das",
+        "merke das",
+        "merk das",
+        "das merken",
+        "bitte merken",
+        "kannst du dir merken",
+        "bitte merk dir das",
+        "merke dir das bitte",
+        "das kannst du dir merken",
+        "das solltest du dir merken",
+        "merk dir das bitte",
+    }
+)
 
 _MERKE_DIR_DAS_TRIGGERS = MERKE_DIR_DAS_TRIGGERS
 
@@ -77,21 +79,62 @@ Gute Beispiele:
 
 _PREF_SUBCATEGORY_KEYWORDS: dict[str, list[str]] = {
     "entertainment": [
-        "serie", "film", "musik", "song", "album", "künstler", "podcast",
-        "buch", "fantasy", "sci-fi", "genre", "lieblings", "favorite",
-        "star trek", "star wars", "anime", "game", "spiel",
+        "serie",
+        "film",
+        "musik",
+        "song",
+        "album",
+        "künstler",
+        "podcast",
+        "buch",
+        "fantasy",
+        "sci-fi",
+        "genre",
+        "lieblings",
+        "favorite",
+        "star trek",
+        "star wars",
+        "anime",
+        "game",
+        "spiel",
     ],
     "lifestyle": [
-        "sport", "ernährung", "vegan", "vegetarisch", "schlaf", "hobby",
-        "fitness", "laufen", "yoga", "meditation", "trinken", "essen",
+        "sport",
+        "ernährung",
+        "vegan",
+        "vegetarisch",
+        "schlaf",
+        "hobby",
+        "fitness",
+        "laufen",
+        "yoga",
+        "meditation",
+        "trinken",
+        "essen",
     ],
     "tech": [
-        "editor", "ide", "os", "betriebssystem", "sprache", "framework",
-        "tool", "browser", "terminal", "shell", "keyboard", "maus",
+        "editor",
+        "ide",
+        "os",
+        "betriebssystem",
+        "sprache",
+        "framework",
+        "tool",
+        "browser",
+        "terminal",
+        "shell",
+        "keyboard",
+        "maus",
     ],
     "work": [
-        "arbeitszeit", "meeting", "fokus", "produktivität", "remote",
-        "büro", "pause", "kalender",
+        "arbeitszeit",
+        "meeting",
+        "fokus",
+        "produktivität",
+        "remote",
+        "büro",
+        "pause",
+        "kalender",
     ],
 }
 
@@ -101,6 +144,7 @@ _DEFAULT_SUBCATEGORY = "persoenlich"
 # ---------------------------------------------------------------------------
 # Phase 121: Typisiertes Result-Objekt für _apply_memory_update
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MemoryUpdateResult:
@@ -118,6 +162,7 @@ class MemoryUpdateResult:
         Explizit abgelehnte Operation (z.B. bot_instruction delete).
         Kein Fallback-Save. user_message wird direkt an den User gezeigt.
     """
+
     success: bool
     updated_profile: dict | None = None
     allow_fallback: bool = True
@@ -142,6 +187,7 @@ def _ok(profile: dict) -> MemoryUpdateResult:
 # ---------------------------------------------------------------------------
 # Preference helpers (Phase 119, unverändert)
 # ---------------------------------------------------------------------------
+
 
 def _infer_subcategory(key: str, value: str) -> str:
     combined = (key + " " + value).lower()
@@ -174,7 +220,7 @@ def _build_profile_context_for_parser(profile: dict) -> str:
     if prefs:
         lines.append("=== Gespeicherte Preferences ===")
         for path, key, value in prefs:
-            lines.append(f"  {path} = \"{value}\"")
+            lines.append(f'  {path} = "{value}"')
 
     media = profile.get("media", [])
     if isinstance(media, list) and media:
@@ -183,21 +229,21 @@ def _build_profile_context_for_parser(profile: dict) -> str:
             if isinstance(m, dict):
                 title = m.get("title", "")
                 mtype = m.get("type", "")
-                lines.append(f"  media: \"{title}\" ({mtype})")
+                lines.append(f'  media: "{title}" ({mtype})')
 
     people = profile.get("people", [])
     if isinstance(people, list) and people:
         lines.append("=== Gespeicherte Personen ===")
         for p in people[:5]:
             if isinstance(p, dict):
-                lines.append(f"  people: \"{p.get('name', '')}\"")
+                lines.append(f'  people: "{p.get("name", "")}"')
 
     custom = profile.get("custom", [])
     if isinstance(custom, list) and custom:
         lines.append("=== Custom-Einträge ===")
         for c in custom[:5]:
             if isinstance(c, dict):
-                lines.append(f"  custom.{c.get('key', '')} = \"{c.get('value', '')}\"")
+                lines.append(f'  custom.{c.get("key", "")} = "{c.get("value", "")}"')
 
     result = "\n".join(lines)
     return result[:900]
@@ -493,6 +539,7 @@ async def _review_yaml(original_yaml: str, new_yaml: str, action: str = "save") 
 # Phase 121: _apply_memory_update gibt MemoryUpdateResult zurück
 # ---------------------------------------------------------------------------
 
+
 def _apply_memory_update(profile: dict, action: str, category: str, data: dict) -> MemoryUpdateResult:
     """
     Wendet eine Memory-Operation auf das Profil an.
@@ -665,8 +712,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             before = len(updated.get("people", []))
             if "people" in updated and isinstance(updated["people"], list):
                 updated["people"] = [
-                    p for p in updated["people"]
-                    if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+                    p for p in updated["people"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)
                 ]
             after = len(updated.get("people", []))
             if before == after:
@@ -680,16 +726,14 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                 logger.warning("MemoryAgent delete project: leerer name – Operation abgelehnt")
                 return _reject("Welches Projekt soll gelöscht werden? Bitte den Namen nennen.")
             active_before = (
-                updated.get("projects", {}).get("active", [])
-                if isinstance(updated.get("projects"), dict) else []
+                updated.get("projects", {}).get("active", []) if isinstance(updated.get("projects"), dict) else []
             )
             before = len(active_before)
             if "projects" in updated and isinstance(updated["projects"], dict):
                 active = updated["projects"].get("active", [])
                 if isinstance(active, list):
                     updated["projects"]["active"] = [
-                        p for p in active
-                        if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+                        p for p in active if not (isinstance(p, dict) and p.get("name", "").lower() == name)
                     ]
             after = len(updated.get("projects", {}).get("active", []))
             if before == after:
@@ -702,8 +746,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             before = len(updated.get("places", []))
             if "places" in updated and isinstance(updated["places"], list):
                 updated["places"] = [
-                    p for p in updated["places"]
-                    if not (isinstance(p, dict) and p.get("name", "").lower() == name)
+                    p for p in updated["places"] if not (isinstance(p, dict) and p.get("name", "").lower() == name)
                 ]
             after = len(updated.get("places", []))
             if before == after:
@@ -716,8 +759,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             before = len(updated.get("media", []))
             if "media" in updated and isinstance(updated["media"], list):
                 updated["media"] = [
-                    m for m in updated["media"]
-                    if not (isinstance(m, dict) and m.get("title", "").lower() == title)
+                    m for m in updated["media"] if not (isinstance(m, dict) and m.get("title", "").lower() == title)
                 ]
             after = len(updated.get("media", []))
             if before == after:
@@ -738,9 +780,7 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             prefs = updated["preferences"]
 
             # 1. Exakter Key-Match auf flacher Ebene
-            matched_flat = next(
-                (k for k in prefs if isinstance(prefs[k], str) and k.lower() == key), None
-            )
+            matched_flat = next((k for k in prefs if isinstance(prefs[k], str) and k.lower() == key), None)
             if matched_flat:
                 del prefs[matched_flat]
                 logger.info(f"MemoryAgent delete preference (flat): '{matched_flat}' entfernt")
@@ -754,16 +794,18 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                         del subdict[matched_nested]
                         if not subdict:
                             del prefs[subcat]
-                        logger.info(f"MemoryAgent delete preference (nested): preferences.{subcat}.{matched_nested} entfernt")
+                        logger.info(
+                            f"MemoryAgent delete preference (nested): preferences.{subcat}.{matched_nested} entfernt"
+                        )
                         return _ok(updated)
 
             # 3. Wert-basierte Suche (Phase 119): "Star Trek" → findet favorite_fantasy_series
-            matched_by_value_flat = next(
-                (k for k, v in prefs.items() if isinstance(v, str) and v.lower() == key), None
-            )
+            matched_by_value_flat = next((k for k, v in prefs.items() if isinstance(v, str) and v.lower() == key), None)
             if matched_by_value_flat:
                 del prefs[matched_by_value_flat]
-                logger.info(f"MemoryAgent delete preference (flat value-match): '{matched_by_value_flat}' entfernt (Wert='{key}')")
+                logger.info(
+                    f"MemoryAgent delete preference (flat value-match): '{matched_by_value_flat}' entfernt (Wert='{key}')"
+                )
                 return _ok(updated)
 
             for subcat, subdict in list(prefs.items()):
@@ -775,7 +817,9 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                         del subdict[matched_by_value_nested]
                         if not subdict:
                             del prefs[subcat]
-                        logger.info(f"MemoryAgent delete preference (nested value-match): preferences.{subcat}.{matched_by_value_nested} entfernt (Wert='{key}')")
+                        logger.info(
+                            f"MemoryAgent delete preference (nested value-match): preferences.{subcat}.{matched_by_value_nested} entfernt (Wert='{key}')"
+                        )
                         return _ok(updated)
 
             logger.warning(f"MemoryAgent delete preference: kein Match für Key oder Wert '{key}'")
@@ -814,7 +858,8 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             before = len(updated.get("custom", []))
             if "custom" in updated and isinstance(updated["custom"], list):
                 updated["custom"] = [
-                    item for item in updated["custom"]
+                    item
+                    for item in updated["custom"]
                     if not (isinstance(item, dict) and item.get("key", "").lower() == key)
                 ]
             after = len(updated.get("custom", []))
@@ -837,11 +882,18 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
 # Confirmation builder (unverändert)
 # ---------------------------------------------------------------------------
 
+
 def _build_confirmation(action: str, category: str, data: dict) -> str:
     icons = {
-        "people": "👤", "project": "🚀", "place": "📍",
-        "media": "🎵", "preference": "⚙️", "job": "💼",
-        "location": "🏠", "custom": "📝", "bot_instruction": "🤖",
+        "people": "👤",
+        "project": "🚀",
+        "place": "📍",
+        "media": "🎵",
+        "preference": "⚙️",
+        "job": "💼",
+        "location": "🏠",
+        "custom": "📝",
+        "bot_instruction": "🤖",
     }
     icon = icons.get(category, "✅")
 
@@ -912,6 +964,7 @@ def _build_clarify_message(data: dict) -> str:
 # Main agent entry point
 # ---------------------------------------------------------------------------
 
+
 async def memory_agent(state: AgentState) -> AgentState:
     """
     Vollständige Memory-Pipeline.
@@ -928,7 +981,9 @@ async def memory_agent(state: AgentState) -> AgentState:
                 return _make_result("Worauf beziehst du dich? Ich brauche eine vorherige Aussage von dir als Kontext.")
             instruction = await _formulate_bot_instruction_from_context(prev_human)
             if not instruction:
-                return _make_result("Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll.")
+                return _make_result(
+                    "Konnte keine Bot-Instruktion formulieren. Bitte beschreibe konkret was ich mir merken soll."
+                )
 
             valid, reason = _validate_instruction(instruction)
             if not valid:
@@ -936,9 +991,12 @@ async def memory_agent(state: AgentState) -> AgentState:
                 return _make_result("Konnte keine gültige Bot-Instruktion formulieren. Bitte formuliere es anders.")
 
             from agent.claude_md import append_to_claude_md
+
             success = await append_to_claude_md(instruction)
             if success:
-                return _make_result(f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig.")
+                return _make_result(
+                    f"🤖 Bot-Instruktion gespeichert:\n_{instruction}_\n\nAb sofort aktiv – kein Neustart nötig."
+                )
             else:
                 return _make_result("Fehler beim Speichern der Bot-Instruktion.")
 
@@ -950,7 +1008,9 @@ async def memory_agent(state: AgentState) -> AgentState:
         data = parsed.get("data", {})
 
         if action == "error" or not data:
-            return _make_result("Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊")
+            return _make_result(
+                "Möchtest du dass ich mir etwas Bestimmtes merke? Falls ja, sag z.B.: 'Merke dir dass ich gerne House-Musik höre.' 😊"
+            )
 
         if action == "clarify":
             msg = _build_clarify_message(data)
@@ -967,6 +1027,7 @@ async def memory_agent(state: AgentState) -> AgentState:
                 return _make_result(f"Bot-Instruktion konnte nicht gespeichert werden: {reason}")
 
             from agent.claude_md import append_to_claude_md
+
             success = await append_to_claude_md(text)
             if success:
                 confirmation = _build_confirmation(action, category, data)
@@ -996,7 +1057,9 @@ async def memory_agent(state: AgentState) -> AgentState:
 
         is_valid = await _review_yaml(original_yaml, new_yaml, action=action)
         if not is_valid:
-            logger.warning(f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
+            logger.warning(
+                f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})"
+            )
             return _make_result("Konnte nicht gespeichert werden – bitte nochmal versuchen.")
 
         try:

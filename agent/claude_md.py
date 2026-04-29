@@ -73,6 +73,7 @@ _APPEND_FORBIDDEN = re.compile(
 # Phase 90: Einmalige Pfad-Migration beim Modulimport
 # ---------------------------------------------------------------------------
 
+
 def _migrate_claude_md_if_needed() -> None:
     """
     Phase 90: Kopiert claude.md vom alten Repo-Root-Pfad nach ~/.fabbot/.
@@ -110,6 +111,7 @@ _migrate_claude_md_if_needed()
 # ---------------------------------------------------------------------------
 # Cache-Operationen
 # ---------------------------------------------------------------------------
+
 
 def load_claude_md() -> str:
     """
@@ -156,6 +158,7 @@ async def reload_claude_md() -> str:
 # FIFO-Trim
 # ---------------------------------------------------------------------------
 
+
 def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> str:
     """
     Trimmt ## Automatisch gelernt auf max. max_entries Eintraege (FIFO).
@@ -173,20 +176,17 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
     before_section, _, section_and_rest = content.partition(_AUTO_SECTION)
 
     # Phase 67 Fix: robuster Heading-Regex fuer alle Heading-Level
-    next_match = re.search(r'\n#{1,6} ', section_and_rest)
+    next_match = re.search(r"\n#{1,6} ", section_and_rest)
     if next_match:
-        section_body = section_and_rest[:next_match.start()]
-        after_section = section_and_rest[next_match.start():]
+        section_body = section_and_rest[: next_match.start()]
+        after_section = section_and_rest[next_match.start() :]
     else:
         section_body = section_and_rest
         after_section = ""
 
     # Phase 67 Fix: Entry-Detection erkennt -, * und + als Listenmarker
-    lines = section_body.split('\n')
-    entry_indices = [
-        i for i, l in enumerate(lines)
-        if re.match(r'\s*[-*+]\s', l)
-    ]
+    lines = section_body.split("\n")
+    entry_indices = [i for i, l in enumerate(lines) if re.match(r"\s*[-*+]\s", l)]
 
     if len(entry_indices) <= max_entries:
         return content  # Kein Trim noetig
@@ -197,15 +197,15 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
     trimmed_lines = [l for i, l in enumerate(lines) if i not in indices_to_remove]
 
     logger.info(
-        f"claude.md FIFO-Trim: {to_remove_count} alte Eintraege entfernt "
-        f"(max. {max_entries} in {_AUTO_SECTION})"
+        f"claude.md FIFO-Trim: {to_remove_count} alte Eintraege entfernt (max. {max_entries} in {_AUTO_SECTION})"
     )
-    return before_section + _AUTO_SECTION + '\n'.join(trimmed_lines) + after_section
+    return before_section + _AUTO_SECTION + "\n".join(trimmed_lines) + after_section
 
 
 # ---------------------------------------------------------------------------
 # Schreib-Operation
 # ---------------------------------------------------------------------------
+
 
 async def append_to_claude_md(text: str) -> bool:
     """
@@ -243,15 +243,11 @@ async def append_to_claude_md(text: str) -> bool:
     # Phase 90: Defense-in-Depth Validierung (Schicht 2)
     if len(clean_text) > _APPEND_MAX_LEN:
         logger.warning(
-            f"append_to_claude_md: Text zu lang ({len(clean_text)} Zeichen, "
-            f"max. {_APPEND_MAX_LEN}) – abgelehnt."
+            f"append_to_claude_md: Text zu lang ({len(clean_text)} Zeichen, max. {_APPEND_MAX_LEN}) – abgelehnt."
         )
         return False
     if _APPEND_FORBIDDEN.search(clean_text):
-        logger.warning(
-            f"append_to_claude_md: Verdächtiger Inhalt erkannt – abgelehnt: "
-            f"{clean_text[:80]}"
-        )
+        logger.warning(f"append_to_claude_md: Verdächtiger Inhalt erkannt – abgelehnt: {clean_text[:80]}")
         return False
 
     try:
@@ -290,6 +286,7 @@ async def append_to_claude_md(text: str) -> bool:
         # _write_lock (kein Deadlock-Risiko, da verschiedene Locks).
         try:
             from agent.agents.chat_agent import invalidate_chat_cache
+
             invalidate_chat_cache()
         except Exception as e:
             logger.debug(f"invalidate_chat_cache (append_to_claude_md) fehlgeschlagen (ignoriert): {e}")

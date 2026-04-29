@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 def _format_pending_items() -> str:
     try:
         from agent.proactive.pending import get_pending_items
+
         items = get_pending_items(limit=8)
         if not items:
             return ""
@@ -62,6 +63,7 @@ def _format_pending_items() -> str:
 def _format_heartbeat_state() -> str:
     try:
         from agent.proactive.heartbeat import is_on_cooldown, is_muted
+
         parts = []
         if is_muted():
             parts.append("Proaktive Nachrichten: stummgeschaltet")

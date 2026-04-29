@@ -8,13 +8,13 @@ Testet mark_done():
 - ChromaDB-Fehler → kein Crash
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 
 class TestMarkDone:
     def test_exact_match_marks_done(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.return_value = {
             "ids": ["id1"],
@@ -27,6 +27,7 @@ class TestMarkDone:
 
     def test_partial_match_case_insensitive(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.return_value = {
             "ids": ["id1"],
@@ -38,6 +39,7 @@ class TestMarkDone:
 
     def test_no_match_returns_empty(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.return_value = {
             "ids": ["id1"],
@@ -50,6 +52,7 @@ class TestMarkDone:
 
     def test_multiple_matches_all_marked(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.return_value = {
             "ids": ["id1", "id2"],
@@ -65,6 +68,7 @@ class TestMarkDone:
 
     def test_update_sets_status_done(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.return_value = {
             "ids": ["id1"],
@@ -77,12 +81,14 @@ class TestMarkDone:
 
     def test_no_collection_returns_empty(self):
         from agent.proactive.pending import mark_done
+
         with patch("agent.proactive.pending._get_entities_collection", return_value=None):
             result = mark_done("test")
         assert result == []
 
     def test_chromadb_error_returns_empty(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.side_effect = Exception("DB error")
         with patch("agent.proactive.pending._get_entities_collection", return_value=mock_col):
@@ -91,11 +97,13 @@ class TestMarkDone:
 
     def test_preserves_existing_metadata(self):
         from agent.proactive.pending import mark_done
+
         mock_col = MagicMock()
         mock_col.get.return_value = {
             "ids": ["id1"],
-            "metadatas": [{"name": "Test", "status": "open", "entity_type": "event",
-                           "mention_count": 3, "due_date": "2026-05-31"}],
+            "metadatas": [
+                {"name": "Test", "status": "open", "entity_type": "event", "mention_count": 3, "due_date": "2026-05-31"}
+            ],
         }
         with patch("agent.proactive.pending._get_entities_collection", return_value=mock_col):
             mark_done("Test")

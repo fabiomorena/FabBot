@@ -21,11 +21,13 @@ logger = logging.getLogger(__name__)
 
 def _get_llm():
     from agent.llm import get_fast_llm
+
     return get_fast_llm()
 
 
 def _get_collection():
     from agent.proactive.collector import _get_entities_collection
+
     return _get_entities_collection()
 
 
@@ -111,8 +113,7 @@ async def extract_intentions(user_message: str) -> None:
 
             try:
                 existing = collection.get(ids=[eid])
-                mention_count = int(existing["metadatas"][0].get("mention_count", 0)) + 1 \
-                    if existing["ids"] else 1
+                mention_count = int(existing["metadatas"][0].get("mention_count", 0)) + 1 if existing["ids"] else 1
             except Exception:
                 mention_count = 1
 

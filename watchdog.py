@@ -29,6 +29,7 @@ import httpx
 # Konfiguration – via Umgebungsvariablen oder .env
 # ---------------------------------------------------------------------------
 
+
 # Phase 86 Fix #5: python-dotenv statt eigenem Parser.
 # Vorher: key, _, value = line.partition("=") ohne Quote-Stripping →
 # TOKEN="abc" wurde als '"abc"' eingelesen (mit Anführungszeichen).
@@ -40,6 +41,7 @@ def _load_env() -> None:
         return
     try:
         from dotenv import dotenv_values
+
         for key, value in dotenv_values(env_path).items():
             if key not in os.environ and value is not None:
                 os.environ[key] = value
@@ -50,10 +52,11 @@ def _load_env() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, value = line.partition("=")
-            key   = key.strip()
+            key = key.strip()
             value = value.strip().strip('"').strip("'")
             if key not in os.environ:
                 os.environ[key] = value
+
 
 _load_env()
 
@@ -77,6 +80,7 @@ _ALERT_DELAY_MINUTES = 10
 # State Management
 # ---------------------------------------------------------------------------
 
+
 def _load_state() -> dict:
     try:
         if STATE_PATH.exists():
@@ -93,17 +97,16 @@ def _save_state(state: dict) -> None:
     except Exception as e:
         print(f"{LOG_PREFIX} State-Fehler: {e}")
 
+
 # ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
 
+
 def _is_launch_agent_running() -> bool:
     """Prüft ob com.fabbot.agent via launchctl läuft."""
     try:
-        result = subprocess.run(
-            ["launchctl", "list", "com.fabbot.agent"],
-            capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["launchctl", "list", "com.fabbot.agent"], capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             return False
         return '"PID"' in result.stdout
@@ -114,10 +117,7 @@ def _is_launch_agent_running() -> bool:
 def _is_python_process_running() -> bool:
     """Prüft ob ein Python-Prozess mit main.py läuft."""
     try:
-        result = subprocess.run(
-            ["pgrep", "-f", "FabBot/main.py"],
-            capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["pgrep", "-f", "FabBot/main.py"], capture_output=True, text=True, timeout=5)
         return result.returncode == 0
     except Exception:
         return False
@@ -126,9 +126,11 @@ def _is_python_process_running() -> bool:
 def _is_bot_up() -> bool:
     return _is_launch_agent_running() and _is_python_process_running()
 
+
 # ---------------------------------------------------------------------------
 # Telegram Notification
 # ---------------------------------------------------------------------------
+
 
 def _send_telegram(message: str) -> bool:
     """Sendet Nachricht direkt via Telegram API – kein Bot-Framework."""
@@ -146,15 +148,17 @@ def _send_telegram(message: str) -> bool:
         print(f"{LOG_PREFIX} Telegram-Fehler: {e}")
         return False
 
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     state = _load_state()
     agent_ok = _is_launch_agent_running()
-    proc_ok  = _is_python_process_running()
-    bot_up   = agent_ok and proc_ok
+    proc_ok = _is_python_process_running()
+    bot_up = agent_ok and proc_ok
     now = datetime.now().isoformat()
 
     if bot_up:
@@ -183,7 +187,7 @@ def main() -> None:
         if not state.get("notified"):
             down_since = state.get("down_since", now)
             try:
-                down_dt   = datetime.fromisoformat(down_since)
+                down_dt = datetime.fromisoformat(down_since)
                 mins_down = (datetime.now() - down_dt).total_seconds() / 60
             except Exception:
                 mins_down = 0

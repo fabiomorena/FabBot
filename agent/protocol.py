@@ -11,20 +11,20 @@ Phase 91 Fixes:
 
 class Proto:
     # Prefixes für HITL-Bestätigungen
-    CONFIRM_TERMINAL      = "__CONFIRM_TERMINAL__:"
-    CONFIRM_FILE_WRITE    = "__CONFIRM_FILE_WRITE__:"
-    CONFIRM_CREATE_EVENT  = "__CONFIRM_CREATE_EVENT__:"
-    CONFIRM_COMPUTER      = "__CONFIRM_COMPUTER__:"
-    CONFIRM_WHATSAPP      = "__CONFIRM_WHATSAPP__:"
+    CONFIRM_TERMINAL = "__CONFIRM_TERMINAL__:"
+    CONFIRM_FILE_WRITE = "__CONFIRM_FILE_WRITE__:"
+    CONFIRM_CREATE_EVENT = "__CONFIRM_CREATE_EVENT__:"
+    CONFIRM_COMPUTER = "__CONFIRM_COMPUTER__:"
+    CONFIRM_WHATSAPP = "__CONFIRM_WHATSAPP__:"
 
     # Screenshot-Antwort
-    SCREENSHOT            = "__SCREENSHOT__:"
+    SCREENSHOT = "__SCREENSHOT__:"
 
     # Vision-Analyse Bestätigung
-    CONFIRM_VISION        = "__CONFIRM_VISION__:"
+    CONFIRM_VISION = "__CONFIRM_VISION__:"
 
     # Vision-Ergebnis – intern, wird an chat_agent weitergeleitet
-    VISION_RESULT         = "__VISION_RESULT__:"
+    VISION_RESULT = "__VISION_RESULT__:"
 
     # Phase 91: Kennzeichnet Vision-Memory-Messages die im State sichtbar bleiben sollen.
     # Vorher: "Bildbeschreibung" hardcoded in supervisor._filter_hitl_messages() –
@@ -62,11 +62,13 @@ class Proto:
 
     @staticmethod
     def is_any_confirm(msg: str) -> bool:
-        return any([
-            Proto.is_confirm_terminal(msg),
-            Proto.is_confirm_file_write(msg),
-            Proto.is_confirm_create_event(msg),
-            Proto.is_confirm_computer(msg),
-            Proto.is_confirm_whatsapp(msg),
-            Proto.is_confirm_vision(msg),   # Phase 91: war vergessen
-        ])
+        return any(
+            [
+                Proto.is_confirm_terminal(msg),
+                Proto.is_confirm_file_write(msg),
+                Proto.is_confirm_create_event(msg),
+                Proto.is_confirm_computer(msg),
+                Proto.is_confirm_whatsapp(msg),
+                Proto.is_confirm_vision(msg),  # Phase 91: war vergessen
+            ]
+        )

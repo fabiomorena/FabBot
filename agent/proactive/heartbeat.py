@@ -102,12 +102,14 @@ def evaluate_time_triggers(pending_items: list[dict]) -> list[dict]:
 
 def _get_llm():
     from agent.llm import get_fast_llm
+
     return get_fast_llm()
 
 
 async def _fetch_profile_ctx() -> str:
     try:
         from agent.profile import get_profile_context_short
+
         return await asyncio.to_thread(get_profile_context_short)
     except Exception as e:
         logger.debug(f"heartbeat profile ctx fehlgeschlagen: {e}")
@@ -119,6 +121,7 @@ async def _fetch_memory_ctx(query: str) -> str:
         return ""
     try:
         from agent.retrieval import search
+
         results = await search(query, n_results=MEMORY_N_RESULTS)
         if not results:
             return ""
@@ -137,6 +140,7 @@ async def _fetch_memory_ctx(query: str) -> str:
 async def _fetch_session_ctx(entity_name: str) -> str:
     try:
         from agent.agents.chat_agent import load_all_sessions
+
         raw = await asyncio.to_thread(load_all_sessions)
         if not raw:
             return ""
@@ -179,6 +183,7 @@ async def generate_proactive_message(trigger_item: dict) -> str:
     """Haiku generiert eine personalisierte proaktive Nachricht mit Profil/Memory/Session-Kontext."""
     try:
         from langchain_core.messages import HumanMessage
+
         llm = _get_llm()
         days = trigger_item.get("days_until_due", "?")
         name = trigger_item.get("name", "")
@@ -191,13 +196,13 @@ async def generate_proactive_message(trigger_item: dict) -> str:
         prompt = f"""Schreibe eine kurze, freundliche proaktive Telegram-Nachricht für Fabio.
 
 === Persönliches Profil ===
-{ctx['profile'] or '(keine Profildaten)'}
+{ctx["profile"] or "(keine Profildaten)"}
 
 === Relevantes Wissen ===
-{ctx['memory'] or '(nichts gefunden)'}
+{ctx["memory"] or "(nichts gefunden)"}
 
 === Frühere Sessions zu "{name}" ===
-{ctx['sessions'] or '(keine Erwähnungen)'}
+{ctx["sessions"] or "(keine Erwähnungen)"}
 
 === Trigger ===
 - {entity_type} "{name}" ist in {days} Tag(en) fällig ({due})

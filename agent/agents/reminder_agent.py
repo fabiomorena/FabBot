@@ -2,6 +2,7 @@
 Reminder Agent fuer FabBot.
 Phase 99: last_agent_result + last_agent_name in allen Returns.
 """
+
 import json
 import logging
 import re
@@ -15,9 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_prompt() -> str:
-    now = datetime.now()
     today = date.today().isoformat()
-    time_str = now.strftime("%H:%M")
     dt = get_current_datetime()
     return f"""Du bist ein spezialisierter Erinnerungs-Agent. Aktuelles Datum/Uhrzeit: {dt}
 
@@ -80,11 +79,16 @@ async def reminder_agent(state: AgentState) -> AgentState:
     from bot.reminders import add_reminder, list_reminders, delete_reminder
 
     llm = get_llm()
-    filtered = [m for m in state["messages"] if not (
-        hasattr(m, "content") and isinstance(m.content, str) and
-        m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
-    )]
-    human_msgs = [m for m in filtered if hasattr(m, 'type') and m.type == 'human']
+    filtered = [
+        m
+        for m in state["messages"]
+        if not (
+            hasattr(m, "content")
+            and isinstance(m.content, str)
+            and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
+        )
+    ]
+    human_msgs = [m for m in filtered if hasattr(m, "type") and m.type == "human"]
     last_msg = [human_msgs[-1]] if human_msgs else filtered[-1:]
     messages = [SystemMessage(content=_build_prompt())] + last_msg
     response = await llm.ainvoke(messages)
@@ -92,7 +96,9 @@ async def reminder_agent(state: AgentState) -> AgentState:
     content = _extract_json(content)
 
     if content == "UNSUPPORTED":
-        return _make_result("Diese Erinnerung konnte ich nicht verstehen. Bitte formuliere es anders, z.B. 'Erinnere mich morgen um 9 Uhr ans Meeting'.")
+        return _make_result(
+            "Diese Erinnerung konnte ich nicht verstehen. Bitte formuliere es anders, z.B. 'Erinnere mich morgen um 9 Uhr ans Meeting'."
+        )
 
     if not content.strip().startswith("{"):
         return _make_result(content.strip())
