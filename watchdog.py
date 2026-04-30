@@ -8,6 +8,7 @@ Prüft:
 
 Bei Problem: Telegram-Nachricht direkt via HTTP (kein Bot-Framework nötig).
 Bei Recovery: Entwarnung senden.
+Auto-Restart: Nach konfigurierbarer Wartezeit wird launchctl kickstart versucht.
 
 State wird in ~/.fabbot/watchdog_state.json gespeichert –
 verhindert Spam-Nachrichten bei dauerhaftem Ausfall.
@@ -20,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -73,8 +75,11 @@ STATE_PATH = Path.home() / ".fabbot" / "watchdog_state.json"
 LOG_PREFIX = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Watchdog:"
 
 # Phase 86 Fix #6: Benannte Konstante statt Magic Number.
-# Vorher: `if mins_down >= 9:  # nach ~10 Minuten` – Kommentar und Code widersprüchlich.
 _ALERT_DELAY_MINUTES = 10
+
+WATCHDOG_AUTO_RESTART = os.getenv("WATCHDOG_AUTO_RESTART", "true").lower() == "true"
+WATCHDOG_RESTART_DELAY_MIN = int(os.getenv("WATCHDOG_RESTART_DELAY_MIN", "5"))
+WATCHDOG_MAX_RESTARTS = int(os.getenv("WATCHDOG_MAX_RESTARTS", "3"))
 
 # ---------------------------------------------------------------------------
 # State Management
@@ -82,12 +87,21 @@ _ALERT_DELAY_MINUTES = 10
 
 
 def _load_state() -> dict:
+    defaults = {
+        "last_status": "unknown",
+        "down_since": None,
+        "notified": False,
+        "notified_at": None,
+        "restart_count": 0,
+        "last_restart_at": None,
+    }
     try:
         if STATE_PATH.exists():
-            return json.loads(STATE_PATH.read_text())
+            stored = json.loads(STATE_PATH.read_text())
+            return {**defaults, **stored}
     except Exception as e:
         print(f"{LOG_PREFIX} State laden fehlgeschlagen: {e}")
-    return {"last_status": "unknown", "down_since": None, "notified": False}
+    return defaults
 
 
 def _save_state(state: dict) -> None:
@@ -150,6 +164,61 @@ def _send_telegram(message: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Auto-Restart
+# ---------------------------------------------------------------------------
+
+
+def _attempt_restart(state: dict) -> dict:
+    """Versucht Bot-Neustart via launchctl kickstart. Gibt aktualisierten State zurück."""
+    restart_num = state.get("restart_count", 0) + 1
+    uid = os.getuid()
+    service = f"gui/{uid}/com.fabbot.agent"
+
+    print(f"{LOG_PREFIX} Auto-Restart #{restart_num} via launchctl kickstart...")
+    _send_telegram(f"🔄 *FabBot Auto-Restart #{restart_num}* wird versucht...")
+
+    try:
+        result = subprocess.run(
+            ["launchctl", "kickstart", "-k", service],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        kickstart_ok = result.returncode == 0
+    except Exception as e:
+        print(f"{LOG_PREFIX} launchctl kickstart Fehler: {e}")
+        kickstart_ok = False
+
+    state["restart_count"] = restart_num
+    state["last_restart_at"] = datetime.now().isoformat()
+
+    if kickstart_ok:
+        print(f"{LOG_PREFIX} Warte 60s auf Bot-Start...")
+        time.sleep(60)
+        bot_up_now = _is_bot_up()
+    else:
+        bot_up_now = False
+
+    if bot_up_now:
+        print(f"{LOG_PREFIX} Auto-Restart erfolgreich ✅")
+        _send_telegram(f"✅ *FabBot automatisch neu gestartet* (Versuch #{restart_num})")
+        state["last_status"] = "up"
+        state["down_since"] = None
+        state["notified"] = False
+        state["notified_at"] = None
+    else:
+        reason = "launchctl Fehler" if not kickstart_ok else "Bot startet nicht"
+        final = restart_num >= WATCHDOG_MAX_RESTARTS
+        suffix = "Bitte manuell eingreifen!" if final else "Nächster Versuch beim nächsten Check."
+        print(f"{LOG_PREFIX} Auto-Restart #{restart_num} fehlgeschlagen ❌")
+        _send_telegram(
+            f"🚨 *Auto-Restart #{restart_num} fehlgeschlagen* – {reason}\n{suffix}"
+        )
+
+    return state
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -164,7 +233,6 @@ def main() -> None:
     if bot_up:
         print(f"{LOG_PREFIX} Bot läuft ✅")
         if state.get("last_status") == "down" and state.get("notified"):
-            # Recovery – Entwarnung senden
             downtime = ""
             if state.get("down_since"):
                 try:
@@ -178,6 +246,9 @@ def main() -> None:
         state["last_status"] = "up"
         state["down_since"] = None
         state["notified"] = False
+        state["notified_at"] = None
+        state["restart_count"] = 0
+        state["last_restart_at"] = None
     else:
         print(f"{LOG_PREFIX} Bot DOWN ❌")
         if state.get("last_status") != "down":
@@ -202,7 +273,21 @@ def main() -> None:
                 )
                 if sent:
                     state["notified"] = True
+                    state["notified_at"] = now
                     print(f"{LOG_PREFIX} Alert gesendet.")
+
+        if state.get("notified") and WATCHDOG_AUTO_RESTART:
+            restart_count = state.get("restart_count", 0)
+            if restart_count < WATCHDOG_MAX_RESTARTS:
+                reference = state.get("last_restart_at") or state.get("notified_at")
+                if reference:
+                    try:
+                        ref_dt = datetime.fromisoformat(reference)
+                        mins_elapsed = (datetime.now() - ref_dt).total_seconds() / 60
+                    except Exception:
+                        mins_elapsed = WATCHDOG_RESTART_DELAY_MIN
+                    if mins_elapsed >= WATCHDOG_RESTART_DELAY_MIN:
+                        state = _attempt_restart(state)
 
     _save_state(state)
 
