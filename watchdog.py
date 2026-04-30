@@ -211,9 +211,7 @@ def _attempt_restart(state: dict) -> dict:
         final = restart_num >= WATCHDOG_MAX_RESTARTS
         suffix = "Bitte manuell eingreifen!" if final else "Nächster Versuch beim nächsten Check."
         print(f"{LOG_PREFIX} Auto-Restart #{restart_num} fehlgeschlagen ❌")
-        _send_telegram(
-            f"🚨 *Auto-Restart #{restart_num} fehlgeschlagen* – {reason}\n{suffix}"
-        )
+        _send_telegram(f"🚨 *Auto-Restart #{restart_num} fehlgeschlagen* – {reason}\n{suffix}")
 
     return state
 

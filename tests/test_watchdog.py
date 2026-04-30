@@ -141,7 +141,9 @@ class TestMainAutoRestart:
             patch("watchdog._save_state") as mock_save,
             patch("watchdog._is_launch_agent_running", return_value=bot_up),
             patch("watchdog._is_python_process_running", return_value=bot_up),
-            patch("watchdog._attempt_restart", return_value={**state, "restart_count": state.get("restart_count", 0) + 1}) as mock_restart,
+            patch(
+                "watchdog._attempt_restart", return_value={**state, "restart_count": state.get("restart_count", 0) + 1}
+            ) as mock_restart,
             patch("watchdog._send_telegram", return_value=True),
         ):
             wd.main()
