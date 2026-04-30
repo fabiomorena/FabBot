@@ -338,6 +338,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 173** ✅ _invoke_locks LRU-Eviction + Scheduler Liveness + Data Store Diagram – _invoke_locks as OrderedDict with LRU-Eviction (max 100 entries); Scheduler tasks named (scheduler:briefing etc.); _check_schedulers() as 13th health check component; data store table (6 stores) added to README; 1296 tests green
 - **Phase 174** ✅ ruff CI + codebase formatting – lint.yml with ruff check + ruff format --check; pyproject.toml with E402/E741 ignore rules; 130 auto-fixed violations + 17 manual fixes; entire codebase reformatted (91 files); 1296 tests green
 - **Phase 175** ✅ Supervisor routing pipeline refactor – supervisor_node() split into ordered _pre_route() strategy pipeline (image_data → AIMessage early-return → vision follow-up → pre-routing table → LLM); each strategy is its own function; _PRE_ROUTE_PIPELINE list makes order explicit; 1296 tests green
+- **Phase 176** ✅ Self-Healing Watchdog Auto-Restart – watchdog.py extended with _attempt_restart() via launchctl kickstart; configurable delay (WATCHDOG_RESTART_DELAY_MIN), max attempts (WATCHDOG_MAX_RESTARTS), feature flag (WATCHDOG_AUTO_RESTART); Telegram alerts on attempt/success/failure; state tracks restart_count + last_restart_at; 1310 tests green
 
 ---
 
