@@ -1,11 +1,7 @@
 """Tests für watchdog.py Auto-Restart-Logik (Issue #105)."""
 
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 
 def _make_state(**overrides) -> dict:
