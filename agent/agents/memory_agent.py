@@ -492,10 +492,45 @@ def _is_valid_delete(original: dict, updated: dict) -> bool:
         return False
 
 
+def _is_valid_save(original: dict, updated: dict) -> bool:
+    """Superset-Prüfung für save/update: alle Daten aus original müssen in updated erhalten sein."""
+    try:
+        original_str = yaml.dump(original, allow_unicode=True, sort_keys=True)
+        updated_str = yaml.dump(updated, allow_unicode=True, sort_keys=True)
+
+        if original_str == updated_str:
+            return True
+
+        def is_superset(new: Any, orig: Any) -> bool:
+            if isinstance(new, dict) and isinstance(orig, dict):
+                for k, v in orig.items():
+                    if k not in new:
+                        return False
+                    if not is_superset(new[k], v):
+                        return False
+                return True
+            elif isinstance(new, list) and isinstance(orig, list):
+                for item in orig:
+                    if item not in new:
+                        return False
+                return True
+            else:
+                return new == orig
+
+        result = is_superset(updated, original)
+        if not result:
+            logger.warning("MemoryAgent _is_valid_save: Daten verloren – kein valider Save")
+        return result
+
+    except Exception as e:
+        logger.error(f"MemoryAgent _is_valid_save: Fehler bei Superset-Prüfung: {e}")
+        return False
+
+
 async def _review_yaml(original_yaml: str, new_yaml: str, action: str = "save") -> bool:
     """
     Phase 115: Bei delete → strukturelle Subset-Vorprüfung ohne LLM-Call.
-    Bei save/update → LLM-Reviewer wie bisher.
+    Phase 177: Bei save/update → strukturelle Superset-Prüfung (LLM-Truncation-Bug-Fix).
     """
     try:
         if action == "delete":
@@ -514,21 +549,22 @@ async def _review_yaml(original_yaml: str, new_yaml: str, action: str = "save") 
             logger.info(f"MemoryAgent _review_yaml delete: strukturelle Prüfung → {'VALID' if result else 'INVALID'}")
             return result
 
-        llm = get_fast_llm()
-        prompt = _REVIEWER_PROMPT.format(
-            action=action,
-            original=original_yaml[:2000],
-            new=new_yaml[:2000],
-        )
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        content = response.content
-        if isinstance(content, list):
-            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        verdict = content.strip().upper()
-        is_valid = verdict == "VALID"
-        if not is_valid:
-            logger.warning(f"MemoryAgent Reviewer: INVALID – verdict='{verdict}'")
-        return is_valid
+        if action in ("save", "update"):
+            try:
+                original_dict = yaml.safe_load(original_yaml)
+                updated_dict = yaml.safe_load(new_yaml)
+            except yaml.YAMLError as e:
+                logger.error(f"MemoryAgent _review_yaml save: YAML-Parse-Fehler: {e}")
+                return False
+            if not isinstance(original_dict, dict) or not isinstance(updated_dict, dict):
+                logger.error("MemoryAgent _review_yaml save: kein dict nach YAML-Parse")
+                return False
+            result = _is_valid_save(original_dict, updated_dict)
+            logger.info(f"MemoryAgent _review_yaml save: strukturelle Prüfung → {'VALID' if result else 'INVALID'}")
+            return result
+
+        logger.warning(f"MemoryAgent _review_yaml: unbekannte action='{action}' → VALID")
+        return True
 
     except Exception as e:
         logger.error(f"MemoryAgent Reviewer Fehler: {e}")
