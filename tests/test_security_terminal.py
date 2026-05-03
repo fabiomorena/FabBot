@@ -1060,7 +1060,7 @@ class TestProfileContextFullNewSections:
                 }
             ]
         )
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "Saporito" in ctx
         assert "restaurant" in ctx
@@ -1069,7 +1069,7 @@ class TestProfileContextFullNewSections:
     def test_custom_appears_in_context(self) -> None:
         """Custom-Einträge erscheinen im Kontext."""
         profile = self._make_profile(custom=[{"key": "hobby_yoga", "value": "macht gerne Yoga"}])
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "hobby_yoga" in ctx
         assert "Yoga" in ctx
@@ -1077,7 +1077,7 @@ class TestProfileContextFullNewSections:
     def test_work_employer_appears_in_context(self) -> None:
         """Arbeitgeber erscheint im Kontext."""
         profile = self._make_profile(work={"employer": "Bonial", "role": "Teamlead"})
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "Bonial" in ctx
         assert "Teamlead" in ctx
@@ -1085,14 +1085,14 @@ class TestProfileContextFullNewSections:
     def test_empty_places_not_shown(self) -> None:
         """Leere places-Liste erzeugt keine Section im Kontext."""
         profile = self._make_profile(places=[])
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "Lieblingsplätze" not in ctx
 
     def test_empty_custom_not_shown(self) -> None:
         """Leere custom-Liste erzeugt keine Section im Kontext."""
         profile = self._make_profile(custom=[])
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "Weitere persönliche" not in ctx
 
@@ -1104,7 +1104,7 @@ class TestProfileContextFullNewSections:
                 {"name": "Zur Linde", "type": "bar"},
             ]
         )
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "Saporito" in ctx
         assert "Zur Linde" in ctx
@@ -1117,7 +1117,7 @@ class TestProfileContextFullNewSections:
                 {"key": "sport", "value": "läuft morgens"},
             ]
         )
-        with patch("agent.profile.load_profile", return_value=profile):
+        with patch("agent.profile.get_active_snapshot", return_value=profile):
             ctx = get_profile_context_full()
         assert "Yoga" in ctx
         assert "läuft morgens" in ctx
@@ -1562,7 +1562,7 @@ class TestWriteProfile:
 
         with patch("agent.profile._PROFILE_PATH", profile_file), patch("agent.profile._profile_cache", None):
             result = await write_profile(profile)
-        assert result is True
+        assert bool(result) is True
         from agent.crypto import decrypt
 
         written = yaml.safe_load(decrypt(profile_file.read_bytes()))
@@ -1574,7 +1574,7 @@ class TestWriteProfile:
         from agent.profile import write_profile
 
         result = await write_profile({})
-        assert result is False
+        assert bool(result) is False
 
     @pytest.mark.asyncio
     async def test_write_none_returns_false(self) -> None:
@@ -1582,7 +1582,7 @@ class TestWriteProfile:
         from agent.profile import write_profile
 
         result = await write_profile(None)
-        assert result is False
+        assert bool(result) is False
 
     @pytest.mark.asyncio
     async def test_write_missing_file_returns_false(self) -> None:
@@ -1591,7 +1591,7 @@ class TestWriteProfile:
 
         with patch("agent.profile._PROFILE_PATH", Path("/nonexistent/profile.yaml")):
             result = await write_profile({"identity": {"name": "Test"}})
-        assert result is False
+        assert bool(result) is False
 
 
 class TestAddNoteToProfile:

@@ -28,6 +28,8 @@ def _make_profile_module(tmp_path: Path):
     profile_mod._BACKUP_PATH = tmp_path / "personal_profile.yaml.bak"
     profile_mod._profile_cache = None
     profile_mod._migration_done = False
+    profile_mod._profile_snapshot = None
+    profile_mod._snapshot_expires_at = 0.0
     return profile_mod
 
 
@@ -146,7 +148,7 @@ class TestWriteProfileBackup:
         with patch("agent.crypto.encrypt", return_value=b"FABBOT_ENC_V1:newtoken"):
             result = asyncio.get_event_loop().run_until_complete(mod.write_profile({"identity": {"name": "Fabio"}}))
 
-        assert result is True
+        assert bool(result) is True
         assert mod._BACKUP_PATH.exists()
         assert mod._BACKUP_PATH.read_bytes() == original_data
 
@@ -169,14 +171,14 @@ class TestWriteProfileBackup:
         ):
             result = asyncio.get_event_loop().run_until_complete(mod.write_profile({"identity": {"name": "Fabio"}}))
 
-        assert result is False
+        assert bool(result) is False
         assert len(write_called) == 0, "_write_profile_bytes darf nicht aufgerufen werden"
 
     def test_empty_profile_rejected(self, tmp_path):
         mod = _make_profile_module(tmp_path)
         mod._PROFILE_PATH.write_bytes(b"original")
         result = asyncio.get_event_loop().run_until_complete(mod.write_profile({}))
-        assert result is False
+        assert bool(result) is False
 
 
 # ---------------------------------------------------------------------------

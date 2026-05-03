@@ -407,12 +407,13 @@ class TestMemoryAgentClarifyFlow:
 
         captured = {}
 
-        async def mock_write(profile):
+        async def mock_write(profile, **kwargs):
             captured["profile"] = profile
-            return True
+            from agent.profile import WriteResult
+            return WriteResult.OK
 
         with (
-            patch("agent.agents.memory_agent.load_profile", return_value={"preferences": {}}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({"preferences": {}}, "abc123")),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=save_response),
             patch("agent.agents.memory_agent._review_yaml", new_callable=AsyncMock, return_value=True),
             patch("agent.agents.memory_agent.write_profile", side_effect=mock_write),
