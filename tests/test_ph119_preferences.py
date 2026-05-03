@@ -410,6 +410,7 @@ class TestMemoryAgentClarifyFlow:
         async def mock_write(profile, **kwargs):
             captured["profile"] = profile
             from agent.profile import WriteResult
+
             return WriteResult.OK
 
         with (

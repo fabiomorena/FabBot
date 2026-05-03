@@ -1115,7 +1115,9 @@ async def memory_agent(state: AgentState) -> AgentState:
             confirmation = _build_confirmation(action, category, data)
             return _make_result(confirmation)
 
-        return _make_result("Profil konnte nicht gespeichert werden (Konflikt nach 3 Versuchen). Bitte nochmal versuchen.")
+        return _make_result(
+            "Profil konnte nicht gespeichert werden (Konflikt nach 3 Versuchen). Bitte nochmal versuchen."
+        )
 
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")
