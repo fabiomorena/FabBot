@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 # Phase 89: Task-Registry verhindert stilles GC-Killing von Background-Tasks.
 _background_tasks: set[asyncio.Task] = set()
 
+# Phase 179: Fork-Agent Learning Loop – Batch-Analyse alle N Turns
+_turn_counter: int = 0
+_MEMORY_NUDGE_INTERVAL: int = int(os.environ.get("MEMORY_NUDGE_INTERVAL", "10"))
+
 _CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
 Beantworte die Frage des Users. Du hast Zugriff auf:
@@ -472,6 +476,27 @@ async def chat_agent(state: AgentState) -> AgentState:
             task.add_done_callback(_background_tasks.discard)
     except Exception as e:
         logger.debug(f"Auto-Learn Task konnte nicht gestartet werden (ignoriert): {e}")
+
+    # Phase 179: Fork-Agent Learning Loop – Batch-Analyse alle N Turns
+    global _turn_counter
+    _turn_counter += 1
+    if _turn_counter % _MEMORY_NUDGE_INTERVAL == 0:
+        try:
+            human_messages = [
+                m.content
+                for m in state["messages"]
+                if isinstance(m, HumanMessage) and isinstance(m.content, str)
+            ][-_MEMORY_NUDGE_INTERVAL:]
+            if human_messages:
+                from agent.profile_learner import apply_learning as _apply_learning
+
+                batch_text = "\n".join(human_messages)
+                task = asyncio.create_task(_apply_learning(batch_text))
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
+                logger.debug(f"Fork-Agent Batch-Learning gestartet (Turn {_turn_counter}, {len(human_messages)} Nachrichten).")
+        except Exception as e:
+            logger.debug(f"Fork-Agent Batch-Learning konnte nicht gestartet werden (ignoriert): {e}")
 
     # Phase 99: last_agent_result nach Verarbeitung zurücksetzen
     # Verhindert dass veraltete Ergebnisse in Folge-Requests auftauchen
