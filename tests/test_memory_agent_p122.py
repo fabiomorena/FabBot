@@ -25,7 +25,7 @@ class TestBotInstructionDeleteAgent:
         state = {"messages": [HumanMessage(content=text)]}
         parsed = {"action": "delete", "category": "bot_instruction", "data": {"text": text}}
         with patch("agent.agents.memory_agent._parse_memory_intent", new=AsyncMock(return_value=parsed)):
-            with patch("agent.agents.memory_agent.load_profile", return_value={}):
+            with patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")):
                 r = await memory_agent(state)
         return r["messages"][0].content
 
@@ -39,7 +39,7 @@ class TestBotInstructionDeleteAgent:
         state = {"messages": [HumanMessage(content="x")]}
         parsed = {"action": "delete", "category": "bot_instruction", "data": {"text": "x"}}
         with patch("agent.agents.memory_agent._parse_memory_intent", new=AsyncMock(return_value=parsed)):
-            with patch("agent.agents.memory_agent.load_profile", return_value={}):
+            with patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")):
                 with patch("agent.agents.memory_agent.write_profile", new=AsyncMock()) as mw:
                     await memory_agent(state)
                     mw.assert_not_called()
@@ -48,7 +48,7 @@ class TestBotInstructionDeleteAgent:
         state = {"messages": [HumanMessage(content="x")]}
         parsed = {"action": "delete", "category": "bot_instruction", "data": {"text": "x"}}
         with patch("agent.agents.memory_agent._parse_memory_intent", new=AsyncMock(return_value=parsed)):
-            with patch("agent.agents.memory_agent.load_profile", return_value={}):
+            with patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")):
                 with patch("agent.agents.memory_agent.add_note_to_profile", new=AsyncMock()) as mn:
                     await memory_agent(state)
                     mn.assert_not_called()

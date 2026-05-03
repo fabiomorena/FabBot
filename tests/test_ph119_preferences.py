@@ -381,7 +381,7 @@ class TestMemoryAgentClarifyFlow:
         }
 
         with (
-            patch("agent.agents.memory_agent.load_profile", return_value={}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")),
             patch(
                 "agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=clarify_response
             ),

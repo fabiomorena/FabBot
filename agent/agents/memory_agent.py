@@ -25,7 +25,7 @@ import yaml
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm, get_fast_llm
-from agent.profile import load_profile, load_profile_with_hash, add_note_to_profile, write_profile, WriteResult
+from agent.profile import load_profile_with_hash, add_note_to_profile, write_profile, WriteResult
 from agent.utils import get_current_datetime
 
 logger = logging.getLogger(__name__)
