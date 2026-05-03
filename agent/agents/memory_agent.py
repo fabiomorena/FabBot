@@ -25,7 +25,7 @@ import yaml
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.state import AgentState
 from agent.llm import get_llm, get_fast_llm
-from agent.profile import load_profile, add_note_to_profile, write_profile
+from agent.profile import load_profile_with_hash, add_note_to_profile, write_profile, WriteResult
 from agent.utils import get_current_datetime
 
 logger = logging.getLogger(__name__)
@@ -1036,7 +1036,7 @@ async def memory_agent(state: AgentState) -> AgentState:
             else:
                 return _make_result("Fehler beim Speichern der Bot-Instruktion.")
 
-        current_profile = load_profile()
+        current_profile, base_hash = load_profile_with_hash()
 
         parsed = await _parse_memory_intent(state["messages"], profile=current_profile)
         action = parsed.get("action", "error")
@@ -1072,45 +1072,52 @@ async def memory_agent(state: AgentState) -> AgentState:
                 return _make_result("Fehler beim Speichern der Bot-Instruktion in claude.md.")
 
         # Phase 121: MemoryUpdateResult mit klarer Semantik
-        result = _apply_memory_update(current_profile, action, category, data)
+        # Phase 178: Retry-Loop bei STALE (strukturelle Review ist günstig – kein LLM)
+        for _attempt in range(3):
+            mem_result = _apply_memory_update(current_profile, action, category, data)
 
-        if not result.success:
-            if not result.allow_fallback:
-                # Explizit abgelehnte Operation (z.B. bot_instruction delete) –
-                # user_message direkt zeigen, kein Profil-Schreibzugriff.
-                logger.info(f"MemoryAgent: Operation abgelehnt (action={action} category={category})")
-                return _make_result(result.user_message or "Diese Operation wird nicht unterstützt.")
+            if not mem_result.success:
+                if not mem_result.allow_fallback:
+                    logger.info(f"MemoryAgent: Operation abgelehnt (action={action} category={category})")
+                    return _make_result(mem_result.user_message or "Diese Operation wird nicht unterstützt.")
 
-            # Ungültige Eingabe – Fallback-Save als Notiz
-            fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            await add_note_to_profile(fallback)
+                fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
+                await add_note_to_profile(fallback)
+                confirmation = _build_confirmation(action, category, data)
+                return _make_result(f"{confirmation}\n_(als Notiz gespeichert)_")
+
+            updated_profile = mem_result.updated_profile
+            original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            is_valid = await _review_yaml(original_yaml, new_yaml, action=action)
+            if not is_valid:
+                logger.warning(
+                    f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})"
+                )
+                return _make_result("Konnte nicht gespeichert werden – bitte nochmal versuchen.")
+
+            try:
+                yaml.safe_load(new_yaml)
+            except yaml.YAMLError as e:
+                logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
+                return _make_result("Fehler bei der YAML-Validierung – bitte nochmal versuchen.")
+
+            write_result = await write_profile(updated_profile, expected_base_hash=base_hash)
+            if write_result == WriteResult.STALE:
+                logger.warning(f"MemoryAgent: STALE bei Versuch {_attempt + 1} – lade Profil neu")
+                current_profile, base_hash = load_profile_with_hash()
+                continue
+            if not write_result:
+                return _make_result("Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")
+
+            logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
             confirmation = _build_confirmation(action, category, data)
-            return _make_result(f"{confirmation}\n_(als Notiz gespeichert)_")
+            return _make_result(confirmation)
 
-        updated_profile = result.updated_profile
-        original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
-        is_valid = await _review_yaml(original_yaml, new_yaml, action=action)
-        if not is_valid:
-            logger.warning(
-                f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})"
-            )
-            return _make_result("Konnte nicht gespeichert werden – bitte nochmal versuchen.")
-
-        try:
-            yaml.safe_load(new_yaml)
-        except yaml.YAMLError as e:
-            logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
-            return _make_result("Fehler bei der YAML-Validierung – bitte nochmal versuchen.")
-
-        success = await write_profile(updated_profile)
-        if not success:
-            return _make_result("Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")
-
-        logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
-        confirmation = _build_confirmation(action, category, data)
-        return _make_result(confirmation)
+        return _make_result(
+            "Profil konnte nicht gespeichert werden (Konflikt nach 3 Versuchen). Bitte nochmal versuchen."
+        )
 
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")

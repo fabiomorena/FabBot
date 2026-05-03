@@ -124,16 +124,17 @@ def test_cache_miss_after_invalidate():
 
 
 # ---------------------------------------------------------------------------
-# 4. invalidate_chat_cache() wird von write_profile() aufgerufen
+# 4. Phase 178: write_profile() invalidiert den Cache NICHT mehr pro Write
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_write_profile_invalidates_cache():
-    """write_profile() ruft invalidate_chat_cache() auf nach erfolgreichem Schreiben."""
+    """Phase 178: write_profile() invalidiert den Cache NICHT mehr direkt.
+    Cache-Invalidation erfolgt nur noch bei Snapshot-Refresh (refresh_snapshot()).
+    Damit bleiben Anthropic Prefix-Cache-Hits innerhalb einer Session stabil."""
     import agent.agents.chat_agent as ca
 
-    # Cache vorbelegen
     from agent.agents.chat_agent import _CachedPrompt
 
     ca._prompt_cache = _CachedPrompt(value="alter Prompt")
@@ -157,17 +158,18 @@ async def test_write_profile_invalidates_cache():
 
             await write_profile(mock_profile)
 
-    assert ca._prompt_cache is None, "Cache sollte nach write_profile() invalidiert sein"
+    assert ca._prompt_cache is not None, "Phase 178: write_profile() darf Cache mid-Session NICHT invalidieren"
 
 
 # ---------------------------------------------------------------------------
-# 5. invalidate_chat_cache() wird von add_note_to_profile() aufgerufen
+# 5. Phase 178: add_note_to_profile() invalidiert den Cache NICHT mehr pro Write
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_add_note_invalidates_cache():
-    """add_note_to_profile() ruft invalidate_chat_cache() auf."""
+    """Phase 178: add_note_to_profile() invalidiert den Cache NICHT mehr direkt.
+    Cache-Invalidation erfolgt nur noch bei Snapshot-Refresh (refresh_snapshot())."""
     import agent.agents.chat_agent as ca
     from agent.agents.chat_agent import _CachedPrompt
 
@@ -188,7 +190,7 @@ async def test_add_note_invalidates_cache():
 
             await add_note_to_profile("Test-Notiz")
 
-    assert ca._prompt_cache is None, "Cache sollte nach add_note_to_profile() invalidiert sein"
+    assert ca._prompt_cache is not None, "Phase 178: add_note darf Cache mid-Session NICHT invalidieren"
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +301,7 @@ async def test_invalidate_error_doesnt_break_write():
             result = await write_profile(mock_profile)
 
     # Schreiben soll trotzdem funktionieren
-    assert result is True
+    assert bool(result) is True
 
 
 # ---------------------------------------------------------------------------

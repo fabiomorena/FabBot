@@ -149,7 +149,7 @@ class TestMemoryAgentIntegration:
         from agent.agents.memory_agent import memory_agent
 
         with (
-            patch("agent.agents.memory_agent.load_profile", return_value={}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock) as mp,
             patch("agent.agents.memory_agent.add_note_to_profile", new_callable=AsyncMock) as mn,
             patch("agent.agents.memory_agent.write_profile", new_callable=AsyncMock),
@@ -165,7 +165,7 @@ class TestMemoryAgentIntegration:
         from agent.agents.memory_agent import memory_agent
 
         with (
-            patch("agent.agents.memory_agent.load_profile", return_value={}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock) as mp,
             patch("agent.agents.memory_agent.add_note_to_profile", new_callable=AsyncMock) as mn,
             patch("agent.agents.memory_agent.write_profile", new_callable=AsyncMock),
@@ -180,7 +180,7 @@ class TestMemoryAgentIntegration:
         from agent.agents.memory_agent import memory_agent
 
         with (
-            patch("agent.agents.memory_agent.load_profile", return_value={}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({}, "abc123")),
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock) as mp,
             patch("agent.agents.memory_agent.add_note_to_profile", new_callable=AsyncMock) as mn,
             patch("agent.agents.memory_agent.write_profile", new_callable=AsyncMock),

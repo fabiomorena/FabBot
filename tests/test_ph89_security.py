@@ -40,7 +40,7 @@ class TestYamlReviewFailClosed:
 
         with (
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed),
-            patch("agent.agents.memory_agent.load_profile", return_value={"identity": {}}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({"identity": {}}, "abc123")),
             patch("agent.agents.memory_agent._review_yaml", new_callable=AsyncMock, return_value=False),
             patch("agent.agents.memory_agent.add_note_to_profile", new_callable=AsyncMock) as mock_note,
             patch("agent.agents.memory_agent.write_profile", new_callable=AsyncMock) as mock_write,
@@ -68,7 +68,7 @@ class TestYamlReviewFailClosed:
 
         with (
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed),
-            patch("agent.agents.memory_agent.load_profile", return_value={"identity": {}}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({"identity": {}}, "abc123")),
             patch("agent.agents.memory_agent._review_yaml", new_callable=AsyncMock, return_value=False),
             patch("agent.agents.memory_agent.add_note_to_profile", new_callable=AsyncMock),
         ):
@@ -95,7 +95,7 @@ class TestYamlReviewFailClosed:
 
         with (
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed),
-            patch("agent.agents.memory_agent.load_profile", return_value={"identity": {}}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({"identity": {}}, "abc123")),
             patch("agent.agents.memory_agent._review_yaml", new_callable=AsyncMock, return_value=True),
             patch("agent.agents.memory_agent.write_profile", new_callable=AsyncMock, return_value=True) as mock_write,
         ):
@@ -122,7 +122,7 @@ class TestYamlReviewFailClosed:
 
         with (
             patch("agent.agents.memory_agent._parse_memory_intent", new_callable=AsyncMock, return_value=mock_parsed),
-            patch("agent.agents.memory_agent.load_profile", return_value={"identity": {}}),
+            patch("agent.agents.memory_agent.load_profile_with_hash", return_value=({"identity": {}}, "abc123")),
             patch("agent.agents.memory_agent._review_yaml", new_callable=AsyncMock, return_value=True),
             patch("agent.agents.memory_agent.add_note_to_profile", new_callable=AsyncMock) as mock_note,
             patch("yaml.safe_load", side_effect=yaml_module.YAMLError("bad yaml")),

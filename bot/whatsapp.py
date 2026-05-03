@@ -273,19 +273,28 @@ async def add_whatsapp_contact(name: str, whatsapp_name: str) -> tuple[bool, str
     if not name or not whatsapp_name:
         return False, "Name und WhatsApp-Name dürfen nicht leer sein."
     try:
-        from agent.profile import load_profile, write_profile
+        from agent.profile import load_profile_with_hash, write_profile, WriteResult
 
-        profile = load_profile()
-        if "whatsapp_contacts" not in profile or not isinstance(profile["whatsapp_contacts"], list):
-            profile["whatsapp_contacts"] = []
-        for c in profile["whatsapp_contacts"]:
-            if isinstance(c, dict) and c.get("name", "").lower() == name.lower():
-                c["whatsapp_name"] = whatsapp_name
-                await write_profile(profile)
-                return True, f"Kontakt aktualisiert: {name}"
-        profile["whatsapp_contacts"].append({"name": name, "whatsapp_name": whatsapp_name})
-        await write_profile(profile)
-        return True, f"Kontakt hinzugefügt: {name} → {whatsapp_name}"
+        for attempt in range(3):
+            profile, base_hash = load_profile_with_hash()
+            if "whatsapp_contacts" not in profile or not isinstance(profile["whatsapp_contacts"], list):
+                profile["whatsapp_contacts"] = []
+            updated = False
+            for c in profile["whatsapp_contacts"]:
+                if isinstance(c, dict) and c.get("name", "").lower() == name.lower():
+                    c["whatsapp_name"] = whatsapp_name
+                    updated = True
+                    break
+            if not updated:
+                profile["whatsapp_contacts"].append({"name": name, "whatsapp_name": whatsapp_name})
+            result = await write_profile(profile, expected_base_hash=base_hash)
+            if result == WriteResult.STALE:
+                continue
+            if result:
+                msg = f"Kontakt aktualisiert: {name}" if updated else f"Kontakt hinzugefügt: {name} → {whatsapp_name}"
+                return True, msg
+            return False, "Fehler beim Speichern des Kontakts."
+        return False, "Kontakt konnte nicht gespeichert werden (Konflikt nach 3 Versuchen)."
     except Exception as e:
         return False, f"Fehler beim Speichern: {e}"
 
@@ -295,20 +304,26 @@ async def remove_whatsapp_contact(name: str) -> tuple[bool, str]:
     if not name:
         return False, "Kein Name angegeben."
     try:
-        from agent.profile import load_profile, write_profile
+        from agent.profile import load_profile_with_hash, write_profile, WriteResult
 
-        profile = load_profile()
-        contacts = profile.get("whatsapp_contacts", [])
-        if not isinstance(contacts, list):
-            return False, "Keine Kontakte vorhanden."
-        original_len = len(contacts)
-        profile["whatsapp_contacts"] = [
-            c for c in contacts if not (isinstance(c, dict) and c.get("name", "").lower() == name.lower())
-        ]
-        if len(profile["whatsapp_contacts"]) == original_len:
-            return False, f"Kontakt nicht gefunden: {name}"
-        await write_profile(profile)
-        return True, f"Kontakt entfernt: {name}"
+        for attempt in range(3):
+            profile, base_hash = load_profile_with_hash()
+            contacts = profile.get("whatsapp_contacts", [])
+            if not isinstance(contacts, list):
+                return False, "Keine Kontakte vorhanden."
+            original_len = len(contacts)
+            profile["whatsapp_contacts"] = [
+                c for c in contacts if not (isinstance(c, dict) and c.get("name", "").lower() == name.lower())
+            ]
+            if len(profile["whatsapp_contacts"]) == original_len:
+                return False, f"Kontakt nicht gefunden: {name}"
+            result = await write_profile(profile, expected_base_hash=base_hash)
+            if result == WriteResult.STALE:
+                continue
+            if result:
+                return True, f"Kontakt entfernt: {name}"
+            return False, "Fehler beim Entfernen des Kontakts."
+        return False, "Kontakt konnte nicht entfernt werden (Konflikt nach 3 Versuchen)."
     except Exception as e:
         return False, f"Fehler beim Entfernen: {e}"
 

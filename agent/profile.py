@@ -19,6 +19,26 @@ add_note_to_profile() und write_profile() rufen nach reload_profile()
 invalidate_chat_cache() auf – zwingt chat_agent beim nächsten Aufruf das
 Profil neu einzulesen statt veraltete Daten aus dem Prompt-Cache zu liefern.
 
+Phase 178 (Issue #142): Race-Condition-Fix + Frozen-Snapshot + Prefix-Cache.
+
+Race-Condition-Fix:
+  write_profile() nimmt optionalen expected_base_hash. Innerhalb des Locks
+  wird der Disk-Stand frisch gelesen und dessen Hash verglichen. Stimmt der
+  Hash nicht → WriteResult.STALE. Caller kann dann neu laden und erneut versuchen.
+  load_profile() gibt jetzt immer copy.deepcopy() zurück um Cache-Mutation zu
+  verhindern. load_profile_with_hash() liefert Profil + Hash in einem Aufruf.
+
+Frozen-Snapshot:
+  _profile_snapshot bleibt für PROFILE_SNAPSHOT_TTL (Standard 300s) stabil.
+  get_profile_context_full() nutzt den Snapshot statt load_profile() direkt.
+  invalidate_chat_cache() wird nur noch beim Snapshot-Refresh aufgerufen,
+  nicht mehr nach jedem einzelnen write_profile(). Das hält den Anthropic
+  Prefix-Cache innerhalb einer Session warm und senkt Token-Kosten.
+
+Atomic Write:
+  _write_profile_bytes() schreibt zuerst in eine .tmp-Datei und macht dann
+  os.replace() – POSIX-atomares Rename verhindert Halb-Schreiben bei Crash.
+
 Lädt personal_profile.yaml aus dem Projektwurzelverzeichnis und stellt
 formatierte Kontext-Strings für die Agents bereit.
 
@@ -27,7 +47,7 @@ Ein fehlendes oder kaputtes Profil unterbricht den Bot nicht.
 
 Zwei Kontext-Varianten:
 - get_profile_context_short() → für Supervisor/Haiku (minimaler Overhead)
-- get_profile_context_full()  → für chat_agent (voller Kontext)
+- get_profile_context_full()  → für chat_agent (voller Kontext, via Snapshot)
 
 Phase 2: /remember Command
 - add_note_to_profile() → schreibt Note in YAML
@@ -49,10 +69,15 @@ Thread-Safety:
 """
 
 import asyncio
+import copy
+import hashlib
 import logging
+import os
 import shutil
 import threading
+import time
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +96,23 @@ _profile_write_lock = asyncio.Lock()
 _migration_lock = threading.Lock()
 _migration_done: bool = False
 
+# Phase 178: Frozen-Snapshot für stabilen Prefix-Cache innerhalb einer Session.
+_SNAPSHOT_TTL: float = float(os.environ.get("PROFILE_SNAPSHOT_TTL", "300"))
+_profile_snapshot: dict[str, Any] | None = None
+_snapshot_expires_at: float = 0.0
+
+
+class WriteResult(Enum):
+    """Rückgabewert von write_profile(). bool()-konvertierbar: OK → True, Rest → False."""
+
+    OK = "ok"
+    STALE = "stale"
+    INVALID = "invalid"
+    IO_ERROR = "io_error"
+
+    def __bool__(self) -> bool:
+        return self is WriteResult.OK
+
 
 def _write_profile_bytes(data: bytes) -> None:
     """
@@ -78,9 +120,8 @@ def _write_profile_bytes(data: bytes) -> None:
     Erstellt immer zuerst ein Backup (personal_profile.yaml.bak) bevor
     die Originaldatei überschrieben wird.
 
-    Das Backup enthält den letzten erfolgreich geschriebenen Stand.
-    Bei Fehler während des Schreibens bleibt das Backup erhalten und
-    kann manuell wiederhergestellt werden.
+    Phase 178: Atomic write via tempfile + os.replace() – verhindert
+    halb-geschriebene Dateien bei Prozessabbruch.
 
     Wirft IOError / OSError wenn Backup oder Schreiben fehlschlägt –
     Caller entscheidet über Exception-Handling.
@@ -88,7 +129,17 @@ def _write_profile_bytes(data: bytes) -> None:
     if _PROFILE_PATH.exists():
         shutil.copy2(_PROFILE_PATH, _BACKUP_PATH)
         logger.debug(f"Profil-Backup erstellt: {_BACKUP_PATH}")
-    _PROFILE_PATH.write_bytes(data)
+    tmp_path = _PROFILE_PATH.with_suffix(".yaml.tmp")
+    tmp_path.write_bytes(data)
+    os.replace(tmp_path, _PROFILE_PATH)
+
+
+def _compute_profile_hash(profile: dict[str, Any]) -> str:
+    """SHA-256 (16 Hex-Zeichen) über stabiles YAML-Dump (sort_keys=True)."""
+    import yaml
+
+    serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=True)
+    return hashlib.sha256(serialized.encode()).hexdigest()[:16]
 
 
 def load_profile() -> dict[str, Any]:
@@ -98,18 +149,16 @@ def load_profile() -> dict[str, Any]:
     Gibt leeres Dict zurück bei Fehler oder fehlendem File.
 
     Phase 91: Migration ist jetzt thread-safe via _migration_lock + _migration_done.
-    Vorher: Zwei gleichzeitige Aufrufe konnten beide schreiben → korruptes File möglich.
-    Jetzt:  Nur der erste Aufrufer schreibt; alle weiteren überspringen die Migration.
-
     Phase 93: Migration nutzt _write_profile_bytes() → Backup vor Verschlüsselung.
+    Phase 178: Gibt copy.deepcopy() zurück – verhindert Cache-Mutation durch Caller.
     """
     global _profile_cache, _migration_done
     if _profile_cache is not None:
-        return _profile_cache
+        return copy.deepcopy(_profile_cache)
     if not _PROFILE_PATH.exists():
         logger.warning(f"personal_profile.yaml nicht gefunden: {_PROFILE_PATH}")
         _profile_cache = {}
-        return _profile_cache
+        return {}
     try:
         import yaml
         from agent.crypto import decrypt, is_encrypted, encrypt
@@ -119,9 +168,6 @@ def load_profile() -> dict[str, Any]:
             yaml_text = decrypt(raw)
         else:
             yaml_text = raw.decode("utf-8")
-            # Phase 91: Thread-safe Migration.
-            # Mit Lock prüfen ob Migration schon erfolgt ist (Flag).
-            # Nur der erste Caller schreibt – alle weiteren sehen _migration_done=True.
             with _migration_lock:
                 if not _migration_done:
                     logger.info("Migration: personal_profile.yaml wird verschlüsselt...")
@@ -131,11 +177,20 @@ def load_profile() -> dict[str, Any]:
         loaded = yaml.safe_load(yaml_text)
         _profile_cache = loaded if isinstance(loaded, dict) else {}
         logger.info(f"Persönliches Profil geladen: {_PROFILE_PATH}")
-        return _profile_cache
+        return copy.deepcopy(_profile_cache)
     except Exception as e:
         logger.error(f"Fehler beim Laden von personal_profile.yaml: {e}")
         _profile_cache = {}
-        return _profile_cache
+        return {}
+
+
+def load_profile_with_hash() -> tuple[dict[str, Any], str]:
+    """
+    Phase 178: Lädt Profil + Base-Hash in einem Aufruf.
+    Basis für Optimistic-Concurrency-Control in write_profile().
+    """
+    profile = load_profile()
+    return profile, _compute_profile_hash(profile)
 
 
 def reload_profile() -> dict[str, Any]:
@@ -148,6 +203,38 @@ def reload_profile() -> dict[str, Any]:
     return load_profile()
 
 
+def get_active_snapshot() -> dict[str, Any]:
+    """
+    Phase 178: Gibt den aktuellen Frozen-Snapshot zurück.
+    Wird für get_profile_context_full() verwendet – bleibt innerhalb einer
+    Session stabil (TTL = PROFILE_SNAPSHOT_TTL, Standard 300s) damit
+    der Anthropic Prefix-Cache nicht mid-Session invalidiert wird.
+    Bei Ablauf oder fehlendem Snapshot wird refresh_snapshot() aufgerufen.
+    """
+    if _profile_snapshot is None or time.monotonic() >= _snapshot_expires_at:
+        refresh_snapshot()
+    return copy.deepcopy(_profile_snapshot)  # type: ignore[arg-type]
+
+
+def refresh_snapshot() -> None:
+    """
+    Phase 178: Aktualisiert den Frozen-Snapshot vom aktuellen Disk-Stand.
+    Ruft invalidate_chat_cache() auf damit der nächste Chat-Prompt neu
+    gebaut wird. Wird automatisch nach TTL-Ablauf oder explizit via
+    /reload aufgerufen – aber nie nach einzelnen write_profile()-Aufrufen.
+    """
+    global _profile_snapshot, _snapshot_expires_at
+    _profile_snapshot = copy.deepcopy(reload_profile())
+    _snapshot_expires_at = time.monotonic() + _SNAPSHOT_TTL
+    logger.debug(f"Profil-Snapshot aktualisiert (TTL={_SNAPSHOT_TTL}s).")
+    try:
+        from agent.agents.chat_agent import invalidate_chat_cache
+
+        invalidate_chat_cache()
+    except Exception as e:
+        logger.debug(f"invalidate_chat_cache (refresh_snapshot) fehlgeschlagen (ignoriert): {e}")
+
+
 async def add_note_to_profile(text: str) -> bool:
     """
     Fügt eine neue Note zum 'notes' Abschnitt in personal_profile.yaml hinzu.
@@ -155,8 +242,8 @@ async def add_note_to_profile(text: str) -> bool:
     Gibt True zurück bei Erfolg, False bei Fehler.
 
     Phase 93: _write_profile_bytes() erstellt Backup vor dem Schreiben.
-    Phase 95: invalidate_chat_cache() nach reload_profile() – Prompt-Cache sofort
-    ungültig machen damit chat_agent die neue Note beim nächsten Aufruf sieht.
+    Phase 178: Kein invalidate_chat_cache() mehr – Snapshot refresht beim
+    nächsten TTL-Ablauf. Verhindert Prefix-Cache-Invalidation mid-Session.
     """
     if not text or not text.strip():
         return False
@@ -178,14 +265,6 @@ async def add_note_to_profile(text: str) -> bool:
             serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
             _write_profile_bytes(encrypt(serialized))
         reload_profile()
-        # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
-        # liest das aktualisierte Profil neu ein.
-        try:
-            from agent.agents.chat_agent import invalidate_chat_cache
-
-            invalidate_chat_cache()
-        except Exception as e:
-            logger.debug(f"invalidate_chat_cache (add_note) fehlgeschlagen (ignoriert): {e}")
         logger.info(f"Note zu Profil hinzugefügt: {text[:80]}")
         return True
     except Exception as e:
@@ -193,25 +272,46 @@ async def add_note_to_profile(text: str) -> bool:
         return False
 
 
-async def write_profile(profile: dict[str, Any]) -> bool:
+async def write_profile(
+    profile: dict[str, Any],
+    *,
+    expected_base_hash: str | None = None,
+) -> WriteResult:
     """
     Schreibt ein vollständiges Profil-Dict in personal_profile.yaml.
     Verwendet _profile_write_lock gegen gleichzeitige Schreibzugriffe.
-    Gibt True zurück bei Erfolg, False bei Fehler.
 
     Phase 93: _write_profile_bytes() erstellt Backup vor dem Schreiben.
-    Phase 95: invalidate_chat_cache() nach reload_profile() – Prompt-Cache sofort
-    ungültig machen damit chat_agent das neue Profil beim nächsten Aufruf sieht.
+    Phase 178: Optimistic-Concurrency-Control via expected_base_hash.
+      Wenn angegeben, wird der Disk-Stand innerhalb des Locks frisch gelesen
+      und dessen Hash verglichen. Bei Mismatch → WriteResult.STALE – Caller
+      soll neu laden und erneut versuchen (kein blinder Überschreib-Verlust).
+      Kein invalidate_chat_cache() mehr – nur noch in refresh_snapshot().
+
+    Rückgabe: WriteResult (bool()-konvertierbar: OK → True, Rest → False).
     """
     if not profile or not isinstance(profile, dict):
-        return False
+        return WriteResult.INVALID
     if not _PROFILE_PATH.exists():
         logger.error("personal_profile.yaml nicht gefunden – write_profile abgebrochen.")
-        return False
+        return WriteResult.IO_ERROR
     try:
         import yaml
+        from agent.crypto import decrypt, is_encrypted, encrypt
 
         async with _profile_write_lock:
+            if expected_base_hash is not None:
+                raw = _PROFILE_PATH.read_bytes()
+                yaml_text = decrypt(raw) if is_encrypted(raw) else raw.decode("utf-8")
+                current_on_disk = yaml.safe_load(yaml_text) or {}
+                current_hash = _compute_profile_hash(current_on_disk)
+                if current_hash != expected_base_hash:
+                    logger.warning(
+                        "write_profile: STALE – Disk-Hash weicht von expected_base_hash ab "
+                        f"(expected={expected_base_hash} current={current_hash})"
+                    )
+                    return WriteResult.STALE
+
             serialized = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
             round_tripped = yaml.safe_load(serialized)
             if round_tripped != profile:
@@ -219,24 +319,16 @@ async def write_profile(profile: dict[str, Any]) -> bool:
                     f"write_profile: Round-Trip Mismatch – YAML-Coercion erkannt, Schreiben abgebrochen. "
                     f"Diff-Keys: {set(round_tripped.keys()) ^ set(profile.keys())}"
                 )
-                return False
-            from agent.crypto import encrypt
+                return WriteResult.INVALID
 
             _write_profile_bytes(encrypt(serialized))
-        reload_profile()
-        # Phase 95: Prompt-Cache sofort ungültig – nächster chat_agent-Aufruf
-        # liest das aktualisierte Profil neu ein.
-        try:
-            from agent.agents.chat_agent import invalidate_chat_cache
 
-            invalidate_chat_cache()
-        except Exception as e:
-            logger.debug(f"invalidate_chat_cache (write_profile) fehlgeschlagen (ignoriert): {e}")
+        reload_profile()
         logger.info("write_profile: Profil erfolgreich verschlüsselt gespeichert.")
-        return True
+        return WriteResult.OK
     except Exception as e:
         logger.error(f"write_profile Fehler: {e}")
-        return False
+        return WriteResult.IO_ERROR
 
 
 def get_profile_context_short() -> str:
@@ -272,9 +364,13 @@ def get_profile_context_full() -> str:
     Vollständiger Kontext-String für den chat_agent.
     Enthält alle Sektionen: Identität, Arbeit, Projekte, Präferenzen,
     Hardware, Routinen, Personen, Orte, Media, Custom, Notes.
+
+    Phase 178: Nutzt get_active_snapshot() statt load_profile() direkt –
+    der Snapshot bleibt innerhalb einer Session stabil und verhindert
+    Anthropic Prefix-Cache-Invalidation nach Profil-Writes.
     """
     try:
-        profile = load_profile()
+        profile = get_active_snapshot()
         if not profile:
             return ""
 

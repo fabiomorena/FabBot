@@ -226,7 +226,7 @@ async def apply_learning(human_message: str) -> None:
     """
     try:
         import yaml
-        from agent.profile import load_profile, add_note_to_profile, write_profile
+        from agent.profile import add_note_to_profile, write_profile
 
         info = await _detect_new_info(human_message)
         if not info.get("learned"):
@@ -241,7 +241,9 @@ async def apply_learning(human_message: str) -> None:
             await add_note_to_profile(text)
             return
 
-        current_profile = load_profile()
+        from agent.profile import load_profile_with_hash, WriteResult
+
+        current_profile, base_hash = load_profile_with_hash()
         updated_profile = _apply_update(current_profile, info_type, data)
 
         if updated_profile is None:
@@ -265,8 +267,17 @@ async def apply_learning(human_message: str) -> None:
             await add_note_to_profile(f"[Auto] {info_type}: {json.dumps(data, ensure_ascii=False)[:150]}")
             return
 
-        await write_profile(updated_profile)
-        logger.info(f"ProfileLearner: Profil aktualisiert – type={info_type}")
+        result = await write_profile(updated_profile, expected_base_hash=base_hash)
+        if result == WriteResult.STALE:
+            # Profil hat sich unter uns geändert – Fallback auf Note, kein teurer LLM-Retry
+            fallback = f"[Auto] {info_type}: {json.dumps(data, ensure_ascii=False)[:150]}"
+            await add_note_to_profile(fallback)
+            logger.info(f"ProfileLearner: STALE → als Note gespeichert – type={info_type}")
+            return
+        if result:
+            logger.info(f"ProfileLearner: Profil aktualisiert – type={info_type}")
+        else:
+            logger.warning(f"ProfileLearner: write_profile fehlgeschlagen (result={result}) – type={info_type}")
 
     except Exception as e:
         logger.warning(f"ProfileLearner: unerwarteter Fehler (ignoriert): {e}")
