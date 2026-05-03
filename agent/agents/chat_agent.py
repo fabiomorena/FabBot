@@ -483,9 +483,7 @@ async def chat_agent(state: AgentState) -> AgentState:
     if _turn_counter % _MEMORY_NUDGE_INTERVAL == 0:
         try:
             human_messages = [
-                m.content
-                for m in state["messages"]
-                if isinstance(m, HumanMessage) and isinstance(m.content, str)
+                m.content for m in state["messages"] if isinstance(m, HumanMessage) and isinstance(m.content, str)
             ][-_MEMORY_NUDGE_INTERVAL:]
             if human_messages:
                 from agent.profile_learner import apply_learning as _apply_learning
@@ -494,7 +492,9 @@ async def chat_agent(state: AgentState) -> AgentState:
                 task = asyncio.create_task(_apply_learning(batch_text))
                 _background_tasks.add(task)
                 task.add_done_callback(_background_tasks.discard)
-                logger.debug(f"Fork-Agent Batch-Learning gestartet (Turn {_turn_counter}, {len(human_messages)} Nachrichten).")
+                logger.debug(
+                    f"Fork-Agent Batch-Learning gestartet (Turn {_turn_counter}, {len(human_messages)} Nachrichten)."
+                )
         except Exception as e:
             logger.debug(f"Fork-Agent Batch-Learning konnte nicht gestartet werden (ignoriert): {e}")
 
