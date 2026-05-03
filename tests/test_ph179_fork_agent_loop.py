@@ -12,11 +12,9 @@ Testet:
 - _turn_counter wird korrekt akkumuliert über mehrere Aufrufe
 """
 
-import asyncio
 import importlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 
@@ -84,10 +82,8 @@ class TestForkAgentBatchTrigger:
             mod._turn_counter += 1
             if mod._turn_counter % mod._MEMORY_NUDGE_INTERVAL == 0:
                 human_msgs = [
-                    m.content
-                    for m in state["messages"]
-                    if isinstance(m, HumanMessage) and isinstance(m.content, str)
-                ][-mod._MEMORY_NUDGE_INTERVAL:]
+                    m.content for m in state["messages"] if isinstance(m, HumanMessage) and isinstance(m.content, str)
+                ][-mod._MEMORY_NUDGE_INTERVAL :]
                 if human_msgs:
                     apply_mock("\n".join(human_msgs))
 
@@ -127,10 +123,8 @@ class TestForkAgentBatchTrigger:
             mod._turn_counter += 1
             if mod._turn_counter % mod._MEMORY_NUDGE_INTERVAL == 0:
                 human_msgs = [
-                    m.content
-                    for m in state["messages"]
-                    if isinstance(m, HumanMessage) and isinstance(m.content, str)
-                ][-mod._MEMORY_NUDGE_INTERVAL:]
+                    m.content for m in state["messages"] if isinstance(m, HumanMessage) and isinstance(m.content, str)
+                ][-mod._MEMORY_NUDGE_INTERVAL :]
                 if human_msgs:
                     apply_mock("\n".join(human_msgs))
 
@@ -153,10 +147,8 @@ class TestForkAgentBatchTrigger:
             mod._turn_counter += 1
             if mod._turn_counter % mod._MEMORY_NUDGE_INTERVAL == 0:
                 human_msgs = [
-                    m.content
-                    for m in state["messages"]
-                    if isinstance(m, HumanMessage) and isinstance(m.content, str)
-                ][-mod._MEMORY_NUDGE_INTERVAL:]
+                    m.content for m in state["messages"] if isinstance(m, HumanMessage) and isinstance(m.content, str)
+                ][-mod._MEMORY_NUDGE_INTERVAL :]
                 if human_msgs:
                     apply_mock("\n".join(human_msgs))
 
