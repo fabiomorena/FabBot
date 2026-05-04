@@ -444,7 +444,7 @@ class TestRunDryRun:
             patch("agent.profile.load_profile_with_hash", return_value=(sample_profile, "hash123")),
             patch("agent.proactive.curator._analyze_profile", new_callable=AsyncMock, return_value=analysis),
         ):
-            report = await run_dry_run(force=True)
+            await run_dry_run(force=True)
         with patch("agent.proactive.curator._STATE_FILE", state_file):
             state = _load_state()
         assert state.get("pending_proposal") is not None
