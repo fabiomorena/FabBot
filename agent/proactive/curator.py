@@ -233,9 +233,13 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     # Veraltete Einträge archivieren
     for stale in analysis.get("stale", []):
         section = stale.get("section", "")
-        idx = stale.get("index")
+        idx_raw = stale.get("index")
         reason = stale.get("reason", "veraltet")
-        if idx is None or not section:
+        if idx_raw is None or not section:
+            continue
+        try:
+            idx = int(idx_raw)
+        except (ValueError, TypeError):
             continue
 
         # Navigation durch verschachtelte Sektionen (z.B. "projects.active")
@@ -263,9 +267,12 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     # Redundante Notes
     notes = target.get("notes", [])
     if isinstance(notes, list):
-        for rn in sorted(analysis.get("redundant_notes", []), key=lambda x: x.get("keep_index") or 0, reverse=True):
-            indices = rn.get("indices", [])
-            keep_index = rn.get("keep_index", indices[0] if indices else None)
+        for rn in sorted(
+            analysis.get("redundant_notes", []), key=lambda x: int(x.get("keep_index") or 0), reverse=True
+        ):
+            indices = [int(i) for i in rn.get("indices", []) if i is not None]
+            keep_index_raw = rn.get("keep_index", indices[0] if indices else None)
+            keep_index = int(keep_index_raw) if keep_index_raw is not None else None
             reason = rn.get("reason", "redundant")
             for idx in sorted(indices, reverse=True):
                 if idx == keep_index or idx >= len(notes):
@@ -280,8 +287,10 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     # Duplikate: keep_index behalten, andere archivieren + optional mergen
     for dup in analysis.get("duplicates", []):
         section = dup.get("section", "")
-        indices = dup.get("indices", [])
-        keep_index = dup.get("keep_index", indices[0] if indices else None)
+        raw_indices = dup.get("indices", [])
+        indices = [int(i) for i in raw_indices if i is not None]
+        keep_index_raw = dup.get("keep_index", indices[0] if indices else None)
+        keep_index = int(keep_index_raw) if keep_index_raw is not None else None
         merged_entry = dup.get("merged_entry")
         reason = dup.get("reason", "Duplikat")
         if not section or not indices:
