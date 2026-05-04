@@ -251,8 +251,9 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
             if isinstance(item, dict) and item.get("_pinned"):
                 logger.warning(f"curator: _pinned-Item in stale ignoriert: {section}[{idx}]")
                 continue
+            base = item if isinstance(item, dict) else {"_value": item}
             archived_list.append(
-                {**item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": section}
+                {**base, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": section}
             )
             obj.pop(idx)
             operations.append({"type": "archive", "section": section, "index": idx, "reason": reason})
@@ -262,7 +263,7 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     # Redundante Notes
     notes = target.get("notes", [])
     if isinstance(notes, list):
-        for rn in sorted(analysis.get("redundant_notes", []), key=lambda x: x.get("keep_index", 0), reverse=True):
+        for rn in sorted(analysis.get("redundant_notes", []), key=lambda x: x.get("keep_index") or 0, reverse=True):
             indices = rn.get("indices", [])
             keep_index = rn.get("keep_index", indices[0] if indices else None)
             reason = rn.get("reason", "redundant")
