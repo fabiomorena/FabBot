@@ -379,16 +379,22 @@ async def run_dry_run(*, force: bool = False) -> str | None:
     Gibt Report-String zurück oder None bei leerem Profil / LLM-Fehler.
     force=True ignoriert Idle-Check (für manuellen /curator dryrun).
     """
+    report, _ = await _debug_dry_run(force=force)
+    return report
+
+
+async def _debug_dry_run(*, force: bool = False) -> tuple[str | None, str]:
+    """Wie run_dry_run, gibt zusätzlich Debug-Info zurück: (report, debug_msg)."""
     from agent.profile import load_profile_with_hash
 
     profile, base_hash = load_profile_with_hash()
     if not profile:
         logger.info("curator run_dry_run: Profil leer – übersprungen.")
-        return None
+        return None, "Profil ist leer oder konnte nicht geladen werden."
 
     analysis = await _analyze_profile(profile)
     if analysis is None:
-        return None
+        return None, "LLM-Analyse fehlgeschlagen (Timeout, Auth oder JSON-Fehler – siehe Log)."
 
     proposal = _build_proposal(profile, analysis)
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=_PROPOSAL_TTL)).isoformat()
@@ -401,7 +407,7 @@ async def run_dry_run(*, force: bool = False) -> str | None:
     _save_state(state)
 
     logger.info(f"curator Dry-Run abgeschlossen: {len(proposal['operations'])} Operationen vorgeschlagen.")
-    return format_report(proposal, expires_at)
+    return format_report(proposal, expires_at), "ok"
 
 
 # ---------------------------------------------------------------------------
