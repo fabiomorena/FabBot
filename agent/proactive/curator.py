@@ -126,6 +126,13 @@ def _get_pinned_paths(profile: dict) -> set[str]:
     return set(_filter_pinned(profile))
 
 
+def _safe_int(val: Any, default: int = 0) -> int:
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # LLM-Analyse
 # ---------------------------------------------------------------------------
@@ -268,11 +275,12 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     notes = target.get("notes", [])
     if isinstance(notes, list):
         for rn in sorted(
-            analysis.get("redundant_notes", []), key=lambda x: int(x.get("keep_index") or 0), reverse=True
+            analysis.get("redundant_notes", []), key=lambda x: _safe_int(x.get("keep_index")), reverse=True
         ):
-            indices = [int(i) for i in rn.get("indices", []) if i is not None]
+            indices = [_safe_int(i, -1) for i in rn.get("indices", []) if i is not None]
+            indices = [i for i in indices if i >= 0]
             keep_index_raw = rn.get("keep_index", indices[0] if indices else None)
-            keep_index = int(keep_index_raw) if keep_index_raw is not None else None
+            keep_index = _safe_int(keep_index_raw, -1) if keep_index_raw is not None else None
             reason = rn.get("reason", "redundant")
             for idx in sorted(indices, reverse=True):
                 if idx == keep_index or idx >= len(notes):
@@ -290,7 +298,7 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
         raw_indices = dup.get("indices", [])
         indices = [int(i) for i in raw_indices if i is not None]
         keep_index_raw = dup.get("keep_index", indices[0] if indices else None)
-        keep_index = int(keep_index_raw) if keep_index_raw is not None else None
+        keep_index = _safe_int(keep_index_raw, -1) if keep_index_raw is not None else None
         merged_entry = dup.get("merged_entry")
         reason = dup.get("reason", "Duplikat")
         if not section or not indices:
