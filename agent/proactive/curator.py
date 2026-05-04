@@ -145,9 +145,11 @@ Identifiziere:
 3. Redundante Notizen (mehrere Notes die dasselbe aussagen)
 4. Merge-Vorschläge (zwei Einträge die sinnvoll zusammengeführt werden könnten)
 
-WICHTIG:
+KRITISCHE REGELN – Verstöße machen die Ausgabe ungültig:
+- index, indices und keep_index sind IMMER ganzzahlige Integer (0, 1, 2, ...) – niemals Strings, Schlüssel oder Bezeichnungen
+- section ist IMMER ein einfacher Schlüssel oder Pfad wie "notes", "people", "projects.active" – niemals mit Leerzeichen oder "+"
 - Schlage NUR echte Probleme vor – lieber zu wenig als zu viel
-- Einträge mit _pinned: true NIEMALS anfassen (sie sind bereits ausgefiltert, trotzdem zur Sicherheit ignorieren)
+- Einträge mit _pinned: true NIEMALS anfassen
 - Archivieren statt löschen
 - Antworte NUR mit validem JSON, kein Text davor/danach
 
@@ -203,7 +205,7 @@ async def _analyze_profile(profile: dict) -> dict | None:
                 content = content[start:end]
 
         analysis = json.loads(content)
-        return analysis
+        return _sanitize_analysis(analysis)
     except json.JSONDecodeError as e:
         logger.warning(f"curator _analyze_profile: LLM-Antwort ist kein valides JSON: {e}")
         return None
@@ -213,6 +215,44 @@ async def _analyze_profile(profile: dict) -> dict | None:
     except Exception as e:
         logger.warning(f"curator _analyze_profile Fehler: {e}")
         return None
+
+
+def _sanitize_analysis(analysis: dict) -> dict:
+    """Filtert LLM-Ausgabe: entfernt Einträge mit ungültigen Indizes (Strings, None, negativ)."""
+
+    def valid_idx(v) -> bool:
+        try:
+            return int(v) >= 0
+        except (ValueError, TypeError):
+            return False
+
+    def valid_section(s) -> bool:
+        return isinstance(s, str) and " " not in s and "+" not in s and len(s) > 0
+
+    stale = [e for e in analysis.get("stale", []) if valid_section(e.get("section", "")) and valid_idx(e.get("index"))]
+    duplicates = [
+        e
+        for e in analysis.get("duplicates", [])
+        if valid_section(e.get("section", ""))
+        and all(valid_idx(i) for i in e.get("indices", []))
+        and valid_idx(e.get("keep_index", 0))
+    ]
+    redundant_notes = [
+        e for e in analysis.get("redundant_notes", []) if all(valid_idx(i) for i in e.get("indices", []))
+    ]
+
+    dropped = (
+        len(analysis.get("stale", []))
+        - len(stale)
+        + len(analysis.get("duplicates", []))
+        - len(duplicates)
+        + len(analysis.get("redundant_notes", []))
+        - len(redundant_notes)
+    )
+    if dropped:
+        logger.warning(f"curator _sanitize_analysis: {dropped} ungültige LLM-Einträge herausgefiltert.")
+
+    return {**analysis, "stale": stale, "duplicates": duplicates, "redundant_notes": redundant_notes}
 
 
 # ---------------------------------------------------------------------------
