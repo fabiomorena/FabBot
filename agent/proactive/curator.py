@@ -28,15 +28,16 @@ logger = logging.getLogger(__name__)
 _STATE_FILE = Path.home() / ".fabbot" / "curator_state.json"
 _MEMORY_DB = Path.home() / ".fabbot" / "memory.db"
 _FABBOT_LOG = Path.home() / ".fabbot" / "fabbot.log"
-_IDLE_THRESHOLD = 2 * 3600       # 2 Stunden
-_COOLDOWN_DAYS = 7                # Mindesttakt zwischen Läufen
-_PROPOSAL_TTL = 24 * 3600        # Proposal verfällt nach 24h
+_IDLE_THRESHOLD = 2 * 3600  # 2 Stunden
+_COOLDOWN_DAYS = 7  # Mindesttakt zwischen Läufen
+_PROPOSAL_TTL = 24 * 3600  # Proposal verfällt nach 24h
 _LLM_TIMEOUT = 30.0
 
 
 # ---------------------------------------------------------------------------
 # State-Management
 # ---------------------------------------------------------------------------
+
 
 def _load_state() -> dict:
     try:
@@ -53,6 +54,7 @@ def _save_state(data: dict) -> None:
 # ---------------------------------------------------------------------------
 # Idle-Detection
 # ---------------------------------------------------------------------------
+
 
 def get_idle_seconds() -> float:
     """Sekunden seit letzter User-Aktivität (via mtime von memory.db)."""
@@ -72,12 +74,14 @@ def get_idle_seconds() -> float:
 # Trigger-Logik
 # ---------------------------------------------------------------------------
 
+
 def should_run(*, force: bool = False) -> bool:
     """True wenn Curator-Dry-Run gestartet werden soll."""
     if not force:
         if get_idle_seconds() < _IDLE_THRESHOLD:
             return False
         from agent.proactive.heartbeat import is_muted
+
         if is_muted():
             return False
     state = _load_state()
@@ -96,6 +100,7 @@ def should_run(*, force: bool = False) -> bool:
 # Hilfs-Funktionen
 # ---------------------------------------------------------------------------
 
+
 def _filter_pinned(obj: Any, path: str = "") -> list[str]:
     """Gibt Pfade aller _pinned: true Items zurück (rekursiv)."""
     pinned: list[str] = []
@@ -113,6 +118,7 @@ def _filter_pinned(obj: Any, path: str = "") -> list[str]:
 def _remove_pinned_from_input(profile: dict) -> dict:
     """Erstellt eine flache Kopie des Profils ohne _pinned-Metadaten für den LLM-Input."""
     import copy
+
     return copy.deepcopy(profile)
 
 
@@ -206,6 +212,7 @@ async def _analyze_profile(profile: dict) -> dict | None:
 # Proposal-Builder
 # ---------------------------------------------------------------------------
 
+
 def _build_proposal(profile: dict, analysis: dict) -> dict:
     """
     Berechnet das Ziel-Profil aus dem Analyse-Ergebnis.
@@ -213,6 +220,7 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     _pinned Items werden verteidigt (Defense-Check).
     """
     import copy
+
     target = copy.deepcopy(profile)
     operations: list[dict] = []
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -243,7 +251,9 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
             if isinstance(item, dict) and item.get("_pinned"):
                 logger.warning(f"curator: _pinned-Item in stale ignoriert: {section}[{idx}]")
                 continue
-            archived_list.append({**item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": section})
+            archived_list.append(
+                {**item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": section}
+            )
             obj.pop(idx)
             operations.append({"type": "archive", "section": section, "index": idx, "reason": reason})
         except (KeyError, TypeError, IndexError) as e:
@@ -260,7 +270,9 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
                 if idx == keep_index or idx >= len(notes):
                     continue
                 item = notes[idx]
-                archived_list.append({"_note": item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": "notes"})
+                archived_list.append(
+                    {"_note": item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": "notes"}
+                )
                 notes.pop(idx)
                 operations.append({"type": "archive_note", "index": idx, "reason": reason})
 
@@ -289,7 +301,9 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
                     logger.warning(f"curator: _pinned-Item in duplicates ignoriert: {section}[{idx}]")
                     continue
                 if idx != keep_index:
-                    archived_list.append({**item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": section})
+                    archived_list.append(
+                        {**item, "_archived_at": now_iso, "_archived_reason": reason, "_archived_from": section}
+                    )
                     obj.pop(idx)
                     operations.append({"type": "archive_duplicate", "section": section, "index": idx, "reason": reason})
             # Merged Entry anwenden wenn angegeben
@@ -311,6 +325,7 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Report-Formatter
 # ---------------------------------------------------------------------------
+
 
 def format_report(proposal: dict, expires_at: str) -> str:
     """Baut den Telegram-Markdown-Report für den Dry-Run."""
@@ -357,6 +372,7 @@ def format_report(proposal: dict, expires_at: str) -> str:
 # Dry-Run-Orchestrator
 # ---------------------------------------------------------------------------
 
+
 async def run_dry_run(*, force: bool = False) -> str | None:
     """
     Führt Dry-Run durch: lädt Profil, analysiert via LLM, baut Proposal, speichert State.
@@ -391,6 +407,7 @@ async def run_dry_run(*, force: bool = False) -> str | None:
 # ---------------------------------------------------------------------------
 # Apply / Cancel
 # ---------------------------------------------------------------------------
+
 
 async def apply_pending() -> tuple[bool, str]:
     """
@@ -459,6 +476,7 @@ def _invalidate_pending(state: dict) -> None:
 # ---------------------------------------------------------------------------
 # Status
 # ---------------------------------------------------------------------------
+
 
 def get_status() -> str:
     """Gibt Status-Übersicht für /curator status zurück."""

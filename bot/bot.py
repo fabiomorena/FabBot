@@ -708,6 +708,7 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if sub == "dryrun":
         thinking = await update.message.reply_text("Analysiere Profil...")
         from agent.proactive.curator import run_dry_run
+
         report = await run_dry_run(force=True)
         if report:
             await thinking.edit_text(report, parse_mode="Markdown")
@@ -717,16 +718,19 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     elif sub == "apply":
         thinking = await update.message.reply_text("Wende Vorschlag an...")
         from agent.proactive.curator import apply_pending
+
         success, msg = await apply_pending()
         await thinking.edit_text(("✅ " if success else "❌ ") + msg)
 
     elif sub == "cancel":
         from agent.proactive.curator import cancel_pending
+
         msg = cancel_pending()
         await update.message.reply_text(msg)
 
     elif sub == "status":
         from agent.proactive.curator import get_status
+
         await update.message.reply_text(get_status(), parse_mode="Markdown")
 
     else:
