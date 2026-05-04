@@ -296,7 +296,8 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     for dup in analysis.get("duplicates", []):
         section = dup.get("section", "")
         raw_indices = dup.get("indices", [])
-        indices = [int(i) for i in raw_indices if i is not None]
+        indices = [_safe_int(i, -1) for i in raw_indices if i is not None]
+        indices = [i for i in indices if i >= 0]
         keep_index_raw = dup.get("keep_index", indices[0] if indices else None)
         keep_index = _safe_int(keep_index_raw, -1) if keep_index_raw is not None else None
         merged_entry = dup.get("merged_entry")
