@@ -521,7 +521,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/health – System Health Check\n"
         "/status – Agent Status\n"
         "/auditlog – Letzte Aktionen\n"
-        "/mute_proactive [h] – Proaktive Nachrichten stumm (default 24h)"
+        "/mute_proactive [h] – Proaktive Nachrichten stumm (default 24h)\n"
+        "/curator dryrun|apply|cancel|status – Profil-Konsolidierung"
     )
 
 
@@ -697,6 +698,45 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"✅ Gemerkt: {text}")
     else:
         await update.message.reply_text("❌ Fehler beim Speichern der Notiz.")
+
+
+@restricted
+async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Profil-Konsolidierung: dryrun | apply | cancel | status"""
+    sub = ctx.args[0].lower() if ctx.args else ""
+
+    if sub == "dryrun":
+        thinking = await update.message.reply_text("Analysiere Profil...")
+        from agent.proactive.curator import run_dry_run
+        report = await run_dry_run(force=True)
+        if report:
+            await thinking.edit_text(report, parse_mode="Markdown")
+        else:
+            await thinking.edit_text("Profil leer oder Analyse fehlgeschlagen.")
+
+    elif sub == "apply":
+        thinking = await update.message.reply_text("Wende Vorschlag an...")
+        from agent.proactive.curator import apply_pending
+        success, msg = await apply_pending()
+        await thinking.edit_text(("✅ " if success else "❌ ") + msg)
+
+    elif sub == "cancel":
+        from agent.proactive.curator import cancel_pending
+        msg = cancel_pending()
+        await update.message.reply_text(msg)
+
+    elif sub == "status":
+        from agent.proactive.curator import get_status
+        await update.message.reply_text(get_status(), parse_mode="Markdown")
+
+    else:
+        await update.message.reply_text(
+            "Verwendung:\n"
+            "/curator dryrun – Profil analysieren (kein Schreiben)\n"
+            "/curator apply – Vorschlag anwenden\n"
+            "/curator cancel – Vorschlag verwerfen\n"
+            "/curator status – aktuellen Status anzeigen"
+        )
 
 
 @restricted
@@ -1055,6 +1095,18 @@ async def _post_init(app: Application) -> None:
         )
     )
 
+    from bot.curator_scheduler import run_curator_scheduler
+
+    task_curator = asyncio.create_task(run_curator_scheduler(app.bot, chat_id), name="scheduler:curator")
+    _scheduler_tasks.append(task_curator)
+    task_curator.add_done_callback(
+        lambda t: (
+            logger.error(f"Curator Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
+    )
+
     try:
         from agent.retrieval import index_all
 
@@ -1129,6 +1181,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("reindex", cmd_reindex, block=False))
     app.add_handler(CommandHandler("wa_setup", cmd_wa_setup, block=False))
     app.add_handler(CommandHandler("wa_contact", cmd_wa_contact, block=False))
+    app.add_handler(CommandHandler("curator", cmd_curator, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
