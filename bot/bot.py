@@ -711,7 +711,10 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         report, debug_info = await _debug_dry_run(force=True)
         if report:
-            await thinking.edit_text(report, parse_mode="Markdown")
+            try:
+                await thinking.edit_text(report, parse_mode="Markdown")
+            except Exception:
+                await thinking.edit_text(report)
         else:
             await thinking.edit_text(f"Fehlgeschlagen: {debug_info}")
 
