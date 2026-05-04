@@ -86,9 +86,9 @@ gh pr create \
 
 Auto-Merge aktivieren:
 ```bash
-gh pr merge --auto --merge <PR-Nummer>
+gh pr merge --auto --squash <PR-Nummer>
 ```
-Falls Auto-Merge nicht verfügbar (Exit-Code ≠ 0): manuell mit `gh pr merge --merge <PR-Nummer>` nach CI.
+Falls Auto-Merge nicht verfügbar (Exit-Code ≠ 0): manuell mit `gh pr merge --squash <PR-Nummer>` nach CI.
 
 ### 7. CI abwarten
 ```bash
