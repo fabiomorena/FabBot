@@ -19,7 +19,6 @@ Regeln:
 import asyncio
 import json
 import logging
-import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -215,7 +214,6 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
     """
     import copy
     target = copy.deepcopy(profile)
-    pinned_paths = _get_pinned_paths(profile)
     operations: list[dict] = []
     now_iso = datetime.now(timezone.utc).isoformat()
 

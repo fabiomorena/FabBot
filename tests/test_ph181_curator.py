@@ -8,7 +8,7 @@ Proposal-Builder, Apply/Cancel, Dry-Run-Orchestrator.
 import json
 import pytest
 from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +109,6 @@ class TestState:
 class TestIdleDetection:
     def test_returns_seconds_since_mtime(self, memory_db):
         from agent.proactive.curator import get_idle_seconds
-        import time
         with patch("agent.proactive.curator._MEMORY_DB", memory_db):
             idle = get_idle_seconds()
         assert idle >= 0
@@ -127,7 +126,8 @@ class TestIdleDetection:
 
     def test_old_db_returns_large_value(self, tmp_path):
         from agent.proactive.curator import get_idle_seconds
-        import os, time
+        import os
+        import time
         db = tmp_path / "memory.db"
         db.write_bytes(b"")
         old_time = time.time() - 7200  # 2h ago
