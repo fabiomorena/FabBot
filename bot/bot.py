@@ -707,13 +707,13 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     if sub == "dryrun":
         thinking = await update.message.reply_text("Analysiere Profil...")
-        from agent.proactive.curator import run_dry_run
+        from agent.proactive.curator import _debug_dry_run
 
-        report = await run_dry_run(force=True)
+        report, debug_info = await _debug_dry_run(force=True)
         if report:
             await thinking.edit_text(report, parse_mode="Markdown")
         else:
-            await thinking.edit_text("Profil leer oder Analyse fehlgeschlagen.")
+            await thinking.edit_text(f"Fehlgeschlagen: {debug_info}")
 
     elif sub == "apply":
         thinking = await update.message.reply_text("Wende Vorschlag an...")
