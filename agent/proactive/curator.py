@@ -31,7 +31,7 @@ _FABBOT_LOG = Path.home() / ".fabbot" / "fabbot.log"
 _IDLE_THRESHOLD = 2 * 3600  # 2 Stunden
 _COOLDOWN_DAYS = 7  # Mindesttakt zwischen Läufen
 _PROPOSAL_TTL = 24 * 3600  # Proposal verfällt nach 24h
-_LLM_TIMEOUT = 30.0
+_LLM_TIMEOUT = 60.0
 
 
 # ---------------------------------------------------------------------------
