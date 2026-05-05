@@ -433,9 +433,7 @@ def _strip_json_fences(content: str) -> str:
 async def _route_memory_category(messages: list, profile: dict | None = None) -> dict[str, str]:
     """Stage 1: Haiku bestimmt nur action + category."""
     try:
-        router_prompt = load_skill("memory", "router").replace(
-            "{current_datetime}", get_current_datetime()
-        )
+        router_prompt = load_skill("memory", "router").replace("{current_datetime}", get_current_datetime())
         filtered = _filter_messages(messages)[-4:]
         llm = get_fast_llm()
         response = await llm.ainvoke([SystemMessage(content=router_prompt)] + filtered)
@@ -454,9 +452,7 @@ async def _route_memory_category(messages: list, profile: dict | None = None) ->
         return {"action": "error", "category": "custom"}
 
 
-async def _extract_with_skill(
-    messages: list, category: str, action: str, profile: dict | None
-) -> dict[str, Any]:
+async def _extract_with_skill(messages: list, category: str, action: str, profile: dict | None) -> dict[str, Any]:
     """Stage 2: Sonnet extrahiert Daten mit kategorie-spezifischem Skill-Prompt."""
     try:
         skill_prompt = load_skill("memory", category)

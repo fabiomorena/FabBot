@@ -10,26 +10,31 @@ from langchain_core.messages import HumanMessage
 # Skill-Loader Tests
 # ---------------------------------------------------------------------------
 
+
 class TestSkillLoader:
     def test_load_skill_exists(self):
         from agent.skills import load_skill
+
         content = load_skill("memory", "router")
         assert "action" in content
         assert "category" in content
 
     def test_load_skill_not_found(self):
         from agent.skills import load_skill
+
         with pytest.raises(FileNotFoundError):
             load_skill("memory", "nonexistent_xyz")
 
     def test_load_skill_resolves_includes(self):
         from agent.skills import load_skill
+
         content = load_skill("memory", "router")
         assert "{{include:" not in content
         assert "SICHERHEIT" in content
 
     def test_load_skill_lru_cache(self):
         from agent.skills import load_skill
+
         load_skill.cache_clear()
         load_skill("memory", "people")
         load_skill("memory", "people")
@@ -38,9 +43,18 @@ class TestSkillLoader:
 
     def test_all_skill_files_loadable(self):
         from agent.skills import load_skill
+
         categories = [
-            "router", "people", "project", "place", "media",
-            "preference", "job", "location", "custom", "bot_instruction",
+            "router",
+            "people",
+            "project",
+            "place",
+            "media",
+            "preference",
+            "job",
+            "location",
+            "custom",
+            "bot_instruction",
         ]
         for cat in categories:
             content = load_skill("memory", cat)
@@ -48,9 +62,18 @@ class TestSkillLoader:
 
     def test_shared_security_included_in_all_skills(self):
         from agent.skills import load_skill
+
         categories = [
-            "router", "people", "project", "place", "media",
-            "preference", "job", "location", "custom", "bot_instruction",
+            "router",
+            "people",
+            "project",
+            "place",
+            "media",
+            "preference",
+            "job",
+            "location",
+            "custom",
+            "bot_instruction",
         ]
         for cat in categories:
             content = load_skill("memory", cat)
@@ -60,6 +83,7 @@ class TestSkillLoader:
 # ---------------------------------------------------------------------------
 # Router Tests (_route_memory_category)
 # ---------------------------------------------------------------------------
+
 
 def _mock_llm_response(text: str):
     mock_llm = AsyncMock()
@@ -73,6 +97,7 @@ def _mock_llm_response(text: str):
 class TestMemoryRouter:
     async def test_routing_people(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"save","category":"people"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Mein Kollege Bob aus Berlin")])
@@ -81,6 +106,7 @@ class TestMemoryRouter:
 
     async def test_routing_place(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"save","category":"place"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Beste Pasta beim Sissi in Neukölln")])
@@ -88,6 +114,7 @@ class TestMemoryRouter:
 
     async def test_routing_media(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"save","category":"media"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Höre gerade Aphex Twin")])
@@ -95,6 +122,7 @@ class TestMemoryRouter:
 
     async def test_routing_job(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"save","category":"job"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Ich arbeite jetzt bei Foo GmbH")])
@@ -102,6 +130,7 @@ class TestMemoryRouter:
 
     async def test_routing_bot_instruction(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"save","category":"bot_instruction"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Antworte mir grundsätzlich kurz")])
@@ -109,6 +138,7 @@ class TestMemoryRouter:
 
     async def test_routing_delete_action(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"delete","category":"people"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Lösch Bob")])
@@ -116,6 +146,7 @@ class TestMemoryRouter:
 
     async def test_routing_clarify_action(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"clarify","category":"preference"}')
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="Lösch das irgendwas")])
@@ -123,6 +154,7 @@ class TestMemoryRouter:
 
     async def test_routing_invalid_json_returns_error(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response("das ist kein json")
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=mock_llm):
             result = await _route_memory_category([HumanMessage(content="test")])
@@ -130,6 +162,7 @@ class TestMemoryRouter:
 
     async def test_routing_skips_confirm_messages(self):
         from agent.agents.memory_agent import _route_memory_category
+
         mock_llm = _mock_llm_response('{"action":"save","category":"people"}')
         messages = [
             HumanMessage(content="__CONFIRM_TERMINAL__: some command"),
@@ -144,10 +177,12 @@ class TestMemoryRouter:
 # _parse_memory_intent Integration (zweistufig)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 class TestParseMemoryIntent:
     async def test_two_stage_people(self):
         from agent.agents.memory_agent import _parse_memory_intent
+
         router_resp = _mock_llm_response('{"action":"save","category":"people"}')
         extractor_resp = _mock_llm_response(
             '{"action":"save","category":"people","data":{"name":"Bob","context":"Kollege"}}'
@@ -163,6 +198,7 @@ class TestParseMemoryIntent:
 
     async def test_router_error_returns_error(self):
         from agent.agents.memory_agent import _parse_memory_intent
+
         router_resp = _mock_llm_response("kein json")
         with patch("agent.agents.memory_agent.get_fast_llm", return_value=router_resp):
             result = await _parse_memory_intent([HumanMessage(content="test")])
@@ -170,6 +206,7 @@ class TestParseMemoryIntent:
 
     async def test_missing_skill_file_returns_error(self, tmp_path, monkeypatch):
         from agent.agents.memory_agent import _parse_memory_intent
+
         router_resp = _mock_llm_response('{"action":"save","category":"unknown_cat"}')
         with (
             patch("agent.agents.memory_agent.get_fast_llm", return_value=router_resp),
@@ -180,6 +217,7 @@ class TestParseMemoryIntent:
 
     async def test_category_injected_when_missing(self):
         from agent.agents.memory_agent import _parse_memory_intent
+
         router_resp = _mock_llm_response('{"action":"save","category":"place"}')
         extractor_resp = _mock_llm_response(
             '{"action":"save","data":{"name":"Berghain","type":"bar","location":"Berlin","context":""}}'
