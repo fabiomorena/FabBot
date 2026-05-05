@@ -27,6 +27,7 @@ from agent.state import AgentState
 from agent.llm import get_llm, get_fast_llm
 from agent.profile import load_profile_with_hash, add_note_to_profile, write_profile, WriteResult
 from agent.utils import get_current_datetime
+from agent.skills import load_skill
 
 logger = logging.getLogger(__name__)
 
@@ -413,42 +414,96 @@ INVALID – YAML-Syntax kaputt, oder bestehende Daten fehlen/wurden unbeabsichti
 Nur VALID oder INVALID."""
 
 
-async def _parse_memory_intent(messages: list, profile: dict | None = None) -> dict[str, Any]:
-    """
-    Phase 119d: Profil-Kontext als HumanMessage statt im System-Prompt.
-    """
+def _filter_messages(messages: list) -> list:
+    result = []
+    for m in messages:
+        c = m.content if hasattr(m, "content") else ""
+        if isinstance(c, str) and c.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
+            continue
+        result.append(m)
+    return result
+
+
+def _strip_json_fences(content: str) -> str:
+    content = content.strip()
+    content = re.sub(r"^```(?:json)?\s*", "", content)
+    return re.sub(r"\s*```$", "", content).strip()
+
+
+async def _route_memory_category(messages: list, profile: dict | None = None) -> dict[str, str]:
+    """Stage 1: Haiku bestimmt nur action + category."""
     try:
+        router_prompt = load_skill("memory", "router").replace(
+            "{current_datetime}", get_current_datetime()
+        )
+        filtered = _filter_messages(messages)[-4:]
+        llm = get_fast_llm()
+        response = await llm.ainvoke([SystemMessage(content=router_prompt)] + filtered)
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        content = _strip_json_fences(content)
+        logger.debug(f"MemoryAgent Router raw: {content[:120]}")
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict) or "action" not in parsed or "category" not in parsed:
+            return {"action": "error", "category": "custom"}
+        logger.info(f"MemoryAgent Router: action={parsed['action']} category={parsed['category']}")
+        return parsed
+    except Exception as e:
+        logger.error(f"MemoryAgent Router Fehler: {e!r}")
+        return {"action": "error", "category": "custom"}
+
+
+async def _extract_with_skill(
+    messages: list, category: str, action: str, profile: dict | None
+) -> dict[str, Any]:
+    """Stage 2: Sonnet extrahiert Daten mit kategorie-spezifischem Skill-Prompt."""
+    try:
+        skill_prompt = load_skill("memory", category)
+        filtered = _filter_messages(messages)[-6:]
         llm = get_llm()
-        all_filtered = []
-        for m in messages:
-            c = m.content if hasattr(m, "content") else ""
-            if isinstance(c, str) and c.startswith(("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__")):
-                continue
-            all_filtered.append(m)
-        context_msgs = all_filtered[-6:]
-
-        system_prompt = f"[Aktuelles Datum/Uhrzeit: {get_current_datetime()}]\n" + _PARSER_PROMPT_BASE
-
         extra_msgs = []
         if profile is not None:
             profile_context = _build_profile_context_for_parser(profile)
             if profile_context.strip():
                 extra_msgs = [HumanMessage(content=f"[Profil-Kontext für diesen Request]\n{profile_context}")]
-
-        response = await llm.ainvoke([SystemMessage(content=system_prompt)] + extra_msgs + context_msgs)
+        response = await llm.ainvoke([SystemMessage(content=skill_prompt)] + extra_msgs + filtered)
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        content = content.strip()
-        content = re.sub(r"^```(?:json)?\s*", "", content)
-        content = re.sub(r"\s*```$", "", content).strip()
-        logger.debug(f"MemoryAgent Parser raw: {content[:120]}")
+        content = _strip_json_fences(content)
+        logger.debug(f"MemoryAgent Extractor raw ({category}): {content[:120]}")
         parsed = json.loads(content)
         if not isinstance(parsed, dict) or "action" not in parsed:
             return {"action": "error"}
         return parsed
+    except FileNotFoundError:
+        logger.error(f"MemoryAgent Extractor: Skill-Datei fehlt für category={category}")
+        return {"action": "error"}
     except Exception as e:
-        logger.error(f"MemoryAgent Parser Fehler: {e!r} | raw={locals().get('content', 'N/A')[:80]}")
+        logger.error(f"MemoryAgent Extractor Fehler ({category}): {e!r}")
+        return {"action": "error"}
+
+
+async def _parse_memory_intent(messages: list, profile: dict | None = None) -> dict[str, Any]:
+    """
+    Phase 140: Zweistufiger Parser – Router (Haiku) + Skill-Extractor (Sonnet).
+    Signatur und Return-Format identisch zu Phase 119d.
+    """
+    try:
+        routed = await _route_memory_category(messages, profile)
+        if routed.get("action") == "error":
+            return {"action": "error"}
+        category = routed["category"]
+        action = routed["action"]
+        result = await _extract_with_skill(messages, category, action, profile)
+        if not isinstance(result, dict) or "action" not in result:
+            return {"action": "error"}
+        if "category" not in result:
+            result["category"] = category
+        return result
+    except Exception as e:
+        logger.error(f"MemoryAgent Parser Fehler: {e!r}")
         return {"action": "error"}
 
 
