@@ -345,6 +345,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 180** ✅ GitHub Actions auf Node.js 24 migrieren – actions/checkout, actions/setup-python in allen drei Workflows (test.yml, lint.yml, weekly-audit.yml) von v5 auf v6 (Node.js 24) aktualisiert; 1341 tests green
 - **Phase 181** ✅ Background Curator – wöchentliche Profil-Konsolidierung – agent/proactive/curator.py mit State-Management, Idle-Detection (memory.db mtime), LLM-Analyse (Sonnet), Proposal-Builder (archive statt delete, _pinned-Schutz), Dry-Run + manueller Review via /curator apply|cancel|status; bot/curator_scheduler.py stündlicher Background-Loop; 1383 tests green
 - **Phase 182** ✅ Curator Hotfix-Serie + phase.md squash-fix – 6 Folge-Fixes nach Phase 181: LLM-Timeout 30s→60s (#151), build_proposal robust gegen non-dict stale items + None sort-key (#152), Markdown-Fallback auf Plain Text (#153), _safe_int() für alle Index-Konvertierungen (#154-#156), _sanitize_analysis() + Prompt-Härtung gegen String-Indizes (#157); phase.md Auto-Merge-Flag --merge→--squash; 1383 tests green
+- **Phase 183** ✅ Beziehungs-Alert – proaktive Erinnerung bei unerwähnten Entitäten – relationship_alert.py: ChromaDB-native $lt-Filter auf last_mentioned_at_ts (Float, neue Spalte in collector.py), Schwellwerte Person=14d/andere=30d, Anti-Spam-Cooldown 7d, einmaliger Backfill für Altdaten, MAX_ALERTS_PER_RUN=3; heartbeat.py: trigger_type-Branching + empathischer Prompt für relationship_alert; heartbeat_scheduler.py: _send_proactive() extrahiert, zweiter Check-Pfad nach time_trigger; 1409 tests green
 
 ---
 
