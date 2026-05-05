@@ -1,8 +1,6 @@
 """Tests für Phase 140 – Skill-Loader und zweistufiger Memory-Router."""
 
-import json
 import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.messages import HumanMessage
@@ -172,7 +170,6 @@ class TestParseMemoryIntent:
 
     async def test_missing_skill_file_returns_error(self, tmp_path, monkeypatch):
         from agent.agents.memory_agent import _parse_memory_intent
-        from agent.skills import load_skill
         router_resp = _mock_llm_response('{"action":"save","category":"unknown_cat"}')
         with (
             patch("agent.agents.memory_agent.get_fast_llm", return_value=router_resp),
