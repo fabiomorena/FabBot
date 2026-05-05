@@ -9,9 +9,7 @@ Testet den Beziehungs-Alert:
 """
 
 import time
-from unittest.mock import AsyncMock, MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from agent.proactive.relationship_alert import (
     ALERT_COOLDOWN_DAYS,
