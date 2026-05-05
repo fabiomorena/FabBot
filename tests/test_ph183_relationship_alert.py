@@ -147,8 +147,10 @@ class TestFindUnmentionedEntities:
             {"ids": [], "metadatas": []},
             {"ids": [], "metadatas": []},
         )
-        with patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col), \
-             patch("agent.proactive.relationship_alert._run_backfill_once"):
+        with (
+            patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col),
+            patch("agent.proactive.relationship_alert._run_backfill_once"),
+        ):
             results = find_unmentioned_entities(now_ts=now)
         assert len(results) == 1
         assert results[0]["name"] == "Steffi"
@@ -162,8 +164,10 @@ class TestFindUnmentionedEntities:
             {"ids": [], "metadatas": []},
             {"ids": [], "metadatas": []},
         )
-        with patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col), \
-             patch("agent.proactive.relationship_alert._run_backfill_once"):
+        with (
+            patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col),
+            patch("agent.proactive.relationship_alert._run_backfill_once"),
+        ):
             results = find_unmentioned_entities(now_ts=now)
         assert any(r["name"] == "Salvador" for r in results)
 
@@ -179,10 +183,7 @@ class TestFindUnmentionedEntities:
         now = _now()
         count = MAX_ALERTS_PER_RUN + 2
         ids = [f"id{i}" for i in range(count)]
-        metadatas = [
-            _make_meta("person", f"Person{i}", PERSON_THRESHOLD_DAYS + 1 + i, now)
-            for i in range(count)
-        ]
+        metadatas = [_make_meta("person", f"Person{i}", PERSON_THRESHOLD_DAYS + 1 + i, now) for i in range(count)]
         # Alle kommen von der person-Query, andere Queries geben nichts zurück
         col = self._make_col_with_side_effects(
             {"ids": ids, "metadatas": metadatas},
@@ -190,8 +191,10 @@ class TestFindUnmentionedEntities:
             {"ids": [], "metadatas": []},
             {"ids": [], "metadatas": []},
         )
-        with patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col), \
-             patch("agent.proactive.relationship_alert._run_backfill_once"):
+        with (
+            patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col),
+            patch("agent.proactive.relationship_alert._run_backfill_once"),
+        ):
             results = find_unmentioned_entities(now_ts=now)
         assert len(results) <= MAX_ALERTS_PER_RUN
 
@@ -205,8 +208,10 @@ class TestFindUnmentionedEntities:
             {"ids": [], "metadatas": []},
             {"ids": [], "metadatas": []},
         )
-        with patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col), \
-             patch("agent.proactive.relationship_alert._run_backfill_once"):
+        with (
+            patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col),
+            patch("agent.proactive.relationship_alert._run_backfill_once"),
+        ):
             results = find_unmentioned_entities(now_ts=now)
         assert results[0]["name"] == "Older"
 
@@ -220,8 +225,10 @@ class TestFindUnmentionedEntities:
             {"ids": [], "metadatas": []},
             {"ids": [], "metadatas": []},
         )
-        with patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col), \
-             patch("agent.proactive.relationship_alert._run_backfill_once"):
+        with (
+            patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col),
+            patch("agent.proactive.relationship_alert._run_backfill_once"),
+        ):
             results = find_unmentioned_entities(now_ts=now)
         assert results[0]["days_since_mention"] == int(days_ago)
 
@@ -232,8 +239,10 @@ class TestFindUnmentionedEntities:
             {"ids": [], "metadatas": []},
             {"ids": [], "metadatas": []},
         )
-        with patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col), \
-             patch("agent.proactive.relationship_alert._run_backfill_once"):
+        with (
+            patch("agent.proactive.relationship_alert._get_entities_collection", return_value=col),
+            patch("agent.proactive.relationship_alert._run_backfill_once"),
+        ):
             assert find_unmentioned_entities(now_ts=_now()) == []
 
 
