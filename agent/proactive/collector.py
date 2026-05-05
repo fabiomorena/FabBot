@@ -131,7 +131,9 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
         if collection is None:
             return
 
-        now = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        now_ts = now_dt.timestamp()
         ids, documents, metadatas = [], [], []
 
         for entity in entities:
@@ -151,6 +153,7 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
                 "status": "open",
                 "created_at": now,
                 "last_mentioned_at": now,
+                "last_mentioned_at_ts": now_ts,
                 "mention_count": mention_count,
                 "source_context": entity["context"][:200],
             }

@@ -179,21 +179,13 @@ async def _gather_heartbeat_context(trigger_item: dict) -> dict[str, str]:
     return {"profile": profile, "memory": memory, "sessions": sessions}
 
 
-async def generate_proactive_message(trigger_item: dict) -> str:
-    """Haiku generiert eine personalisierte proaktive Nachricht mit Profil/Memory/Session-Kontext."""
-    try:
-        from langchain_core.messages import HumanMessage
-
-        llm = _get_llm()
-        days = trigger_item.get("days_until_due", "?")
-        name = trigger_item.get("name", "")
-        due = trigger_item.get("due_date", "")
-        entity_type = trigger_item.get("entity_type", "")
-        context = trigger_item.get("source_context", "")
-
-        ctx = await _gather_heartbeat_context(trigger_item)
-
-        prompt = f"""Schreibe eine kurze, freundliche proaktive Telegram-Nachricht für Fabio.
+def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
+    days = trigger_item.get("days_until_due", "?")
+    name = trigger_item.get("name", "")
+    due = trigger_item.get("due_date", "")
+    entity_type = trigger_item.get("entity_type", "")
+    context = trigger_item.get("source_context", "")
+    return f"""Schreibe eine kurze, freundliche proaktive Telegram-Nachricht für Fabio.
 
 === Persönliches Profil ===
 {ctx["profile"] or "(keine Profildaten)"}
@@ -215,6 +207,46 @@ Regeln:
 - Deutsch, keine URLs
 - Leere Sektionen ignorieren"""
 
+
+def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
+    name = trigger_item.get("name", "")
+    days = trigger_item.get("days_since_mention", "?")
+    entity_type = trigger_item.get("entity_type", "")
+    context = trigger_item.get("source_context", "")
+    return f"""Schreibe eine kurze, warme Erinnerung für Fabio.
+
+=== Persönliches Profil ===
+{ctx["profile"] or "(keine Profildaten)"}
+
+=== Frühere Sessions zu "{name}" ===
+{ctx["sessions"] or "(keine Erwähnungen)"}
+
+=== Trigger ===
+- {entity_type} "{name}" wurde seit {days} Tagen nicht mehr erwähnt
+- Letzter bekannter Kontext: {context}
+
+Regeln:
+- Max. 2 Sätze
+- Empathisch, nicht vorwurfsvoll ("Vermisst du eigentlich...", "Wie geht's eigentlich...")
+- Bei Personen: persönlich und warm. Bei Projekten: aktivierend ("liegt seit ... brach")
+- Kein "Guten Morgen", keine förmliche Begrüßung
+- Deutsch, keine URLs
+- Leere Sektionen ignorieren"""
+
+
+async def generate_proactive_message(trigger_item: dict) -> str:
+    """Haiku generiert eine personalisierte proaktive Nachricht mit Profil/Memory/Session-Kontext."""
+    try:
+        from langchain_core.messages import HumanMessage
+
+        llm = _get_llm()
+        ctx = await _gather_heartbeat_context(trigger_item)
+
+        if trigger_item.get("trigger_type") == "relationship_alert":
+            prompt = _build_relationship_alert_prompt(trigger_item, ctx)
+        else:
+            prompt = _build_time_trigger_prompt(trigger_item, ctx)
+
         response = await asyncio.wait_for(
             llm.ainvoke([HumanMessage(content=prompt)]),
             timeout=LLM_TIMEOUT,
@@ -229,6 +261,10 @@ Regeln:
 
 
 def _fallback_message(item: dict) -> str:
+    if item.get("trigger_type") == "relationship_alert":
+        name = item.get("name", "")
+        days = item.get("days_since_mention", "?")
+        return f"Du hast {name} seit {days} Tagen nicht erwähnt – alles ok?"
     name = item.get("name", "")
     days = item.get("days_until_due", "?")
     return f"Erinnerung: '{name}' ist in {days} Tag(en) fällig."
