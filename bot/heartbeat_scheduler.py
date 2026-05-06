@@ -71,7 +71,7 @@ async def _run_heartbeat(bot, chat_id: int) -> None:
         alerts = find_unmentioned_entities()
         if alerts:
             await _send_proactive(bot, chat_id, alerts[0])
-            mark_alerted(alerts[0]["id"])
+            mark_alerted(alerts[0]["id"])  # at-least-once: Absturz vor diesem Call → Alert wiederholt sich
     except Exception as e:
         logger.warning(f"Relationship-Alert Fehler (non-critical): {e}")
 
