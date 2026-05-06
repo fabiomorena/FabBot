@@ -80,15 +80,20 @@ Verfuegbare Agenten:
   - NICHT fuer Fragen zu einem Foto oder Bild
 
 - memory_agent: Persoenliche Informationen oder Bot-Instruktionen speichern, aktualisieren oder loeschen.
-  NUR bei expliziten Speicher-Befehlen:
-  JA: 'merke dir dass...', 'speichere...', 'fuge ... hinzu'
+  Bei expliziten Speicher-Befehlen UND bei biographischen Fakten ueber Personen:
+  JA: 'merke dir dass...', 'speichere...', 'fuge ... hinzu', 'notiere dass...'
   JA: 'vergiss X', 'vergiss den X', 'vergiss den Eintrag X', 'loesche X aus dem Profil'
   JA: 'merke dir grundsaetzlich...', 'von jetzt an sollst du...', 'du sollst immer...'
   JA: 'merke dir das', 'merk dir das', 'das merken', 'merk das' (Referenz auf vorherige Aussage)
   JA: 'vergiss die instruktion', 'loesch die instruktion', 'alle instruktionen loeschen'
-  NEIN: alle normalen Aussagen, Antworten auf Fragen, Erzaehlungen ohne explizites Speicher-Wort
-  NEIN: 'ich mag X', 'ich war bei X', kurze Antworten ohne Speicher-Absicht
+  JA: Biographische Fakten ueber Personen mit Name + Beziehung/Funktion/Ort (auch ohne 'merke dir'):
+      'Mein Kollege Sven aus Muenchen', 'Jana ist meine beste Freundin',
+      'Mein Chef heisst Marco', 'Mein Bruder wohnt in Hamburg',
+      'Lisa arbeitet bei Google', 'Tom ist mein neuer Mitbewohner'
+  NEIN: Transiente Ereignisse ohne identifizierende Information ('mein Kollege war heute krank',
+        'ich war gestern in Hamburg', 'heute war schoenes Wetter')
   NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen
+  ZWEIFEL: Wenn unklar ob temporaer oder dauerhaft → chat_agent
 
 - calendar_agent: Kalendertermine lesen oder erstellen
 - reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr')
@@ -105,7 +110,7 @@ Regeln:
 - Wetter-Fragen: IMMER web_agent
 - Meinungsfragen ("was haelst du", "wie findest du", "deine meinung"): IMMER chat_agent
 - Im Zweifel zwischen web_agent und chat_agent: chat_agent waehlen
-- Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen
+- Im Zweifel zwischen memory_agent und chat_agent: chat_agent waehlen (AUSSER bei klaren biographischen Fakten mit Name)
 - Fragen mit 'wo', 'wer', 'was' die sich auf ein Foto beziehen: IMMER chat_agent
 - Fragen ueber eigene Notizen/Sessions/Wissen: IMMER chat_agent
 - Wenn [Letzter Agent: X] im Input steht und die Frage eine kurze Reaktion oder Folgefrage
@@ -231,13 +236,24 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
     (
         (
             "merke dir dass",
+            "merke dir das",
+            "merk dir das",
+            "merk das",
             "merke dir:",
             "speichere dass",
+            "speichere das",
             "füge hinzu:",
             "fuege hinzu:",
             "merke dir grundsätzlich",
             "merke dir grundsaetzlich",
             "von jetzt an sollst du",
+            "notiere dass",
+            "notiere das",
+            "notier dass",
+            "notier das",
+            "notiere dir",
+            "bitte merke dir",
+            "bitte merk dir",
         ),
         "memory_agent",
         "save-trigger",
@@ -246,8 +262,8 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
 
 
 def _match_pre_routing(text: str) -> tuple[str, str] | None:
-    """Gibt (agent_name, log_label) zurück wenn ein Prefix-Rule greift, sonst None."""
-    lower = text.strip().lower()
+    """Gibt (agent_name, log_label) zurück wenn eine Prefix-Rule greift, sonst None."""
+    lower = text.strip().strip("\"'").lower()
     for prefixes, agent, label in _PRE_ROUTING_RULES:
         if any(lower.startswith(p) for p in prefixes):
             return agent, label
