@@ -118,6 +118,7 @@ def _filter_pinned(obj: Any, path: str = "") -> list[str]:
 
 def _remove_pinned_from_input(profile: dict) -> dict:
     """Erstellt eine tiefe Kopie des Profils ohne _pinned-Metadaten für den LLM-Input."""
+
     def _strip(obj: Any) -> Any:
         if isinstance(obj, dict):
             return {k: _strip(v) for k, v in obj.items() if k != "_pinned"}
