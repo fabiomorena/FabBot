@@ -6,7 +6,6 @@ Testet:
 2. Neue Save-Trigger-Prefixes (merk dir das, notiere, bitte merke dir etc.)
 """
 
-import pytest
 from agent.supervisor import _match_pre_routing
 
 
