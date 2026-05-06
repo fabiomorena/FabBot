@@ -32,6 +32,7 @@ _IDLE_THRESHOLD = 2 * 3600  # 2 Stunden
 _COOLDOWN_DAYS = 7  # Mindesttakt zwischen Läufen
 _PROPOSAL_TTL = 24 * 3600  # Proposal verfällt nach 24h
 _LLM_TIMEOUT = 60.0
+_YAML_MAX_CHARS = 8000
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +117,39 @@ def _filter_pinned(obj: Any, path: str = "") -> list[str]:
 
 
 def _remove_pinned_from_input(profile: dict) -> dict:
-    """Erstellt eine flache Kopie des Profils ohne _pinned-Metadaten für den LLM-Input."""
-    import copy
+    """Erstellt eine tiefe Kopie des Profils ohne _pinned-Metadaten für den LLM-Input."""
 
-    return copy.deepcopy(profile)
+    def _strip(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {k: _strip(v) for k, v in obj.items() if k != "_pinned"}
+        if isinstance(obj, list):
+            return [_strip(item) for item in obj]
+        return obj
+
+    return _strip(profile)
+
+
+def _truncate_profile_yaml(profile: dict) -> str:
+    """Kürzt Profil-YAML auf _YAML_MAX_CHARS, immer an Top-Level-Sektionsgrenzen."""
+    import yaml
+
+    full = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    if len(full) <= _YAML_MAX_CHARS:
+        return full
+
+    sections: list[str] = []
+    total = 0
+    skipped = 0
+    for key, value in profile.items():
+        chunk = yaml.dump({key: value}, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        if total + len(chunk) > _YAML_MAX_CHARS:
+            skipped += 1
+        else:
+            sections.append(chunk)
+            total += len(chunk)
+    if skipped:
+        sections.append(f"# ... [{skipped} Sektionen gekürzt]\n")
+    return "".join(sections)
 
 
 def _get_pinned_paths(profile: dict) -> set[str]:
@@ -177,14 +207,10 @@ Wenn nichts gefunden wurde, gib leere Arrays zurück.
 async def _analyze_profile(profile: dict) -> dict | None:
     """Ruft Sonnet auf und gibt strukturierte Analyse zurück. None bei Fehler."""
     try:
-        import yaml
         from langchain_core.messages import HumanMessage
         from agent.llm import get_llm
 
-        profile_yaml = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        # Auf max 8000 Zeichen kürzen damit LLM-Window nicht überschritten wird
-        if len(profile_yaml) > 8000:
-            profile_yaml = profile_yaml[:8000] + "\n... [gekürzt]"
+        profile_yaml = _truncate_profile_yaml(profile)
 
         llm = get_llm()
         prompt = _ANALYZER_PROMPT.format(profile_yaml=profile_yaml)
@@ -451,7 +477,7 @@ async def _debug_dry_run(*, force: bool = False) -> tuple[str | None, str]:
         logger.info("curator run_dry_run: Profil leer – übersprungen.")
         return None, "Profil ist leer oder konnte nicht geladen werden."
 
-    analysis = await _analyze_profile(profile)
+    analysis = await _analyze_profile(_remove_pinned_from_input(profile))
     if analysis is None:
         return None, "LLM-Analyse fehlgeschlagen (Timeout, Auth oder JSON-Fehler – siehe Log)."
 
