@@ -531,6 +531,39 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
 # ---------------------------------------------------------------------------
 
 
+async def _save_to_profile(action: str, category: str, data: dict) -> AIMessage:
+    """Gemeinsamer Pfad: Profil-Fakt schreiben (YAML-Review + write_profile)."""
+    current_profile = load_profile()
+    updated_profile = _apply_memory_update(current_profile, action, category, data)
+
+    if updated_profile is None:
+        fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
+        await add_note_to_profile(fallback)
+        confirmation = _build_confirmation(action, category, data)
+        return AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")
+
+    original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    is_valid = await _review_yaml(original_yaml, new_yaml)
+    if not is_valid:
+        logger.warning(f"MemoryAgent: YAML-Review INVALID – kein Schreiben (action={action} category={category})")
+        return AIMessage(content="Konnte nicht gespeichert werden – bitte nochmal versuchen.")
+
+    try:
+        yaml.safe_load(new_yaml)
+    except yaml.YAMLError as e:
+        logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
+        return AIMessage(content="Fehler bei der YAML-Validierung – bitte nochmal versuchen.")
+
+    success = await write_profile(updated_profile)
+    if not success:
+        return AIMessage(content="Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")
+
+    logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
+    return AIMessage(content=_build_confirmation(action, category, data))
+
+
 async def _review_yaml(original_yaml: str, new_yaml: str) -> bool:
     """Haiku reviewt das neue YAML.
     Phase 65 Fix: HumanMessage top-level Import statt lokalem HM-Alias.
@@ -620,9 +653,11 @@ async def memory_agent(state: AgentState) -> AgentState:
       - bot_instruction: Längen- und Forbidden-Pattern-Validierung
       - Top-Level-Imports (yaml, profile) – kein Lazy Import mehr
     Phase 96: _apply_memory_update Registry-Pattern (Issue #8)
+    Issue #164: merke-dir-das klassifiziert Profil-Fakt vs. Bot-Instruktion per LLM
     """
     try:
-        # ── Phase 64: "Merke dir das" → vorherige Message als Bot-Instruktion ──
+        # ── Phase 64 / Issue #164: "Merke dir das" → Kontext klassifizieren ──
+        # Zuerst per LLM prüfen ob es ein Profil-Fakt oder eine Bot-Instruktion ist.
         current_human = _get_current_human_message(state["messages"])
         if _is_merke_dir_das(current_human):
             prev_human = _get_prev_human_message(state["messages"])
@@ -634,6 +669,21 @@ async def memory_agent(state: AgentState) -> AgentState:
                         )
                     ]
                 }
+
+            # Klassifiziere den Kontext: Profil-Fakt oder Bot-Instruktion?
+            synthetic = [HumanMessage(content=prev_human)]
+            classified = await _parse_memory_intent(synthetic)
+            cls_action = classified.get("action", "error")
+            cls_category = classified.get("category", "custom")
+            cls_data = classified.get("data", {})
+
+            if cls_action != "error" and cls_category != "bot_instruction" and cls_data:
+                # Biographischer Fakt / Profil-Info → ins Profil speichern
+                logger.info(f"MemoryAgent #164: merke-dir-das als Profil-Fakt – {cls_action} {cls_category}")
+                msg = await _save_to_profile(cls_action, cls_category, cls_data)
+                return {"messages": [msg]}
+
+            # Verhaltensanweisung / Fallback → Bot-Instruktion formulieren
             instruction = await _formulate_bot_instruction_from_context(prev_human)
             if not instruction:
                 return {
@@ -710,37 +760,8 @@ async def memory_agent(state: AgentState) -> AgentState:
                 return {"messages": [AIMessage(content="Fehler beim Speichern der Bot-Instruktion in claude.md.")]}
         # ─────────────────────────────────────────────────────────────────────
 
-        current_profile = load_profile()
-        updated_profile = _apply_memory_update(current_profile, action, category, data)
-
-        if updated_profile is None:
-            fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
-            await add_note_to_profile(fallback)
-            confirmation = _build_confirmation(action, category, data)
-            return {"messages": [AIMessage(content=f"{confirmation}\n_(als Notiz gespeichert)_")]}
-
-        original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
-        is_valid = await _review_yaml(original_yaml, new_yaml)
-        if not is_valid:
-            logger.warning(
-                f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})"
-            )
-            return {"messages": [AIMessage(content="Konnte nicht gespeichert werden – bitte nochmal versuchen.")]}
-
-        try:
-            yaml.safe_load(new_yaml)
-        except yaml.YAMLError as e:
-            logger.error(f"MemoryAgent: finale YAML-Validierung fehlgeschlagen: {e}")
-            return {"messages": [AIMessage(content="Fehler bei der YAML-Validierung – bitte nochmal versuchen.")]}
-
-        success = await write_profile(updated_profile)
-        if not success:
-            return {"messages": [AIMessage(content="Fehler beim Schreiben des Profils. Bitte versuche es nochmal.")]}
-
-        logger.info(f"MemoryAgent: {action} {category} erfolgreich – data={str(data)[:80]}")
-        return {"messages": [AIMessage(content=_build_confirmation(action, category, data))]}
+        msg = await _save_to_profile(action, category, data)
+        return {"messages": [msg]}
 
     except Exception as e:
         logger.error(f"MemoryAgent: unerwarteter Fehler: {e}")
