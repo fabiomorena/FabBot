@@ -20,11 +20,11 @@ from langchain_core.messages import HumanMessage
 
 
 class TestYamlReviewFailClosed:
-    """Phase 89: YAML-Review INVALID → kein Schreiben, kein add_note_to_profile."""
+    """Phase 89/188: YAML-Review INVALID → Note-Fallback statt Fehler."""
 
     @pytest.mark.asyncio
-    async def test_yaml_review_invalid_does_not_call_add_note(self) -> None:
-        """Bei INVALID darf add_note_to_profile NICHT aufgerufen werden."""
+    async def test_yaml_review_invalid_calls_add_note(self) -> None:
+        """Bei INVALID wird add_note_to_profile aufgerufen (Note-Fallback), write_profile nicht."""
         from agent.agents.memory_agent import memory_agent
 
         state = {
@@ -47,12 +47,12 @@ class TestYamlReviewFailClosed:
         ):
             await memory_agent(state)
 
-        mock_note.assert_not_called()
+        mock_note.assert_called_once()
         mock_write.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_yaml_review_invalid_returns_error_message(self) -> None:
-        """Bei INVALID bekommt User eine Fehlermeldung."""
+    async def test_yaml_review_invalid_returns_confirmation(self) -> None:
+        """Bei INVALID bekommt User eine Bestätigung (nicht eine Fehlermeldung)."""
         from agent.agents.memory_agent import memory_agent
 
         state = {
@@ -75,7 +75,8 @@ class TestYamlReviewFailClosed:
             result = await memory_agent(state)
 
         content = result["messages"][0].content
-        assert "nochmal" in content.lower() or "fehler" in content.lower() or "gespeichert" in content.lower()
+        assert "gespeichert" in content.lower()
+        assert "nochmal versuchen" not in content.lower()
 
     @pytest.mark.asyncio
     async def test_yaml_review_valid_writes_profile(self) -> None:

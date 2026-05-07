@@ -1144,9 +1144,12 @@ async def memory_agent(state: AgentState) -> AgentState:
             is_valid = await _review_yaml(original_yaml, new_yaml, action=action)
             if not is_valid:
                 logger.warning(
-                    f"MemoryAgent Phase89: YAML-Review INVALID – kein Schreiben (action={action} category={category})"
+                    f"MemoryAgent Phase89: YAML-Review INVALID – Fallback auf Notiz (action={action} category={category})"
                 )
-                return _make_result("Konnte nicht gespeichert werden – bitte nochmal versuchen.")
+                fallback = f"[Memory] {action} {category}: {json.dumps(data, ensure_ascii=False)[:150]}"
+                await add_note_to_profile(fallback)
+                confirmation = _build_confirmation(action, category, data)
+                return _make_result(f"{confirmation}\n_(als Notiz gespeichert)_")
 
             try:
                 yaml.safe_load(new_yaml)
