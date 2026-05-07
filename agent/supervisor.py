@@ -92,6 +92,8 @@ Verfuegbare Agenten:
       'Lisa arbeitet bei Google', 'Tom ist mein neuer Mitbewohner'
   NEIN: Transiente Ereignisse ohne identifizierende Information ('mein Kollege war heute krank',
         'ich war gestern in Hamburg', 'heute war schoenes Wetter')
+  NEIN: Transiente Sozialereignisse mit Namen ohne biographische Beziehung ('Max und Anka kommen
+        heute zum Essen', 'ich treffe gleich Steffi', 'wir fahren nachher zu Mario')
   NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen
   ZWEIFEL: Wenn unklar ob temporaer oder dauerhaft → chat_agent
 
