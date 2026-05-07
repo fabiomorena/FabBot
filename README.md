@@ -349,6 +349,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 184** ✅ Memory-Parser zweistufig (Issue #140) – agent/skills/__init__.py: Skill-Loader mit LRU-Cache + Include-Resolver; agent/skills/memory/: 10 Skill-Dateien (router + 9 Kategorien) + _shared_security.md; memory_agent.py: _parse_memory_intent auf zweistufigen Router (Haiku) + Extractor (Sonnet) refactoriert, Signatur unverändert; 19 neue Tests; 1428 tests green
 - **Phase 185** ✅ Curator Review-Fixes – curator.py: _remove_pinned_from_input() implementiert (rekursiv _pinned-Keys entfernen) + bei _analyze_profile aufgerufen; _truncate_profile_yaml() kürzt sektionsweise statt hart bei Zeichen 8000; .env.example: PROFILE_SNAPSHOT_TTL dokumentiert; heartbeat_scheduler.py: at-least-once Semantik für mark_alerted() kommentiert; 1428 tests green
 - **Phase 186** ✅ Supervisor Routing Fix (Issue #161) – supervisor.py: _match_pre_routing strippt äußere Anführungszeichen vor Prefix-Check; _PRE_ROUTING_RULES um Save-Trigger erweitert (merk dir das, notiere, bitte merke dir u.a.); SUPERVISOR_PROMPT erkennt biographische Fakten als implizite Memory-Intents (Name+Beziehung/Ort); 1452 tests green
+- **Phase 187** ✅ Bug #164: merke-dir-das klassifiziert Profil-Fakt vs. Bot-Instruktion (Issue #164) – memory_agent.py: _is_merke_dir_das-Branch ruft zuerst _parse_memory_intent mit synthetischer prev_human-Message auf; category != bot_instruction → _save_to_profile statt _formulate_bot_instruction_from_context; _save_to_profile als gemeinsamer Hilfspfad extrahiert (kein Duplikat-Code); 1452 tests green
 
 ---
 
