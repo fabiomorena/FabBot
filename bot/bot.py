@@ -888,7 +888,16 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
         else:
             message_text = f"{prefix}\n\n{text}"
         await _delete_thinking(thinking)
-        await handle_message_text(update, ctx.bot, message_text)
+        # PDF-Inhalt ist Datei-Content, kein User-Input → sanitize_input_async überspringen
+        state = {
+            "messages": [HumanMessage(content=message_text)],
+            "telegram_chat_id": chat_id,
+            "next_agent": None,
+        }
+        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
+        async with _get_invoke_lock(chat_id):
+            response_msg = await _invoke_and_extract(state, config)
+        await _dispatch_response(response_msg, ctx.bot, chat_id, update)
     except Exception as e:
         logger.error(f"on_document PDF-Fehler: {e}", exc_info=True)
         await update.message.reply_text("Fehler beim Lesen des PDFs.")
