@@ -72,6 +72,8 @@ _TTS_MAX_HITL_OUTPUT = 300
 
 _IMAGE_MAX_PX = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5 MB
+_PDF_MAX_BYTES = 20_000_000  # 20 MB
+_PDF_MAX_CHARS = 100_000  # Zeichen-Limit für extrahierten Text
 
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
 _background_tasks: set[asyncio.Task] = set()
@@ -809,9 +811,20 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     doc = update.message.document
-    if not doc or not doc.mime_type or not doc.mime_type.startswith("image/"):
-        await update.message.reply_text("Nur Bilder werden unterstützt (JPEG, PNG, WebP).")
+    if not doc or not doc.mime_type:
+        await update.message.reply_text("Anhang konnte nicht verarbeitet werden.")
         return
+
+    mime = doc.mime_type
+    if mime.startswith("image/"):
+        await _handle_document_image(update, ctx, doc, mime, chat_id, user_id)
+    elif mime == "application/pdf":
+        await _handle_document_pdf(update, ctx, doc, chat_id, user_id)
+    else:
+        await update.message.reply_text(f"Dateityp '{mime}' wird nicht unterstützt. Unterstützt: Bilder, PDF.")
+
+
+async def _handle_document_image(update, ctx, doc, mime, chat_id, user_id) -> None:
     if doc.file_size and doc.file_size > _IMAGE_MAX_BYTES:
         await update.message.reply_text(f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB).")
         return
@@ -829,17 +842,70 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         tg_file = await ctx.bot.get_file(doc.file_id)
         img_bytes = await tg_file.download_as_bytearray()
-        resized, media_type = _resize_image(bytes(img_bytes), doc.mime_type or "image/jpeg")
+        resized, media_type = _resize_image(bytes(img_bytes), mime)
         img_b64 = base64.standard_b64encode(resized).decode("utf-8")
         vision_result = await analyze_image_direct(img_b64, caption, media_type, chat_id)
         await update.message.reply_text(vision_result)
         await speak_and_send(vision_result, ctx.bot, chat_id)
         await _update_vision_memory(chat_id, caption, vision_result)
     except Exception as e:
-        logger.error(f"on_document Fehler: {e}", exc_info=True)
+        logger.error(f"on_document Bild-Fehler: {e}", exc_info=True)
         await update.message.reply_text("Fehler bei der Bildanalyse.")
     finally:
         await _delete_thinking(thinking)
+
+
+async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
+    if doc.file_size and doc.file_size > _PDF_MAX_BYTES:
+        await update.message.reply_text(f"PDF zu groß (max. {_PDF_MAX_BYTES // 1_000_000} MB).")
+        return
+    caption = update.message.caption or ""
+    if caption:
+        is_safe, result = await sanitize_input_async(caption, user_id)
+        if not is_safe:
+            log_blocked(result, caption, user_id)
+            await update.message.reply_text(f"Eingabe abgelehnt: {result}")
+            return
+        caption = result
+    thinking = await update.message.reply_text("Lese PDF...")
+    try:
+        import fitz  # pymupdf
+
+        tg_file = await ctx.bot.get_file(doc.file_id)
+        pdf_bytes = bytes(await tg_file.download_as_bytearray())
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+            pages_text = [page.get_text() for page in pdf_doc]
+        text = "\n\n".join(pages_text).strip()
+        if not text:
+            await update.message.reply_text("PDF enthält keinen lesbaren Text (z.B. gescanntes Bild).")
+            return
+        if len(text) > _PDF_MAX_CHARS:
+            text = text[:_PDF_MAX_CHARS] + f"\n\n[… Text auf {_PDF_MAX_CHARS} Zeichen gekürzt]"
+        filename = doc.file_name or "dokument.pdf"
+        prefix = f"[PDF: {filename}]"
+        if caption:
+            message_text = f"{prefix}\n{caption}\n\n{text}"
+        else:
+            message_text = f"{prefix}\n\n{text}"
+        await _delete_thinking(thinking)
+        await handle_message_text(update, ctx.bot, message_text)
+    except Exception as e:
+        logger.error(f"on_document PDF-Fehler: {e}", exc_info=True)
+        await update.message.reply_text("Fehler beim Lesen des PDFs.")
+        await _delete_thinking(thinking)
+
+
+@restricted
+async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if await _is_duplicate(update):
+        return
+    location = update.message.location
+    if not location:
+        return
+    lat = location.latitude
+    lon = location.longitude
+    message_text = f"[Standort] Latitude: {lat}, Longitude: {lon}"
+    await handle_message_text(update, ctx.bot, message_text)
 
 
 @restricted
@@ -1191,7 +1257,8 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("curator", cmd_curator, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
-    app.add_handler(MessageHandler(filters.Document.IMAGE, on_document, block=False))
+    app.add_handler(MessageHandler(filters.Document.ALL, on_document, block=False))
+    app.add_handler(MessageHandler(filters.LOCATION, on_location, block=False))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
 
