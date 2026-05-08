@@ -99,6 +99,7 @@ overrides==7.7.0
 packageurl-python==0.17.6
 packaging==26.0
 pillow==12.2.0
+pymupdf==1.27.2.3
 pip-api==0.0.34
 pip-requirements-parser==32.0.1
 pip-tools==7.5.3
