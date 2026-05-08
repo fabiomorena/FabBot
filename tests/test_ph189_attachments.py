@@ -157,7 +157,7 @@ class TestHandleDocumentPdf:
         assert "keinen lesbaren Text" in combined
 
     @pytest.mark.asyncio
-    async def test_pdf_text_passed_to_handle_message_text(self):
+    async def test_pdf_text_passed_to_invoke(self):
         from bot.bot import _handle_document_pdf
 
         update = _make_update(mime_type="application/pdf", file_size=1000, filename="bericht.pdf")
@@ -166,11 +166,16 @@ class TestHandleDocumentPdf:
         with (
             patch("bot.bot._delete_thinking", AsyncMock()),
             patch("fitz.open", MagicMock(return_value=fitz_doc)),
-            patch("bot.bot.handle_message_text", AsyncMock()) as mock_hmt,
+            patch("bot.bot._invoke_and_extract", AsyncMock(return_value="")) as mock_inv,
+            patch("bot.bot._dispatch_response", AsyncMock()),
+            patch("bot.bot._get_invoke_lock") as mock_lock,
         ):
+            mock_lock.return_value.__aenter__ = AsyncMock(return_value=None)
+            mock_lock.return_value.__aexit__ = AsyncMock(return_value=False)
             await _handle_document_pdf(update, ctx, update.message.document, 42, 99)
-        mock_hmt.assert_called_once()
-        text_arg = mock_hmt.call_args[0][2]
+        mock_inv.assert_called_once()
+        state_arg = mock_inv.call_args[0][0]
+        text_arg = state_arg["messages"][0].content
         assert "[PDF: bericht.pdf]" in text_arg
         assert "Seite 1 Inhalt" in text_arg
         assert "Seite 2 Inhalt" in text_arg
@@ -185,11 +190,15 @@ class TestHandleDocumentPdf:
         with (
             patch("bot.bot._delete_thinking", AsyncMock()),
             patch("fitz.open", MagicMock(return_value=fitz_doc)),
-            patch("bot.bot.handle_message_text", AsyncMock()) as mock_hmt,
+            patch("bot.bot._invoke_and_extract", AsyncMock(return_value="")) as mock_inv,
+            patch("bot.bot._dispatch_response", AsyncMock()),
+            patch("bot.bot._get_invoke_lock") as mock_lock,
             patch("bot.bot.sanitize_input_async", AsyncMock(return_value=(True, "Bitte zusammenfassen"))),
         ):
+            mock_lock.return_value.__aenter__ = AsyncMock(return_value=None)
+            mock_lock.return_value.__aexit__ = AsyncMock(return_value=False)
             await _handle_document_pdf(update, ctx, update.message.document, 42, 99)
-        text_arg = mock_hmt.call_args[0][2]
+        text_arg = mock_inv.call_args[0][0]["messages"][0].content
         assert "Bitte zusammenfassen" in text_arg
 
     @pytest.mark.asyncio
@@ -203,10 +212,14 @@ class TestHandleDocumentPdf:
         with (
             patch("bot.bot._delete_thinking", AsyncMock()),
             patch("fitz.open", MagicMock(return_value=fitz_doc)),
-            patch("bot.bot.handle_message_text", AsyncMock()) as mock_hmt,
+            patch("bot.bot._invoke_and_extract", AsyncMock(return_value="")) as mock_inv,
+            patch("bot.bot._dispatch_response", AsyncMock()),
+            patch("bot.bot._get_invoke_lock") as mock_lock,
         ):
+            mock_lock.return_value.__aenter__ = AsyncMock(return_value=None)
+            mock_lock.return_value.__aexit__ = AsyncMock(return_value=False)
             await _handle_document_pdf(update, ctx, update.message.document, 42, 99)
-        text_arg = mock_hmt.call_args[0][2]
+        text_arg = mock_inv.call_args[0][0]["messages"][0].content
         assert "gekürzt" in text_arg
 
     @pytest.mark.asyncio
