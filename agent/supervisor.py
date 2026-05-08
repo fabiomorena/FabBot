@@ -148,6 +148,12 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
         "vision_agent",
         "foto-trigger",
     ),
+    # Phase 189: Standort- und PDF-Anhänge → chat_agent
+    (
+        ("[standort]", "[pdf:"),
+        "chat_agent",
+        "anhang-trigger",
+    ),
     # Issue #37: CPU/RAM/Disk direkt → system_agent, kein LLM-Call nötig
     (
         (
