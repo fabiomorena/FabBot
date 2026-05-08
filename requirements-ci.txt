@@ -147,6 +147,7 @@ packaging==26.0
     #   langchain-core
     #   langsmith
 pillow==12.2.0
+pymupdf==1.27.2.3
 propcache==0.4.1
     # via
     #   aiohttp
