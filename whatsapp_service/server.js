@@ -154,7 +154,7 @@ app.post('/send', requireAuth, async (req, res) => {
 
     try {
         const contacts = await client.getContacts();
-        const toTrim   = to.trim().replace(/\s*\(Du\)\s*$/i, '').trim();
+        const toTrim   = to.trim().replace(/[ ]?\(Du\)[ ]?$/i, '').trim();
         const toLow    = toTrim.toLowerCase();
 
         // Kontakt-Suche: exakter Match bevorzugt, dann case-insensitive, dann partial
