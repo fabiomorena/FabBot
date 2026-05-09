@@ -74,6 +74,7 @@ _IMAGE_MAX_PX = 1920
 _IMAGE_MAX_BYTES = 5_000_000  # 5 MB
 _PDF_MAX_BYTES = 20_000_000  # 20 MB
 _PDF_MAX_CHARS = 100_000  # Zeichen-Limit für extrahierten Text
+_AUDIO_MAX_BYTES = 25_000_000  # 25 MB
 
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
 _background_tasks: set[asyncio.Task] = set()
@@ -820,8 +821,10 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _handle_document_image(update, ctx, doc, mime, chat_id, user_id)
     elif mime == "application/pdf":
         await _handle_document_pdf(update, ctx, doc, chat_id, user_id)
+    elif mime.startswith("audio/"):
+        await _handle_document_audio(update, ctx, doc, chat_id)
     else:
-        await update.message.reply_text(f"Dateityp '{mime}' wird nicht unterstützt. Unterstützt: Bilder, PDF.")
+        await update.message.reply_text(f"Dateityp '{mime}' wird nicht unterstützt. Unterstützt: Bilder, PDF, Audio.")
 
 
 async def _handle_document_image(update, ctx, doc, mime, chat_id, user_id) -> None:
@@ -904,6 +907,32 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
         await _delete_thinking(thinking)
 
 
+async def _handle_document_audio(update, ctx, doc, chat_id) -> None:
+    if doc.file_size and doc.file_size > _AUDIO_MAX_BYTES:
+        await update.message.reply_text(f"Audio-Datei zu groß (max. {_AUDIO_MAX_BYTES // 1_000_000} MB).")
+        return
+    thinking = await update.message.reply_text("Transkribiere...")
+    try:
+        tg_file = await ctx.bot.get_file(doc.file_id)
+        audio_bytes = bytes(await tg_file.download_as_bytearray())
+        text = await transcribe_audio(audio_bytes)
+        if not text:
+            await update.message.reply_text("Transkription fehlgeschlagen.")
+            return
+        await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+        thinking = None
+        await handle_message_text(update, ctx.bot, text)
+    except (TimedOut, NetworkError) as e:
+        logger.warning(f"Telegram network error in audio document handler: {e}")
+        await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
+    except Exception as e:
+        logger.error(f"Audio document handler error: {e}", exc_info=True)
+        await update.message.reply_text("Fehler bei der Verarbeitung der Audio-Datei.")
+    finally:
+        if thinking is not None:
+            await _delete_thinking(thinking)
+
+
 @restricted
 async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
@@ -946,6 +975,33 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         logger.error(f"Voice handler error: {e}", exc_info=True)
         await update.message.reply_text("Fehler bei der Verarbeitung der Sprachnachricht.")
+    finally:
+        if thinking is not None:
+            await _delete_thinking(thinking)
+
+
+@restricted
+async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if await _is_duplicate(update):
+        return
+    thinking = await update.message.reply_text("Transkribiere...")
+    try:
+        audio = update.message.audio
+        tg_file = await ctx.bot.get_file(audio.file_id)
+        audio_bytes = await tg_file.download_as_bytearray()
+        text = await transcribe_audio(bytes(audio_bytes))
+        if not text:
+            await update.message.reply_text("Transkription fehlgeschlagen.")
+            return
+        await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+        thinking = None
+        await handle_message_text(update, ctx.bot, text)
+    except (TimedOut, NetworkError) as e:
+        logger.warning(f"Telegram network error in audio handler: {e}")
+        await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
+    except Exception as e:
+        logger.error(f"Audio handler error: {e}", exc_info=True)
+        await update.message.reply_text("Fehler bei der Verarbeitung der Audio-Datei.")
     finally:
         if thinking is not None:
             await _delete_thinking(thinking)
@@ -1265,6 +1321,7 @@ def build_bot() -> Application:
     app.add_handler(CommandHandler("wa_contact", cmd_wa_contact, block=False))
     app.add_handler(CommandHandler("curator", cmd_curator, block=False))
     app.add_handler(MessageHandler(filters.VOICE, on_voice, block=False))
+    app.add_handler(MessageHandler(filters.AUDIO, on_audio, block=False))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo, block=False))
     app.add_handler(MessageHandler(filters.Document.ALL, on_document, block=False))
     app.add_handler(MessageHandler(filters.LOCATION, on_location, block=False))

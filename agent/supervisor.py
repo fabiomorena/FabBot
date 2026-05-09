@@ -22,6 +22,7 @@ from agent.agents.memory_agent import memory_agent
 from agent.agents.vision_agent import vision_agent
 from agent.agents.whatsapp_agent import whatsapp_agent
 from agent.agents.system_agent import system_agent
+from agent.agents.youtube_agent import youtube_agent
 from agent.protocol import Proto
 
 # Issue #98: Single Source of Truth für alle Agenten.
@@ -38,6 +39,7 @@ _AGENTS: dict[str, object] = {
     "vision_agent": vision_agent,
     "whatsapp_agent": whatsapp_agent,
     "system_agent": system_agent,
+    "youtube_agent": youtube_agent,
 }
 
 logger = logging.getLogger(__name__)
@@ -105,6 +107,7 @@ Verfuegbare Agenten:
 - computer_agent: Desktop-Steuerung, Screenshots, Apps oeffnen
 - vision_agent: Bildanalyse von Fotos. Wird automatisch geroutet wenn Nachricht mit [FOTO] beginnt.
 - whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte.
+- youtube_agent: YouTube-Video analysieren, zusammenfassen oder Fragen beantworten. Wird automatisch geroutet wenn eine youtube.com- oder youtu.be-URL erkannt wird.
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
@@ -131,6 +134,7 @@ reminder_agent
 memory_agent
 chat_agent
 system_agent
+youtube_agent
 FINISH
 """
 
@@ -379,10 +383,26 @@ def _pre_route_table(_state: AgentState, _messages: list, routing: list) -> str 
     return None
 
 
+_YT_URL_RE = re.compile(r"youtube\.com/watch|youtu\.be/")
+
+
+def _pre_route_youtube(_state: AgentState, _messages: list, routing: list) -> str | None:
+    if not routing:
+        return None
+    last_content = routing[-1].content if hasattr(routing[-1], "content") else ""
+    if isinstance(last_content, list):
+        last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
+    if _YT_URL_RE.search(last_content):
+        logger.info("supervisor: Pre-Routing → youtube_agent (YouTube-URL erkannt)")
+        return "youtube_agent"
+    return None
+
+
 _PRE_ROUTE_PIPELINE = [
     _pre_route_image_data,
     _pre_route_ai_message,
     _pre_route_vision_followup,
+    _pre_route_youtube,
     _pre_route_table,
 ]
 
