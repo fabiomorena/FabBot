@@ -326,6 +326,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 188** ✅ Memory-Agent Note-Fallback bei YAML-Review-Fehler – YAML-Review INVALID löst nicht mehr User-Fehlermeldung aus, sondern Note-Fallback (Daten gehen nicht verloren); Supervisor-Prompt um transiente Sozialereignisse mit Namen erweitert; 1452 tests green
 - **Phase 189** ✅ Telegram-Anhänge: PDF + Standort – PDF-Dateien via pymupdf extrahiert und an Claude weitergeleitet (20 MB Limit, 100k Zeichen-Cap, Caption-Support); Standort-Handler für filters.LOCATION registriert (Koordinaten als [Standort]-Text an Graph); on_document auf filters.Document.ALL erweitert; 1465 tests green
 - **Phase 190** ✅ Audio-Transkription + YouTube-Agent – filters.AUDIO Handler + _handle_document_audio für audio/* MIME-Typen via Whisper-Pipeline (#138); eigenständiger youtube_agent mit zweistufiger Logik (youtube-transcript-api → yt-dlp + Whisper-Fallback), Pre-Routing via _pre_route_youtube (#144); 1485 tests green
+- **Phase 191** ✅ Musik-Erkennung bei Audio-Transkription – NoSpeechDetectedError via Whisper no_speech_prob + Unicode-Script-Heuristik; klare Fehlermeldung statt Halluzinations-Transkript bei Musik-Dateien; 1485 tests green
 
 ---
 
