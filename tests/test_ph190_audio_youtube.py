@@ -232,7 +232,6 @@ class TestYoutubeAgent:
         from agent.agents.youtube_agent import youtube_agent
 
         state = _make_state("Fass mir dieses Video zusammen: https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        mock_entries = [{"text": "Hallo", "start": 0.0}, {"text": "Welt", "start": 1.0}]
         mock_llm_response = MagicMock()
         mock_llm_response.content = "Eine Zusammenfassung."
 
