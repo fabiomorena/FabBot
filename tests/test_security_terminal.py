@@ -2534,7 +2534,7 @@ class TestFormatSearchResults:
         results = [{"title": "Test Artikel", "url": "https://example.com", "content": "Inhalt hier"}]
         result = _format_search_results(results, "Tavily")
         assert "Test Artikel" in result
-        assert "https://example.com" in result
+        assert result.count("https://example.com") > 0
         assert "Tavily" in result
 
     def test_source_label_included(self) -> None:

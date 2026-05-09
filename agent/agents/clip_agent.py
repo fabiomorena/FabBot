@@ -2,9 +2,11 @@ import os
 import re
 import socket
 import ipaddress
-import httpx
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
+
+import httpx
 from langchain_core.messages import SystemMessage, HumanMessage
 from agent.audit import log_action
 from agent.llm import get_llm
@@ -13,6 +15,37 @@ from agent.utils import extract_llm_text
 KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
 MAX_FETCH_SIZE = 50_000
 TIMEOUT = 15
+
+
+class _HTMLTextExtractor(HTMLParser):
+    _SKIP_TAGS = frozenset({"script", "style"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip: int = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS and self._skip > 0:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip == 0:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
+
+def _strip_html(html_text: str) -> str:
+    parser = _HTMLTextExtractor()
+    parser.feed(html_text)
+    return re.sub(r"\s+", " ", parser.get_text()).strip()
+
 
 SUMMARIZE_PROMPT = """Du bist ein Wissensmanager. Erstelle aus dem folgenden Webseiteninhalt
 eine strukturierte Markdown-Notiz auf Deutsch.
@@ -128,12 +161,7 @@ async def _fetch_url(url: str) -> str:
         resp.raise_for_status()
         text = resp.text[:MAX_FETCH_SIZE]
 
-    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:MAX_FETCH_SIZE]
+    return _strip_html(text)[:MAX_FETCH_SIZE]
 
 
 async def clip_agent(url: str, chat_id: int) -> dict:
