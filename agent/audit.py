@@ -83,7 +83,9 @@ def log_action(
         "user_id": telegram_user_id,
         "status": status,
     }
-    audit_logger.info(json.dumps(entry, ensure_ascii=False))  # noqa: S — intentional audit log, user_id is internal numeric ID
+    audit_logger.info(
+        json.dumps(entry, ensure_ascii=False)
+    )  # codeql[py/clear-text-logging-sensitive-data] intentional audit log
 
 
 def log_blocked(reason: str, input_text: str, telegram_user_id: int | None = None) -> None:

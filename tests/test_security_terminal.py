@@ -2534,7 +2534,9 @@ class TestFormatSearchResults:
         results = [{"title": "Test Artikel", "url": "https://example.com", "content": "Inhalt hier"}]
         result = _format_search_results(results, "Tavily")
         assert "Test Artikel" in result
-        assert "https://example.com" in result  # noqa: S — test checks URL preserved in output, not security filtering
+        assert (
+            "https://example.com" in result
+        )  # codeql[py/incomplete-url-substring-sanitization] test assertion, not a security check
         assert "Tavily" in result
 
     def test_source_label_included(self) -> None:
