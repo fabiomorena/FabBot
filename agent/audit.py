@@ -80,12 +80,10 @@ def log_action(
         "agent": agent,
         "action": _sanitize(action[:200]),
         "detail": _sanitize(detail[:300]),
-        "user_id": str(telegram_user_id) if telegram_user_id is not None else None,
+        "user_id": telegram_user_id,
         "status": status,
     }
-    audit_logger.info(
-        json.dumps(entry, ensure_ascii=False)
-    )  # codeql[py/clear-text-logging-sensitive-data] intentional audit log
+    audit_logger.info(json.dumps(entry, ensure_ascii=False))
 
 
 def log_blocked(reason: str, input_text: str, telegram_user_id: int | None = None) -> None:
