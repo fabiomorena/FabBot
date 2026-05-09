@@ -42,7 +42,7 @@ from langgraph.errors import GraphRecursionError
 
 from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
-from bot.transcribe import transcribe_audio
+from bot.transcribe import NoSpeechDetectedError, transcribe_audio
 from bot.search import search_knowledge, list_knowledge
 from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled, stop_speaking
 from agent.security import sanitize_input_async, check_action_rate_limit
@@ -922,6 +922,10 @@ async def _handle_document_audio(update, ctx, doc, chat_id) -> None:
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
         thinking = None
         await handle_message_text(update, ctx.bot, text)
+    except NoSpeechDetectedError:
+        await update.message.reply_text(
+            "Die Datei enthält keine erkennbare Sprache. Ich kann nur gesprochene Inhalte transkribieren, keine Musik."
+        )
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error in audio document handler: {e}")
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
@@ -996,6 +1000,10 @@ async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
         thinking = None
         await handle_message_text(update, ctx.bot, text)
+    except NoSpeechDetectedError:
+        await update.message.reply_text(
+            "Die Datei enthält keine erkennbare Sprache. Ich kann nur gesprochene Inhalte transkribieren, keine Musik."
+        )
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error in audio handler: {e}")
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
