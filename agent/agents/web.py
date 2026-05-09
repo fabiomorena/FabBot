@@ -4,6 +4,8 @@ import socket
 import logging
 import json
 import ipaddress
+from html.parser import HTMLParser
+
 import httpx
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
@@ -14,6 +16,37 @@ from agent.profile import load_profile
 from agent.agents.chat_agent import _is_short_confirmation
 
 logger = logging.getLogger(__name__)
+
+
+class _HTMLTextExtractor(HTMLParser):
+    _SKIP_TAGS = frozenset({"script", "style"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip: int = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS and self._skip > 0:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip == 0:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
+
+def _strip_html(html_text: str) -> str:
+    parser = _HTMLTextExtractor()
+    parser.feed(html_text)
+    return re.sub(r"\s+", " ", parser.get_text()).strip()
+
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
@@ -220,12 +253,7 @@ async def _fetch_url(url: str) -> str:
             return f"Fehler: Nicht unterstuetzter Content-Type: {content_type}"
 
         text = resp.text[:MAX_FETCH_SIZE]
-        text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-        text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:MAX_FETCH_SIZE]
+        return _strip_html(text)[:MAX_FETCH_SIZE]
 
 
 def _forecast_day_index(query: str) -> int:

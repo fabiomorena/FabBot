@@ -83,7 +83,7 @@ def log_action(
         "user_id": telegram_user_id,
         "status": status,
     }
-    audit_logger.info(json.dumps(entry, ensure_ascii=False))
+    audit_logger.info(json.dumps(entry, ensure_ascii=False))  # noqa: S — intentional audit log, user_id is internal numeric ID
 
 
 def log_blocked(reason: str, input_text: str, telegram_user_id: int | None = None) -> None:

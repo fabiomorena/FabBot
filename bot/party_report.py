@@ -24,10 +24,36 @@ import logging
 import os
 import re
 from datetime import date, datetime, timedelta
+from html.parser import HTMLParser
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+class _HTMLTextExtractor(HTMLParser):
+    _SKIP_TAGS = frozenset({"script", "style"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip: int = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS and self._skip > 0:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip == 0:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
 
 # ---------------------------------------------------------------------------
 # Konfiguration
@@ -182,10 +208,9 @@ def _build_date_query(friday: date, saturday: date, sunday: date) -> str:
 
 
 def _strip_html(html: str) -> str:
-    text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    parser = _HTMLTextExtractor()
+    parser.feed(html)
+    return re.sub(r"\s+", " ", parser.get_text()).strip()
 
 
 # ---------------------------------------------------------------------------
