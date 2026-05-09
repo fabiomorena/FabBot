@@ -80,7 +80,7 @@ def log_action(
         "agent": agent,
         "action": _sanitize(action[:200]),
         "detail": _sanitize(detail[:300]),
-        "user_id": telegram_user_id,
+        "user_id": str(telegram_user_id) if telegram_user_id is not None else None,
         "status": status,
     }
     audit_logger.info(
