@@ -23,7 +23,7 @@ def _make_thinking_mock():
     return thinking
 
 
-def _make_update(mime_type=None, file_size=None, audio_file_id="audio_123"):
+def _make_update(mime_type=None, file_size=None, audio_file_id="audio_123", caption=None):
     doc = MagicMock()
     doc.mime_type = mime_type
     doc.file_size = file_size
@@ -36,6 +36,7 @@ def _make_update(mime_type=None, file_size=None, audio_file_id="audio_123"):
     msg = MagicMock()
     msg.document = doc if mime_type else None
     msg.audio = audio
+    msg.caption = caption
     msg.reply_text = AsyncMock(return_value=_make_thinking_mock())
 
     update = MagicMock()
@@ -170,7 +171,7 @@ class TestHandleDocumentAudio:
 
         update = _make_update(mime_type="audio/mpeg", file_size=_AUDIO_MAX_BYTES + 1)
         ctx = _make_ctx()
-        await _handle_document_audio(update, ctx, update.message.document, 42)
+        await _handle_document_audio(update, ctx, update.message.document, 42, 99)
 
         update.message.reply_text.assert_called_once()
         assert "zu groß" in update.message.reply_text.call_args[0][0]
@@ -186,7 +187,7 @@ class TestHandleDocumentAudio:
             patch("bot.bot.handle_message_text", AsyncMock()) as mock_hmt,
             patch("bot.bot._delete_thinking", AsyncMock()),
         ):
-            await _handle_document_audio(update, ctx, update.message.document, 42)
+            await _handle_document_audio(update, ctx, update.message.document, 42, 99)
 
         mock_trans.assert_called_once()
         mock_hmt.assert_called_once()
@@ -202,10 +203,31 @@ class TestHandleDocumentAudio:
             patch("bot.bot.transcribe_audio", AsyncMock(return_value=None)),
             patch("bot.bot._delete_thinking", AsyncMock()),
         ):
-            await _handle_document_audio(update, ctx, update.message.document, 42)
+            await _handle_document_audio(update, ctx, update.message.document, 42, 99)
 
         calls = [c[0][0] for c in update.message.reply_text.call_args_list]
         assert any("fehlgeschlagen" in c for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_caption_prepended_to_transcript(self):
+        from bot.bot import _handle_document_audio
+
+        update = _make_update(mime_type="audio/mpeg", file_size=1000, caption="übersetze")
+        ctx = _make_ctx()
+        with (
+            patch("bot.bot.transcribe_audio", AsyncMock(return_value="Hello world")) as mock_trans,
+            patch("bot.bot.handle_message_text", AsyncMock()) as mock_hmt,
+            patch("bot.bot.sanitize_input_async", AsyncMock(return_value=(True, "übersetze"))),
+            patch("bot.bot._delete_thinking", AsyncMock()),
+        ):
+            await _handle_document_audio(update, ctx, update.message.document, 42, 99)
+
+        mock_trans.assert_called_once()
+        mock_hmt.assert_called_once()
+        passed_text = mock_hmt.call_args[0][2]
+        assert "übersetze" in passed_text
+        assert "Hello world" in passed_text
+        assert "[Audio-Transkription]" in passed_text
 
 
 # ---------------------------------------------------------------------------

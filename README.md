@@ -327,6 +327,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 189** ✅ Telegram-Anhänge: PDF + Standort – PDF-Dateien via pymupdf extrahiert und an Claude weitergeleitet (20 MB Limit, 100k Zeichen-Cap, Caption-Support); Standort-Handler für filters.LOCATION registriert (Koordinaten als [Standort]-Text an Graph); on_document auf filters.Document.ALL erweitert; 1465 tests green
 - **Phase 190** ✅ Audio-Transkription + YouTube-Agent – filters.AUDIO Handler + _handle_document_audio für audio/* MIME-Typen via Whisper-Pipeline (#138); eigenständiger youtube_agent mit zweistufiger Logik (youtube-transcript-api → yt-dlp + Whisper-Fallback), Pre-Routing via _pre_route_youtube (#144); 1485 tests green
 - **Phase 191** ✅ Musik-Erkennung bei Audio-Transkription – NoSpeechDetectedError via Whisper no_speech_prob + Unicode-Script-Heuristik; klare Fehlermeldung statt Halluzinations-Transkript bei Musik-Dateien; 1485 tests green
+- **Phase 192** ✅ Audio-Dokument Caption-Support – Caption bei audio/* Dokumenten wird als Benutzeranweisung an den Agenten weitergegeben (analog PDF-Handler); sanitize_input_async für Caption; Transkript + Caption als strukturierter Text; 1486 tests green
 
 ---
 
