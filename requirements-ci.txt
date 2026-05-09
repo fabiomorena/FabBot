@@ -243,6 +243,8 @@ yarl==1.23.0
 zstandard==0.25.0
     # via langsmith
 
+youtube-transcript-api==1.2.4
+yt-dlp==2026.3.17
 pytest
 langgraph-checkpoint-sqlite==3.0.3
 aiosqlite==0.22.1
