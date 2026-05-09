@@ -822,7 +822,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     elif mime == "application/pdf":
         await _handle_document_pdf(update, ctx, doc, chat_id, user_id)
     elif mime.startswith("audio/"):
-        await _handle_document_audio(update, ctx, doc, chat_id)
+        await _handle_document_audio(update, ctx, doc, chat_id, user_id)
     else:
         await update.message.reply_text(f"Dateityp '{mime}' wird nicht unterstützt. Unterstützt: Bilder, PDF, Audio.")
 
@@ -907,10 +907,18 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
         await _delete_thinking(thinking)
 
 
-async def _handle_document_audio(update, ctx, doc, chat_id) -> None:
+async def _handle_document_audio(update, ctx, doc, chat_id, user_id) -> None:
     if doc.file_size and doc.file_size > _AUDIO_MAX_BYTES:
         await update.message.reply_text(f"Audio-Datei zu groß (max. {_AUDIO_MAX_BYTES // 1_000_000} MB).")
         return
+    caption = update.message.caption or ""
+    if caption:
+        is_safe, result = await sanitize_input_async(caption, user_id)
+        if not is_safe:
+            log_blocked(result, caption, user_id)
+            await update.message.reply_text(f"Eingabe abgelehnt: {result}")
+            return
+        caption = result
     thinking = await update.message.reply_text("Transkribiere...")
     try:
         tg_file = await ctx.bot.get_file(doc.file_id)
@@ -921,7 +929,8 @@ async def _handle_document_audio(update, ctx, doc, chat_id) -> None:
             return
         await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
         thinking = None
-        await handle_message_text(update, ctx.bot, text)
+        message_text = f"{caption}\n\n[Audio-Transkription]\n{text}" if caption else text
+        await handle_message_text(update, ctx.bot, message_text)
     except NoSpeechDetectedError:
         await update.message.reply_text(
             "Die Datei enthält keine erkennbare Sprache. Ich kann nur gesprochene Inhalte transkribieren, keine Musik."
