@@ -325,6 +325,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 180–187** ✅ Proaktivität & Memory – Node.js 24 Migration, Background Curator (wöchentliche Profil-Konsolidierung + Hotfix-Serie), Beziehungs-Alert (ChromaDB $lt-Filter, 14d/30d Schwellwerte), Memory-Parser zweistufig (Haiku-Router + Sonnet-Extractor), Curator Review-Fixes, Supervisor Routing Fix (#161), merke-dir-das Profil-Fakt vs. Bot-Instruktion (#164); 1452 tests green
 - **Phase 188** ✅ Memory-Agent Note-Fallback bei YAML-Review-Fehler – YAML-Review INVALID löst nicht mehr User-Fehlermeldung aus, sondern Note-Fallback (Daten gehen nicht verloren); Supervisor-Prompt um transiente Sozialereignisse mit Namen erweitert; 1452 tests green
 - **Phase 189** ✅ Telegram-Anhänge: PDF + Standort – PDF-Dateien via pymupdf extrahiert und an Claude weitergeleitet (20 MB Limit, 100k Zeichen-Cap, Caption-Support); Standort-Handler für filters.LOCATION registriert (Koordinaten als [Standort]-Text an Graph); on_document auf filters.Document.ALL erweitert; 1465 tests green
+- **Phase 190** ✅ Audio-Transkription + YouTube-Agent – filters.AUDIO Handler + _handle_document_audio für audio/* MIME-Typen via Whisper-Pipeline (#138); eigenständiger youtube_agent mit zweistufiger Logik (youtube-transcript-api → yt-dlp + Whisper-Fallback), Pre-Routing via _pre_route_youtube (#144); 1485 tests green
 
 ---
 
