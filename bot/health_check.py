@@ -303,7 +303,7 @@ async def _check_tts() -> tuple[bool, str]:
     try:
         import httpx
 
-        api_key = get_settings().openai_api_key or None
+        api_key = get_settings().openai_api_key.get_secret_value() or None
         if not api_key:
             return False, "OPENAI_API_KEY nicht gesetzt"
 

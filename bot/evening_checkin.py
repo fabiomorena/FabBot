@@ -44,7 +44,7 @@ def _already_sent_today() -> bool:
     if not last_date:
         return False
     try:
-        return date.fromisoformat(last_date) == date.today()
+        return date.fromisoformat(last_date) == datetime.now(_TZ_BERLIN).date()
     except ValueError:
         return False
 
@@ -89,6 +89,8 @@ async def run_evening_checkin_scheduler(bot, chat_id: int) -> None:
     """Läuft als Background-Task und sendet täglich den Abend-Check-in."""
     settings = get_settings()
     checkin_time = settings.evening_checkin_time
+    # hour/minute werden einmalig gecacht; eine Änderung von EVENING_CHECKIN_TIME
+    # zur Laufzeit (+ cache_clear()) greift erst nach Bot-Neustart.
     hour, minute = map(int, checkin_time.split(":"))
     logger.info(f"Evening Check-in Scheduler gestartet – täglich um {checkin_time} Uhr")
 
@@ -114,7 +116,7 @@ async def run_evening_checkin_scheduler(bot, chat_id: int) -> None:
         try:
             question = await _generate_checkin_question(chat_id)
             await bot.send_message(chat_id=chat_id, text=question)
-            _save_state({"last_sent_date": date.today().isoformat()})
+            _save_state({"last_sent_date": datetime.now(_TZ_BERLIN).date().isoformat()})
 
             try:
                 from agent.supervisor import get_graph
