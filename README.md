@@ -328,6 +328,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 190** ✅ Audio-Transkription + YouTube-Agent – filters.AUDIO Handler + _handle_document_audio für audio/* MIME-Typen via Whisper-Pipeline (#138); eigenständiger youtube_agent mit zweistufiger Logik (youtube-transcript-api → yt-dlp + Whisper-Fallback), Pre-Routing via _pre_route_youtube (#144); 1485 tests green
 - **Phase 191** ✅ Musik-Erkennung bei Audio-Transkription – NoSpeechDetectedError via Whisper no_speech_prob + Unicode-Script-Heuristik; klare Fehlermeldung statt Halluzinations-Transkript bei Musik-Dateien; 1485 tests green
 - **Phase 192** ✅ Audio-Dokument Caption-Support – Caption bei audio/* Dokumenten wird als Benutzeranweisung an den Agenten weitergegeben (analog PDF-Handler); sanitize_input_async für Caption; Transkript + Caption als strukturierter Text; 1486 tests green
+- **Phase 193** ✅ Bug-Fixes & Security-Enforcement – _truncate_profile_yaml hard-truncate Fallback wenn erste Sektion > 8000 Zeichen (#181); Fork-Agent Batch-Learning Log-Level DEBUG→INFO (#147); AST-basierter Enforcement-Test für sanitize_input_async in allen MessageHandlern + PR-Template (#182); 1497 tests green
 
 ---
 

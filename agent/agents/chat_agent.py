@@ -492,7 +492,7 @@ async def chat_agent(state: AgentState) -> AgentState:
                 task = asyncio.create_task(_apply_learning(batch_text))
                 _background_tasks.add(task)
                 task.add_done_callback(_background_tasks.discard)
-                logger.debug(
+                logger.info(
                     f"Fork-Agent Batch-Learning gestartet (Turn {_turn_counter}, {len(human_messages)} Nachrichten)."
                 )
         except Exception as e:

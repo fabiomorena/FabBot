@@ -139,14 +139,18 @@ def _truncate_profile_yaml(profile: dict) -> str:
 
     sections: list[str] = []
     total = 0
-    skipped = 0
+    added_keys = 0
     for key, value in profile.items():
         chunk = yaml.dump({key: value}, allow_unicode=True, default_flow_style=False, sort_keys=False)
         if total + len(chunk) > _YAML_MAX_CHARS:
-            skipped += 1
-        else:
-            sections.append(chunk)
-            total += len(chunk)
+            if not sections:  # erste Sektion bereits zu groß → hard truncate
+                sections.append(chunk[:_YAML_MAX_CHARS])
+                added_keys = 1
+            break
+        sections.append(chunk)
+        total += len(chunk)
+        added_keys += 1
+    skipped = len(profile) - added_keys
     if skipped:
         sections.append(f"# ... [{skipped} Sektionen gekürzt]\n")
     return "".join(sections)
