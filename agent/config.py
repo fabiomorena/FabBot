@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     session_summary_min_messages: int = 10
     party_report_day: int = 2
     party_report_time: str = "20:00"
+    evening_checkin_time: str = "21:00"
+    evening_checkin_enabled: bool = True
+    proactive_quiet_start: int = 22
+    proactive_quiet_end: int = 8
 
     # ── TTS ───────────────────────────────────────────────────────────────────
     tts_enabled: bool = True
