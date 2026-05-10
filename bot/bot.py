@@ -1360,7 +1360,7 @@ async def _post_shutdown(app: Application) -> None:
 
 
 def build_bot() -> Application:
-    token = get_settings().telegram_bot_token
+    token = get_settings().telegram_bot_token.get_secret_value()
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN nicht gesetzt")
 

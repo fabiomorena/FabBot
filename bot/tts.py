@@ -49,7 +49,7 @@ _TTS_RETRY_DELAY = 0.5
 
 
 def _get_openai_api_key() -> str:
-    return get_settings().openai_api_key
+    return get_settings().openai_api_key.get_secret_value()
 
 
 def _get_tts_voice() -> str:

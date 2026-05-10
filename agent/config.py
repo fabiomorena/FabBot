@@ -13,7 +13,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -23,6 +23,7 @@ def _default_knowledge_dir() -> str:
 
 class Settings(BaseSettings):
     # ── LLM ──────────────────────────────────────────────────────────────────
+    # ANTHROPIC_API_KEY wird direkt von langchain-anthropic aus os.environ gelesen.
     anthropic_model_sonnet: str = "claude-sonnet-4-6"
     anthropic_model_haiku: str = "claude-haiku-4-5-20251001"
 
@@ -33,11 +34,11 @@ class Settings(BaseSettings):
     langchain_endpoint: str = "https://api.smith.langchain.com"
 
     # ── Web-Search APIs ───────────────────────────────────────────────────────
-    tavily_api_key: str | None = None
-    brave_api_key: str | None = None
+    tavily_api_key: SecretStr | None = None
+    brave_api_key: SecretStr | None = None
 
     # ── OpenAI ────────────────────────────────────────────────────────────────
-    openai_api_key: str = ""
+    openai_api_key: SecretStr = SecretStr("")
     openai_tts_voice: str = "nova"
     openai_tts_model: str = "tts-1"
 
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     fabbot_extra_paths: str = ""
 
     # ── Telegram ──────────────────────────────────────────────────────────────
-    telegram_bot_token: str = ""
+    telegram_bot_token: SecretStr = SecretStr("")
     telegram_allowed_user_ids: str = ""
     telegram_chat_id: str = ""
 

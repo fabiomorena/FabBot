@@ -264,7 +264,8 @@ async def _noop() -> str:
 
 async def _search_club_events(club: dict, friday: date, saturday: date, sunday: date) -> str:
     """Phase 93: Tavily + RA-Direktfetch parallel, konkrete Datum-Range im Query."""
-    tavily_key = get_settings().tavily_api_key
+    _s = get_settings()
+    tavily_key = _s.tavily_api_key.get_secret_value() if _s.tavily_api_key else None
     date_query = _build_date_query(friday, saturday, sunday)
 
     # Alle Quellen parallel fetchen

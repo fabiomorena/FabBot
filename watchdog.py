@@ -67,7 +67,7 @@ from agent.config import get_settings as _get_settings  # noqa: E402
 
 _cfg = _get_settings()
 
-BOT_TOKEN = _cfg.telegram_bot_token
+BOT_TOKEN = _cfg.telegram_bot_token.get_secret_value()
 
 # Phase 86 Fix #1: TELEGRAM_CHAT_ID bevorzugen (semantisch korrekt).
 # User-ID ≠ Chat-ID – in Direktchats zufällig identisch, in Gruppen nicht.
