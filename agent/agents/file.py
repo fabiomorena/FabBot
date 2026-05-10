@@ -1,15 +1,17 @@
 import logging
-import os
 import re
 import json
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
 from langchain_core.messages import SystemMessage, AIMessage
+
+from agent.config import get_settings
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
 from agent.protocol import Proto
+
+logger = logging.getLogger(__name__)
 from agent.utils import extract_llm_text
 
 MAX_PATH_DEPTH = 5
@@ -23,7 +25,7 @@ def _build_allowed_paths() -> list[Path]:
         Path.home() / "Projects",
         Path.home() / "PythonProject",
     ]
-    extra = os.getenv("FABBOT_EXTRA_PATHS", "")
+    extra = get_settings().fabbot_extra_paths
     for ep in extra.split(":") if extra else []:
         ep = ep.strip()
         if not ep:

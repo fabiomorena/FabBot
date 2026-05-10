@@ -37,10 +37,12 @@ from pathlib import Path
 
 import httpx
 
+from agent.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 # ── Konfiguration ─────────────────────────────────────────────────────────
-_SERVICE_PORT = int(os.getenv("WA_SERVICE_PORT", "8767"))
+_SERVICE_PORT = get_settings().wa_service_port
 _SERVICE_URL = f"http://127.0.0.1:{_SERVICE_PORT}"
 _TOKEN_PATH = Path.home() / ".fabbot" / "wa_service_token"
 _STATUS_FILE = Path.home() / ".fabbot" / "wa_ready"

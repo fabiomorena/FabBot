@@ -66,6 +66,18 @@ def reset_profile_cache():
 
 
 @pytest.fixture(autouse=True)
+def reset_settings_cache():
+    """Leert den get_settings()-Cache vor und nach jedem Test.
+    Damit greifen patch.dict("os.environ", ...) Patches korrekt auf Settings.
+    """
+    from agent.config import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def reset_confirm_pending():
     """Leert den HITL-Pending-Dict vor und nach jedem Test.
     Verhindert dass hängende Futures aus einem Test den nächsten blockieren.

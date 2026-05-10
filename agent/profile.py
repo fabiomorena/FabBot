@@ -81,6 +81,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from agent.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 _PROFILE_PATH = Path(__file__).parent.parent / "personal_profile.yaml"
@@ -97,7 +99,7 @@ _migration_lock = threading.Lock()
 _migration_done: bool = False
 
 # Phase 178: Frozen-Snapshot für stabilen Prefix-Cache innerhalb einer Session.
-_SNAPSHOT_TTL: float = float(os.environ.get("PROFILE_SNAPSHOT_TTL", "300"))
+_SNAPSHOT_TTL: float = get_settings().profile_snapshot_ttl
 _profile_snapshot: dict[str, Any] | None = None
 _snapshot_expires_at: float = 0.0
 

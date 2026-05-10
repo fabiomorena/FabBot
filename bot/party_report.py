@@ -21,10 +21,12 @@ Phase 93 (Issue #5):
 
 import asyncio
 import logging
-import os
 import re
 from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
+
+from agent.config import get_settings
+
 
 import httpx
 
@@ -59,7 +61,7 @@ class _HTMLTextExtractor(HTMLParser):
 # Konfiguration
 # ---------------------------------------------------------------------------
 
-_raw_time = os.getenv("PARTY_REPORT_TIME", "20:00")
+_raw_time = get_settings().party_report_time
 try:
     _h, _m = _raw_time.split(":")
     assert 0 <= int(_h) <= 23 and 0 <= int(_m) <= 59
@@ -69,7 +71,7 @@ except Exception:
     PARTY_REPORT_TIME = "20:00"
 
 try:
-    PARTY_REPORT_DAY = int(os.getenv("PARTY_REPORT_DAY", "2"))
+    PARTY_REPORT_DAY = get_settings().party_report_day
     assert 0 <= PARTY_REPORT_DAY <= 6
 except Exception:
     PARTY_REPORT_DAY = 2
@@ -262,7 +264,7 @@ async def _noop() -> str:
 
 async def _search_club_events(club: dict, friday: date, saturday: date, sunday: date) -> str:
     """Phase 93: Tavily + RA-Direktfetch parallel, konkrete Datum-Range im Query."""
-    tavily_key = os.getenv("TAVILY_API_KEY")
+    tavily_key = get_settings().tavily_api_key
     date_query = _build_date_query(friday, saturday, sunday)
 
     # Alle Quellen parallel fetchen

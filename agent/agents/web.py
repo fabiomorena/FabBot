@@ -1,4 +1,3 @@
-import os
 import re
 import socket
 import logging
@@ -9,6 +8,7 @@ from html.parser import HTMLParser
 import httpx
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
+from agent.config import get_settings
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
@@ -48,8 +48,8 @@ def _strip_html(html_text: str) -> str:
     return re.sub(r"\s+", " ", parser.get_text()).strip()
 
 
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
+TAVILY_API_KEY = get_settings().tavily_api_key
+BRAVE_API_KEY = get_settings().brave_api_key
 
 MAX_FETCH_SIZE = 50_000
 MAX_RESPONSE_LENGTH = 5000

@@ -1,4 +1,3 @@
-import os
 import re
 import socket
 import ipaddress
@@ -8,11 +7,12 @@ from pathlib import Path
 
 import httpx
 from langchain_core.messages import SystemMessage, HumanMessage
+from agent.config import get_settings
 from agent.audit import log_action
 from agent.llm import get_llm
 from agent.utils import extract_llm_text
 
-KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
+KNOWLEDGE_DIR = Path(get_settings().knowledge_dir)
 MAX_FETCH_SIZE = 50_000
 TIMEOUT = 15
 

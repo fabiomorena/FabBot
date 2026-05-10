@@ -27,15 +27,17 @@ Design-Prinzipien:
 
 import asyncio
 import logging
-import os
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from agent.config import get_settings
+
+
 logger = logging.getLogger(__name__)
 
 # Konfiguration
-_raw_time = os.getenv("HEALTH_CHECK_TIME", "06:00")
+_raw_time = get_settings().health_check_time
 try:
     _h, _m = _raw_time.split(":")
     assert 0 <= int(_h) <= 23 and 0 <= int(_m) <= 59
@@ -100,8 +102,9 @@ async def _check_web() -> tuple[bool, str]:
     try:
         import httpx
 
-        tavily_key = os.getenv("TAVILY_API_KEY")
-        brave_key = os.getenv("BRAVE_API_KEY")
+        cfg = get_settings()
+        tavily_key = cfg.tavily_api_key
+        brave_key = cfg.brave_api_key
 
         if not tavily_key and not brave_key:
             return False, "Kein API-Key konfiguriert (TAVILY_API_KEY / BRAVE_API_KEY)"
@@ -238,7 +241,7 @@ async def _check_whatsapp() -> tuple[bool, str]:
     try:
         import httpx
 
-        port = int(os.getenv("WA_SERVICE_PORT", "8767"))
+        port = get_settings().wa_service_port
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"http://127.0.0.1:{port}/health")
             if resp.status_code < 500:
@@ -300,7 +303,7 @@ async def _check_tts() -> tuple[bool, str]:
     try:
         import httpx
 
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = get_settings().openai_api_key or None
         if not api_key:
             return False, "OPENAI_API_KEY nicht gesetzt"
 

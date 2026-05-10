@@ -13,11 +13,12 @@ Geprüfte APIs:
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+
+from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,11 @@ _API_LABELS: dict[str, str] = {
 
 def _active_apis() -> list[str]:
     """Gibt APIs zurück die geprüft werden sollen (Anthropic immer, Rest nur mit Key)."""
+    cfg = get_settings()
     apis = ["anthropic"]
-    if os.getenv("TAVILY_API_KEY"):
+    if cfg.tavily_api_key:
         apis.append("tavily")
-    if os.getenv("BRAVE_API_KEY"):
+    if cfg.brave_api_key:
         apis.append("brave")
     return apis
 

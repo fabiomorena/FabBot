@@ -16,7 +16,8 @@ Fail-safe: Fehler werden geloggt, nie weitergereicht.
 """
 
 import logging
-import os
+
+from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +31,14 @@ def setup_telemetry() -> None:
     diese Funktion prüft nur ob die Konfiguration vollständig ist
     und gibt einen klaren Log-Status aus.
     """
-    tracing = os.getenv("LANGCHAIN_TRACING_V2", "").strip().lower()
+    cfg = get_settings()
+    tracing = cfg.langchain_tracing_v2.strip().lower()
 
     if tracing != "true":
         logger.debug("LangSmith Telemetry deaktiviert (LANGCHAIN_TRACING_V2 nicht gesetzt oder nicht 'true').")
         return
 
-    api_key = os.getenv("LANGCHAIN_API_KEY", "").strip()
+    api_key = cfg.langchain_api_key.strip()
     if not api_key:
         logger.warning(
             "LANGCHAIN_TRACING_V2=true aber LANGCHAIN_API_KEY fehlt – "
@@ -45,8 +47,8 @@ def setup_telemetry() -> None:
         )
         return
 
-    project = os.getenv("LANGCHAIN_PROJECT", "FabBot")
-    endpoint = os.getenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    project = cfg.langchain_project
+    endpoint = cfg.langchain_endpoint
 
     try:
         import langsmith  # noqa: F401 – prüft ob Paket installiert ist

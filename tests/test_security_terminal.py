@@ -5087,7 +5087,7 @@ class TestOpenAIRetry:
         mock_client.post = AsyncMock(side_effect=[resp_429, resp_200])
 
         with (
-            patch("os.getenv", return_value="sk-test"),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
@@ -5113,7 +5113,7 @@ class TestOpenAIRetry:
         mock_client.post = AsyncMock(side_effect=[resp_503, resp_200])
 
         with (
-            patch("os.getenv", return_value="sk-test"),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
@@ -5135,7 +5135,7 @@ class TestOpenAIRetry:
         mock_client.post = AsyncMock(return_value=resp_400)
 
         with (
-            patch("os.getenv", return_value="sk-test"),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
@@ -5167,7 +5167,7 @@ class TestOpenAIRetry:
             sleep_calls.append(delay)
 
         with (
-            patch("os.getenv", return_value="sk-test"),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("asyncio.sleep", side_effect=mock_sleep),
         ):
@@ -5199,8 +5199,11 @@ class TestLazyApiKey:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=resp_200)
 
-        # Key wird via os.getenv zur Laufzeit gelesen
-        with patch("os.getenv", return_value="sk-live-key"), patch("httpx.AsyncClient", return_value=mock_client):
+        # Key wird via get_settings() zur Laufzeit gelesen
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-live-key"}),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
             result = await _synthesize_openai("Test")
 
         assert result == b"audio"
@@ -5492,11 +5495,13 @@ class TestGetLlmSingleton:
 
     def test_get_llm_reinitializes_on_model_change(self) -> None:
         """get_llm() erstellt neue Instanz wenn Modell sich ändert."""
+        from agent.config import get_settings
         import agent.llm as llm_module
 
         llm_module._llm = None
         with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-sonnet-4-20250514"}):
             llm1 = llm_module.get_llm()
+        get_settings.cache_clear()
         with patch.dict("os.environ", {"ANTHROPIC_MODEL_SONNET": "claude-opus-4-6"}):
             llm2 = llm_module.get_llm()
         assert llm1 is not llm2

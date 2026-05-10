@@ -1,8 +1,9 @@
-import os
 import re
 from pathlib import Path
 
-KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
+from agent.config import get_settings
+
+KNOWLEDGE_DIR = Path(get_settings().knowledge_dir)
 MAX_RESULTS = 5
 
 

@@ -27,9 +27,12 @@ und opus-4-7 haben kein Datums-Suffix mehr).
 """
 
 import logging
-import os
 import re
+
 from langchain_anthropic import ChatAnthropic
+
+from agent.config import get_settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +66,12 @@ def _warn_if_unusual(model: str) -> None:
 
 def get_sonnet_model() -> str:
     """Gibt den konfigurierten Sonnet-Modell-String zurueck."""
-    return os.getenv("ANTHROPIC_MODEL_SONNET", _DEFAULT_SONNET).strip()
+    return get_settings().anthropic_model_sonnet.strip()
 
 
 def get_haiku_model() -> str:
     """Gibt den konfigurierten Haiku-Modell-String zurueck."""
-    return os.getenv("ANTHROPIC_MODEL_HAIKU", _DEFAULT_HAIKU).strip()
+    return get_settings().anthropic_model_haiku.strip()
 
 
 def validate_models_on_startup() -> None:
