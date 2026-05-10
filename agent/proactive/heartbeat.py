@@ -1,11 +1,14 @@
 """
-agent/proactive/heartbeat.py – Phase 145 (Issue #92), erweitert Phase 152 (Issue #95)
+agent/proactive/heartbeat.py – Phase 145 (Issue #92), erweitert Phase 152 (Issue #95),
+                               Phase 195 (Issue #103)
 
 Heartbeat-Logik: Cooldown-Management, Trigger-Evaluation, Nachrichtengenerierung.
 
 API:
   is_on_cooldown() → bool
   is_muted() → bool
+  is_quiet_hours() → bool
+  get_berlin_hour() → int
   set_cooldown() → None
   mute_proactive(hours) → None
   unmute_proactive() → None
@@ -18,8 +21,11 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
+
+_TZ_BERLIN = ZoneInfo("Europe/Berlin")
 
 COOLDOWN_FILE = Path.home() / ".fabbot" / "proactive_cooldown.json"
 COOLDOWN_HOURS = 6
@@ -29,6 +35,29 @@ CONTEXT_FETCH_TIMEOUT = 3.0
 LLM_TIMEOUT = 5.0
 SESSION_CTX_MAX_CHARS = 500
 MEMORY_N_RESULTS = 3
+
+
+def get_berlin_hour() -> int:
+    return datetime.now(_TZ_BERLIN).hour
+
+
+def is_quiet_hours() -> bool:
+    from agent.config import get_settings
+
+    s = get_settings()
+    h = get_berlin_hour()
+    return h < s.proactive_quiet_end or h >= s.proactive_quiet_start
+
+
+def _get_tageszeit_label() -> str:
+    h = get_berlin_hour()
+    if 5 <= h < 12:
+        return "Morgen"
+    if 12 <= h < 18:
+        return "Nachmittag"
+    if 18 <= h < 22:
+        return "Abend"
+    return "Nacht"
 
 
 def _load_cooldown() -> dict:
@@ -185,6 +214,7 @@ def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
     due = trigger_item.get("due_date", "")
     entity_type = trigger_item.get("entity_type", "")
     context = trigger_item.get("source_context", "")
+    tageszeit = _get_tageszeit_label()
     return f"""Schreibe eine kurze, freundliche proaktive Telegram-Nachricht für Fabio.
 
 === Persönliches Profil ===
@@ -199,11 +229,13 @@ def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
 === Trigger ===
 - {entity_type} "{name}" ist in {days} Tag(en) fällig ({due})
 - Ursprünglicher Kontext: {context}
+- Tageszeit: {tageszeit}
 
 Regeln:
 - Max. 2 Sätze
 - Direkt und persönlich ("Du wolltest...", "Hast du schon...")
 - Kein "Guten Morgen", keine förmliche Begrüßung
+- Ton passend zur Tageszeit (Morgen: motivierend, Abend: ruhiger)
 - Deutsch, keine URLs
 - Leere Sektionen ignorieren"""
 
@@ -213,6 +245,7 @@ def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str]) ->
     days = trigger_item.get("days_since_mention", "?")
     entity_type = trigger_item.get("entity_type", "")
     context = trigger_item.get("source_context", "")
+    tageszeit = _get_tageszeit_label()
     return f"""Schreibe eine kurze, warme Erinnerung für Fabio.
 
 === Persönliches Profil ===
@@ -224,11 +257,13 @@ def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str]) ->
 === Trigger ===
 - {entity_type} "{name}" wurde seit {days} Tagen nicht mehr erwähnt
 - Letzter bekannter Kontext: {context}
+- Tageszeit: {tageszeit}
 
 Regeln:
 - Max. 2 Sätze
 - Empathisch, nicht vorwurfsvoll ("Vermisst du eigentlich...", "Wie geht's eigentlich...")
 - Bei Personen: persönlich und warm. Bei Projekten: aktivierend ("liegt seit ... brach")
+- Ton passend zur Tageszeit (Morgen: motivierend, Abend: ruhiger)
 - Kein "Guten Morgen", keine förmliche Begrüßung
 - Deutsch, keine URLs
 - Leere Sektionen ignorieren"""

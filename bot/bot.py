@@ -1251,6 +1251,20 @@ async def _post_init(app: Application) -> None:
         )
     )
 
+    from bot.evening_checkin import run_evening_checkin_scheduler
+
+    task_checkin = asyncio.create_task(
+        run_evening_checkin_scheduler(app.bot, chat_id), name="scheduler:evening_checkin"
+    )
+    _scheduler_tasks.append(task_checkin)
+    task_checkin.add_done_callback(
+        lambda t: (
+            logger.error(f"Evening Check-in Scheduler unerwartet beendet: {t.exception()}")
+            if not t.cancelled() and t.exception()
+            else None
+        )
+    )
+
     from bot.curator_scheduler import run_curator_scheduler
 
     task_curator = asyncio.create_task(run_curator_scheduler(app.bot, chat_id), name="scheduler:curator")

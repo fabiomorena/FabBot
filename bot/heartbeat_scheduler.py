@@ -17,6 +17,7 @@ from agent.proactive.heartbeat import (
     generate_proactive_message,
     is_muted,
     is_on_cooldown,
+    is_quiet_hours,
     set_cooldown,
 )
 from agent.proactive.pending import get_pending_items
@@ -56,6 +57,10 @@ async def _run_heartbeat(bot, chat_id: int) -> None:
     await run_api_health_check(bot, chat_id)
 
     if is_on_cooldown() or is_muted():
+        return
+
+    # Issue #103: Keine proaktiven Nachrichten während Ruhestunden (22:00–08:00 Berlin)
+    if is_quiet_hours():
         return
 
     pending = get_pending_items(limit=20)
