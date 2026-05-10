@@ -168,7 +168,8 @@ async def _fetch_raw_news(query: str) -> str:
     try:
         import httpx
 
-        tavily_key = get_settings().tavily_api_key
+        _s = get_settings()
+        tavily_key = _s.tavily_api_key.get_secret_value() if _s.tavily_api_key else None
         if not tavily_key:
             return ""
         async with httpx.AsyncClient(timeout=15) as client:

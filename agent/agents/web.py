@@ -48,8 +48,9 @@ def _strip_html(html_text: str) -> str:
     return re.sub(r"\s+", " ", parser.get_text()).strip()
 
 
-TAVILY_API_KEY = get_settings().tavily_api_key
-BRAVE_API_KEY = get_settings().brave_api_key
+_s = get_settings()
+TAVILY_API_KEY = _s.tavily_api_key.get_secret_value() if _s.tavily_api_key else None
+BRAVE_API_KEY = _s.brave_api_key.get_secret_value() if _s.brave_api_key else None
 
 MAX_FETCH_SIZE = 50_000
 MAX_RESPONSE_LENGTH = 5000
