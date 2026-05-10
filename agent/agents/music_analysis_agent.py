@@ -20,7 +20,6 @@ _ESSENTIA_AVAILABLE = False
 _LIBROSA_AVAILABLE = False
 
 try:
-    import essentia
     import essentia.standard as es
 
     _ESSENTIA_AVAILABLE = True
