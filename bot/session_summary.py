@@ -32,9 +32,10 @@ Design-Prinzipien:
 
 import asyncio
 import logging
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,9 @@ logger = logging.getLogger(__name__)
 # Konfiguration
 # ---------------------------------------------------------------------------
 
-SESSIONS_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen"))) / "Sessions"
+SESSIONS_DIR = Path(get_settings().knowledge_dir) / "Sessions"
 
-_raw_time = os.getenv("SESSION_SUMMARY_TIME", "23:30")
+_raw_time = get_settings().session_summary_time
 try:
     _h, _m = _raw_time.split(":")
     assert 0 <= int(_h) <= 23 and 0 <= int(_m) <= 59
@@ -54,7 +55,7 @@ except Exception:
     SESSION_SUMMARY_TIME = "23:30"
 
 try:
-    MIN_HUMAN_MESSAGES = int(os.getenv("SESSION_SUMMARY_MIN_MESSAGES", "10"))
+    MIN_HUMAN_MESSAGES = get_settings().session_summary_min_messages
     assert MIN_HUMAN_MESSAGES >= 1
 except Exception:
     MIN_HUMAN_MESSAGES = 10

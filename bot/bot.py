@@ -29,7 +29,6 @@ Phase 84 Änderungen: handle_message_text aufgeteilt, _delete_thinking mit suppr
 
 import contextlib
 import logging
-import os
 import asyncio
 from collections import deque, OrderedDict
 from pathlib import Path
@@ -40,6 +39,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
 from langgraph.errors import GraphRecursionError
 
+from agent.config import get_settings
 from bot.auth import restricted
 from bot.confirm import request_confirmation, register_confirmation_handler
 from bot.transcribe import NoSpeechDetectedError, transcribe_audio
@@ -1155,9 +1155,10 @@ async def _post_init(app: Application) -> None:
 
     asyncio.create_task(_warmup_profile())
 
-    chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    cfg = get_settings()
+    chat_id_str = cfg.telegram_chat_id.strip()
     if not chat_id_str:
-        fallback_raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+        fallback_raw = cfg.telegram_allowed_user_ids
         chat_id_str = fallback_raw.split(",")[0].strip() if fallback_raw else ""
 
     if not chat_id_str:
@@ -1305,7 +1306,7 @@ async def _post_shutdown(app: Application) -> None:
 
 
 def build_bot() -> Application:
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = get_settings().telegram_bot_token
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN nicht gesetzt")
 

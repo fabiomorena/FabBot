@@ -1,8 +1,9 @@
-import os
 import logging
 from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes
+
+from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ def _load_allowed_ids() -> frozenset[int]:
     funktional "blockiert", würde aber den Fehler still verschlucken;
     RuntimeError stoppt den Bot-Start sauber mit einer klaren Fehlermeldung.
     """
-    raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+    raw = get_settings().telegram_allowed_user_ids
     if not raw.strip():
         raise RuntimeError(
             "TELEGRAM_ALLOWED_USER_IDS ist nicht gesetzt oder leer – "

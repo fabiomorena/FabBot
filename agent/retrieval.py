@@ -35,9 +35,10 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import re
 from pathlib import Path
+
+from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ _MIN_CHUNK_CHARS = 50
 _MAX_DISTANCE = 0.7
 _EMBED_BATCH_SIZE = 100
 
-_WISSEN_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(Path.home() / "Documents" / "Wissen")))
+_WISSEN_DIR = Path(get_settings().knowledge_dir)
 _SESSIONS_DIR = _WISSEN_DIR / "Sessions"
 
 # Semaphore – verhindert parallele ChromaDB-Writes.
@@ -218,7 +219,7 @@ async def _embed_texts(texts: list[str]) -> list[list[float]] | None:
     Erstellt Embeddings via OpenAI text-embedding-3-small.
     Ein einziger AsyncClient für alle Batches – HTTP/2-Connection-Reuse.
     """
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = get_settings().openai_api_key.strip()
     if not api_key:
         logger.error("OPENAI_API_KEY nicht gesetzt – Embedding nicht möglich.")
         return None

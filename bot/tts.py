@@ -10,11 +10,12 @@ Phase 70 Fixes:
 
 import asyncio
 import logging
-import os
 import re
 import subprocess
 import tempfile
 from pathlib import Path
+
+from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,26 +41,23 @@ _VALID_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
 _VALID_MODELS = {"tts-1", "tts-1-hd"}
 
 # Öffentlich für externe Lesbarkeit/Tests – intern immer _get_tts_voice()/_get_tts_model() verwenden
-OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
-OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
+OPENAI_TTS_VOICE = get_settings().openai_tts_voice
+OPENAI_TTS_MODEL = get_settings().openai_tts_model
 
 _TTS_RETRY_STATUS = {429, 503}
 _TTS_RETRY_DELAY = 0.5
 
 
 def _get_openai_api_key() -> str:
-    """Lazy read – Key-Rotation ohne Neustart moeglich."""
-    return os.getenv("OPENAI_API_KEY", "")
+    return get_settings().openai_api_key
 
 
 def _get_tts_voice() -> str:
-    """Lazy read von OPENAI_TTS_VOICE – konsistent mit _get_openai_api_key."""
-    return os.getenv("OPENAI_TTS_VOICE", "nova")
+    return get_settings().openai_tts_voice
 
 
 def _get_tts_model() -> str:
-    """Lazy read von OPENAI_TTS_MODEL – konsistent mit _get_openai_api_key."""
-    return os.getenv("OPENAI_TTS_MODEL", "tts-1")
+    return get_settings().openai_tts_model
 
 
 def validate_tts_config() -> None:
@@ -79,7 +77,7 @@ def validate_tts_config() -> None:
 
 def is_tts_enabled() -> bool:
     if _tts_enabled is None:
-        return os.getenv("TTS_ENABLED", "true").lower() != "false"
+        return get_settings().tts_enabled
     return _tts_enabled
 
 

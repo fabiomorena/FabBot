@@ -62,14 +62,19 @@ def _load_env() -> None:
 
 _load_env()
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+# Settings werden NACH _load_env() geladen – env vars aus .env sind dann gesetzt.
+from agent.config import get_settings as _get_settings  # noqa: E402
+
+_cfg = _get_settings()
+
+BOT_TOKEN = _cfg.telegram_bot_token
 
 # Phase 86 Fix #1: TELEGRAM_CHAT_ID bevorzugen (semantisch korrekt).
 # User-ID ≠ Chat-ID – in Direktchats zufällig identisch, in Gruppen nicht.
 # Fallback auf erste ALLOWED_ID für Abwärtskompatibilität.
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+CHAT_ID = _cfg.telegram_chat_id.strip()
 if not CHAT_ID:
-    CHAT_ID = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",")[0].strip()
+    CHAT_ID = _cfg.telegram_allowed_user_ids.split(",")[0].strip()
 
 STATE_PATH = Path.home() / ".fabbot" / "watchdog_state.json"
 LOG_PREFIX = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Watchdog:"
@@ -77,9 +82,9 @@ LOG_PREFIX = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Watchdog:"
 # Phase 86 Fix #6: Benannte Konstante statt Magic Number.
 _ALERT_DELAY_MINUTES = 10
 
-WATCHDOG_AUTO_RESTART = os.getenv("WATCHDOG_AUTO_RESTART", "true").lower() == "true"
-WATCHDOG_RESTART_DELAY_MIN = int(os.getenv("WATCHDOG_RESTART_DELAY_MIN", "5"))
-WATCHDOG_MAX_RESTARTS = int(os.getenv("WATCHDOG_MAX_RESTARTS", "3"))
+WATCHDOG_AUTO_RESTART = _cfg.watchdog_auto_restart
+WATCHDOG_RESTART_DELAY_MIN = _cfg.watchdog_restart_delay_min
+WATCHDOG_MAX_RESTARTS = _cfg.watchdog_max_restarts
 
 # ---------------------------------------------------------------------------
 # State Management

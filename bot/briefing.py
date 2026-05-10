@@ -11,10 +11,10 @@ Phase 76: News via Haiku formatiert – saubere Bullets ohne Artefakte.
 
 import asyncio
 import logging
-import os
 import subprocess
 from datetime import datetime, date, timedelta
 
+from agent.config import get_settings
 from agent.proactive.pending import get_pending_items
 from agent.proactive.briefing_agent import orchestrate_briefing
 
@@ -49,7 +49,7 @@ def _format_pending_items(items: list[dict]) -> str:
     return "\n".join(lines)
 
 
-_raw_time = os.getenv("BRIEFING_TIME", "07:30")
+_raw_time = get_settings().briefing_time
 try:
     _h, _m = _raw_time.split(":")
     assert 0 <= int(_h) <= 23 and 0 <= int(_m) <= 59
@@ -168,7 +168,7 @@ async def _fetch_raw_news(query: str) -> str:
     try:
         import httpx
 
-        tavily_key = os.getenv("TAVILY_API_KEY")
+        tavily_key = get_settings().tavily_api_key
         if not tavily_key:
             return ""
         async with httpx.AsyncClient(timeout=15) as client:

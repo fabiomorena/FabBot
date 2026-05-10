@@ -1,10 +1,12 @@
 import asyncio
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+
+from agent.config import get_settings
 from agent.state import AgentState
 from agent.llm import get_llm
 
@@ -15,7 +17,7 @@ _background_tasks: set[asyncio.Task] = set()
 
 # Phase 179: Fork-Agent Learning Loop – Batch-Analyse alle N Turns
 _turn_counter: int = 0
-_MEMORY_NUDGE_INTERVAL: int = int(os.environ.get("MEMORY_NUDGE_INTERVAL", "10"))
+_MEMORY_NUDGE_INTERVAL: int = get_settings().memory_nudge_interval
 
 _CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
@@ -231,8 +233,7 @@ def _get_last_human_message(messages: list) -> str:
 def _get_context_window_size() -> int:
     """Liest CHAT_CONTEXT_WINDOW aus .env. Default: 40."""
     try:
-        raw = os.getenv("CHAT_CONTEXT_WINDOW", "40")
-        val = int(raw)
+        val = int(get_settings().chat_context_window)
         return max(10, min(200, val))
     except (ValueError, TypeError):
         return 40
