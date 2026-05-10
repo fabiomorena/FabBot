@@ -932,9 +932,16 @@ async def _handle_document_audio(update, ctx, doc, chat_id, user_id) -> None:
         message_text = f"{caption}\n\n[Audio-Transkription]\n{text}" if caption else text
         await handle_message_text(update, ctx.bot, message_text)
     except NoSpeechDetectedError:
-        await update.message.reply_text(
-            "Die Datei enthält keine erkennbare Sprache. Ich kann nur gesprochene Inhalte transkribieren, keine Musik."
-        )
+        await thinking.edit_text("Analysiere Musik...")
+        thinking = None
+        try:
+            from agent.agents.music_analysis_agent import analyze_music_bytes, format_analysis
+
+            analysis = await analyze_music_bytes(audio_bytes, doc.file_name or "audio.mp3")
+            await update.message.reply_text(format_analysis(analysis))
+        except Exception as exc:
+            logger.error(f"Musik-Analyse Fehler (document): {exc}", exc_info=True)
+            await update.message.reply_text("Musik-Analyse fehlgeschlagen.")
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error in audio document handler: {e}")
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
@@ -1010,9 +1017,16 @@ async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         thinking = None
         await handle_message_text(update, ctx.bot, text)
     except NoSpeechDetectedError:
-        await update.message.reply_text(
-            "Die Datei enthält keine erkennbare Sprache. Ich kann nur gesprochene Inhalte transkribieren, keine Musik."
-        )
+        await thinking.edit_text("Analysiere Musik...")
+        thinking = None
+        try:
+            from agent.agents.music_analysis_agent import analyze_music_bytes, format_analysis
+
+            analysis = await analyze_music_bytes(bytes(audio_bytes), "audio.ogg")
+            await update.message.reply_text(format_analysis(analysis))
+        except Exception as exc:
+            logger.error(f"Musik-Analyse Fehler (audio): {exc}", exc_info=True)
+            await update.message.reply_text("Musik-Analyse fehlgeschlagen.")
     except (TimedOut, NetworkError) as e:
         logger.warning(f"Telegram network error in audio handler: {e}")
         await update.message.reply_text("Netzwerkfehler – bitte nochmal versuchen.")
