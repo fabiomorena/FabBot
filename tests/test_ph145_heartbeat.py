@@ -241,6 +241,8 @@ class TestRunHeartbeat:
         with (
             patch("agent.proactive.heartbeat.COOLDOWN_FILE", cooldown_file),
             patch("bot.heartbeat_scheduler.get_pending_items", return_value=pending),
+            patch("bot.heartbeat_scheduler.run_api_health_check"),
+            patch("agent.proactive.relationship_alert.find_unmentioned_entities", return_value=[]),
         ):
             await _run_heartbeat(mock_bot, 12345)
 
