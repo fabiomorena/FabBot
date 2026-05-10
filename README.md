@@ -332,6 +332,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 194** ✅ Test-Isolation Heartbeat – test_skips_when_no_triggers patcht run_api_health_check + find_unmentioned_entities um echte Dateisystem-/HTTP-Zugriffe zu unterbinden; verhindert flakigen Lokalfehler durch lokalen api_health_state.json; 1498 tests green
 - **Phase 195** ✅ Companion/Proaktivität – Tageszeit-Guard (22:00–08:00 Berlin, is_quiet_hours) verhindert nächtliche Heartbeat-Nachrichten (#103); täglicher Abend-Check-in um 21:00 Uhr mit personalisierter LLM-Frage auf Basis des Tagesgesprächs, eigener State-Datei, unabhängig vom 6h-Cooldown (#109); 1513 tests green
 - **Phase 196** ✅ Musik-Analyse mit Essentia + librosa – BPM via RhythmExtractor2013, Key via KeyExtractor (Krumhansl-Schmuckler + Temperley) + librosa Chroma-Cross-Check, Energie/RMS/Spektrum; NoSpeechDetectedError in on_audio + _handle_document_audio löst automatisch Musik-Analyse aus statt Fehlermeldung; music_analysis_agent als LangGraph-Agent + deterministisches Pre-Routing [MUSIK-ANALYSE]; M3-native arm64-Wheel; closes #180; 1528 tests green
+- **Phase 197** ✅ Musik-Analyse → Chat-Bot-Übergabe – _update_music_memory() analog _update_vision_memory() speichert Analyse-Ergebnis im LangGraph-State; on_audio + _handle_document_audio schreiben nach Analyse caption + formatted result in den Gesprächskontext; Follow-up-Fragen zur analysierten Datei funktionieren jetzt wie bei Bildanalyse; 1528 tests green
 
 ---
 
