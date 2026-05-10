@@ -23,6 +23,7 @@ from agent.agents.vision_agent import vision_agent
 from agent.agents.whatsapp_agent import whatsapp_agent
 from agent.agents.system_agent import system_agent
 from agent.agents.youtube_agent import youtube_agent
+from agent.agents.music_analysis_agent import music_analysis_agent
 from agent.protocol import Proto
 
 # Issue #98: Single Source of Truth für alle Agenten.
@@ -40,6 +41,7 @@ _AGENTS: dict[str, object] = {
     "whatsapp_agent": whatsapp_agent,
     "system_agent": system_agent,
     "youtube_agent": youtube_agent,
+    "music_analysis_agent": music_analysis_agent,
 }
 
 logger = logging.getLogger(__name__)
@@ -108,6 +110,7 @@ Verfuegbare Agenten:
 - vision_agent: Bildanalyse von Fotos. Wird automatisch geroutet wenn Nachricht mit [FOTO] beginnt.
 - whatsapp_agent: WhatsApp-Nachricht senden. NUR bei expliziten Sende-Befehlen an erlaubte Kontakte.
 - youtube_agent: YouTube-Video analysieren, zusammenfassen oder Fragen beantworten. Wird automatisch geroutet wenn eine youtube.com- oder youtu.be-URL erkannt wird.
+- music_analysis_agent: Musik-Datei analysieren (BPM, Key, Energie). NUR bei expliziten Analyse-Anfragen mit Dateipfad zu einer Audio-Datei (.mp3, .wav, .flac, .aiff, .ogg, .m4a).
 
 Regeln:
 - Wenn die letzte Nachricht bereits eine Antwort eines Agenten enthaelt: FINISH
@@ -135,6 +138,7 @@ memory_agent
 chat_agent
 system_agent
 youtube_agent
+music_analysis_agent
 FINISH
 """
 
@@ -151,6 +155,12 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
         ("[foto]",),
         "vision_agent",
         "foto-trigger",
+    ),
+    # Issue #180: Musik-Analyse deterministisch routen
+    (
+        ("[musik-analyse]",),
+        "music_analysis_agent",
+        "musik-analyse-trigger",
     ),
     # Phase 189: Standort- und PDF-Anhänge → chat_agent
     (
