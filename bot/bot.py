@@ -178,6 +178,26 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
         logger.warning(f"Memory update nach HITL fehlgeschlagen (nicht kritisch): {e}")
 
 
+async def _update_music_memory(chat_id: int, caption: str, analysis_text: str) -> None:
+    try:
+        from agent.supervisor import get_graph
+        from langchain_core.messages import HumanMessage as HM
+
+        config = {"configurable": {"thread_id": str(chat_id)}}
+        human_text = f"[Audio] {caption}" if caption else "[Audio gesendet]"
+        await get_graph().aupdate_state(
+            config,
+            {
+                "messages": [HM(content=human_text), AIMessage(content=analysis_text)],
+                "last_agent_name": "music_analysis_agent",
+                "last_agent_result": analysis_text,
+            },
+            as_node="supervisor",
+        )
+    except Exception as e:
+        logger.warning(f"Music memory update fehlgeschlagen: {e}", exc_info=True)
+
+
 async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None:
     try:
         from agent.supervisor import get_graph
@@ -938,7 +958,9 @@ async def _handle_document_audio(update, ctx, doc, chat_id, user_id) -> None:
             from agent.agents.music_analysis_agent import analyze_music_bytes, format_analysis
 
             analysis = await analyze_music_bytes(audio_bytes, doc.file_name or "audio.mp3")
-            await update.message.reply_text(format_analysis(analysis))
+            formatted = format_analysis(analysis)
+            await update.message.reply_text(formatted)
+            await _update_music_memory(chat_id, caption, formatted)
         except Exception as exc:
             logger.error(f"Musik-Analyse Fehler (document): {exc}", exc_info=True)
             await update.message.reply_text("Musik-Analyse fehlgeschlagen.")
@@ -1004,6 +1026,8 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
+    chat_id = update.effective_chat.id
+    caption = update.message.caption or ""
     thinking = await update.message.reply_text("Transkribiere...")
     try:
         audio = update.message.audio
@@ -1023,7 +1047,9 @@ async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             from agent.agents.music_analysis_agent import analyze_music_bytes, format_analysis
 
             analysis = await analyze_music_bytes(bytes(audio_bytes), "audio.ogg")
-            await update.message.reply_text(format_analysis(analysis))
+            formatted = format_analysis(analysis)
+            await update.message.reply_text(formatted)
+            await _update_music_memory(chat_id, caption, formatted)
         except Exception as exc:
             logger.error(f"Musik-Analyse Fehler (audio): {exc}", exc_info=True)
             await update.message.reply_text("Musik-Analyse fehlgeschlagen.")
