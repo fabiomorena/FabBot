@@ -10,7 +10,6 @@ Testet:
 - skipped-Hinweis zeigt korrekte Anzahl übersprungener Sektionen
 """
 
-
 from agent.proactive.curator import _truncate_profile_yaml, _YAML_MAX_CHARS
 
 
