@@ -329,6 +329,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 191** ✅ Musik-Erkennung bei Audio-Transkription – NoSpeechDetectedError via Whisper no_speech_prob + Unicode-Script-Heuristik; klare Fehlermeldung statt Halluzinations-Transkript bei Musik-Dateien; 1485 tests green
 - **Phase 192** ✅ Audio-Dokument Caption-Support – Caption bei audio/* Dokumenten wird als Benutzeranweisung an den Agenten weitergegeben (analog PDF-Handler); sanitize_input_async für Caption; Transkript + Caption als strukturierter Text; 1486 tests green
 - **Phase 193** ✅ Bug-Fixes & Security-Enforcement – _truncate_profile_yaml hard-truncate Fallback wenn erste Sektion > 8000 Zeichen (#181); Fork-Agent Batch-Learning Log-Level DEBUG→INFO (#147); AST-basierter Enforcement-Test für sanitize_input_async in allen MessageHandlern + PR-Template (#182); 1497 tests green
+- **Phase 194** ✅ Test-Isolation Heartbeat – test_skips_when_no_triggers patcht run_api_health_check + find_unmentioned_entities um echte Dateisystem-/HTTP-Zugriffe zu unterbinden; verhindert flakigen Lokalfehler durch lokalen api_health_state.json; 1498 tests green
 
 ---
 
