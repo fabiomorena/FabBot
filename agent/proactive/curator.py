@@ -490,7 +490,7 @@ async def _debug_dry_run(*, force: bool = False) -> tuple[str | None, str]:
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=_PROPOSAL_TTL)).isoformat()
 
     ops = proposal.get("operations", [])
-    ops_hash = hashlib.md5(json.dumps(ops, sort_keys=True).encode()).hexdigest()
+    ops_hash = hashlib.md5(json.dumps(ops, sort_keys=True).encode(), usedforsecurity=False).hexdigest()
 
     state = _load_state()
     if not force and state.get("last_reported_ops_hash") == ops_hash:
