@@ -336,6 +336,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 198** ✅ SecretStr & Review-Fixes – telegram_bot_token/openai_api_key/tavily_api_key/brave_api_key auf SecretStr migriert (Keys in Logs maskiert); ANTHROPIC_API_KEY-Kommentar in config.py; evening_checkin date.today() → Berlin-aware; hour/minute-Caching dokumentiert; essentia Dev-Build-Kommentar in requirements.txt; 1528 tests green
 - **Phase 199** ✅ Briefing News via RSS – Tavily-News-Fetch ersetzt durch direkte RSS-Feeds (tagesschau.de, spiegel.de, zeit.de); verhindert UI-Artefakte/Homepage-Inhalte die Tavily bei include_domains lieferte; 1527 tests green
 - **Phase 200** ✅ Bugfixes & UX-Improvements – Curator-Dry-Run sendet Report nur bei geänderten Operationen (MD5-Hash-Vergleich); Whisper-Fallback zeigt Zwischenstatus im Chat via _bot_bridge; caffeinate-Watchdog überwacht Prozess und startet bei Absturz neu (bot/caffeinate.py); yt-dlp auf >= gelockert (#183); NamedTemporaryFile Windows-Caveat kommentiert (#184); closes #175, #183, #184, #197; 1528 tests green
+- **Phase 201** ✅ Event-Kategorie + Curator Preference-Fix – neues category=event im Memory-Router für einmalige Handlungen ("habe X gekauft/getan/erledigt"); event.md Skill-Prompt; save/delete-Handler speichert Events als Liste unter events.*; Curator erkennt falsch kategorisierte Preferences via misclassified_preferences (neue Analyse-Kategorie im LLM-Prompt); _build_proposal archiviert fehlerhafte Einträge und bereinigt leere Subcategories; format_report zeigt neue Kategorie; closes #202, #205; 1546 tests green
 
 ---
 
