@@ -106,6 +106,13 @@ async def youtube_agent(state: AgentState) -> AgentState:
 
     transcript = await _fetch_transcript(video_id)
     if not transcript:
+        chat_id = state.get("telegram_chat_id")
+        if chat_id:
+            from agent._bot_bridge import send_status
+
+            await send_status(
+                chat_id, "Kein Transcript verfügbar – lade Audio herunter und transkribiere mit Whisper..."
+            )
         transcript = await _whisper_fallback(video_id)
 
     if not transcript:

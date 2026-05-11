@@ -1,7 +1,6 @@
 import atexit
 import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
@@ -74,10 +73,6 @@ def _check_single_instance() -> None:
 
 def main() -> None:
     _check_single_instance()
-
-    # Verhindert Mac-Sleep solange der Bot läuft (ersetzt caffeinate als plist-Parent).
-    _caff = subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())])
-    atexit.register(_caff.terminate)
 
     # Phase 70: TTS-Konfiguration validieren NACHDEM Logger konfiguriert ist
     # (Lazy Import nötig – logging.basicConfig() muss vor dem tts-Import aktiv sein)

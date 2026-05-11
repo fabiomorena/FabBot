@@ -17,6 +17,7 @@ Regeln:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -488,14 +489,24 @@ async def _debug_dry_run(*, force: bool = False) -> tuple[str | None, str]:
     proposal = _build_proposal(profile, analysis)
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=_PROPOSAL_TTL)).isoformat()
 
+    ops = proposal.get("operations", [])
+    ops_hash = hashlib.md5(json.dumps(ops, sort_keys=True).encode(), usedforsecurity=False).hexdigest()
+
     state = _load_state()
+    if not force and state.get("last_reported_ops_hash") == ops_hash:
+        state["last_dry_run_at"] = datetime.now(timezone.utc).isoformat()
+        _save_state(state)
+        logger.info(f"curator Dry-Run: {len(ops)} Operationen – unverändert, kein Report.")
+        return None, "Operationen unverändert seit letztem Report – übersprungen."
+
     state["pending_proposal"] = proposal
     state["pending_base_hash"] = base_hash
     state["pending_expires_at"] = expires_at
     state["last_dry_run_at"] = datetime.now(timezone.utc).isoformat()
+    state["last_reported_ops_hash"] = ops_hash
     _save_state(state)
 
-    logger.info(f"curator Dry-Run abgeschlossen: {len(proposal['operations'])} Operationen vorgeschlagen.")
+    logger.info(f"curator Dry-Run abgeschlossen: {len(ops)} Operationen vorgeschlagen.")
     return format_report(proposal, expires_at), "ok"
 
 

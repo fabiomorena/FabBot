@@ -173,7 +173,7 @@ typer==0.24.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uritemplate==4.2.0
-urllib3==2.6.3
+urllib3==2.7.0
 uuid_utils==0.14.1
 uvicorn==0.43.0
 uvloop==0.22.1
@@ -184,5 +184,5 @@ xxhash==3.6.0
 yarl==1.23.0
 zipp==3.23.0
 youtube-transcript-api==1.2.4
-yt-dlp==2026.3.17
+yt-dlp>=2026.3.17
 zstandard==0.25.0
