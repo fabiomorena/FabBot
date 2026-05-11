@@ -756,6 +756,23 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
 
             return _ok(updated)
 
+        elif category == "event":
+            description = data.get("description", "").strip()
+            if not description:
+                return _invalid()
+            date = data.get("date", "").strip()
+            tags = data.get("tags", [])
+            if "events" not in updated or not isinstance(updated["events"], list):
+                updated["events"] = []
+            entry: dict[str, Any] = {"description": description}
+            if date:
+                entry["date"] = date
+            if isinstance(tags, list) and tags:
+                entry["tags"] = [str(t) for t in tags if t]
+            updated["events"].append(entry)
+            logger.info(f"MemoryAgent save event: '{description[:60]}'")
+            return _ok(updated)
+
         elif category == "job":
             employer = data.get("employer", "").strip()
             role = data.get("role", "").strip()
@@ -912,6 +929,23 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
             logger.warning(f"MemoryAgent delete preference: kein Match für Key oder Wert '{key}'")
             return _reject(f"Kein Eintrag gefunden für: {key}")
 
+        elif category == "event":
+            description = data.get("description", "").strip().lower()
+            if not description:
+                return _invalid()
+            before = len(updated.get("events", []))
+            if "events" in updated and isinstance(updated["events"], list):
+                updated["events"] = [
+                    e
+                    for e in updated["events"]
+                    if not (isinstance(e, dict) and description in e.get("description", "").lower())
+                ]
+            after = len(updated.get("events", []))
+            if before == after:
+                logger.warning(f"MemoryAgent delete event: kein Match für '{description}'")
+                return _reject(f"Kein Ereignis gefunden für: {description}")
+            return _ok(updated)
+
         elif category == "location":
             if "identity" in updated and isinstance(updated["identity"], dict):
                 if "location" in updated["identity"]:
@@ -977,6 +1011,7 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
         "place": "📍",
         "media": "🎵",
         "preference": "⚙️",
+        "event": "📅",
         "job": "💼",
         "location": "🏠",
         "custom": "📝",
@@ -1024,6 +1059,10 @@ def _build_confirmation(action: str, category: str, data: dict) -> str:
         if subcat:
             return f"{icon} Präferenz gespeichert [{subcat}]: {key} = {value}"
         return f"{icon} Präferenz gespeichert: {key} = {value}"
+    elif category == "event":
+        desc = data.get("description", "")
+        date = data.get("date", "")
+        return f"{icon} Ereignis gespeichert: {desc}" + (f" ({date})" if date else "")
     elif category == "custom":
         return f"{icon} Notiert: {data.get('value', '')}"
     return "✅ Gespeichert."
