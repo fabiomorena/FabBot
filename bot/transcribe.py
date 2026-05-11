@@ -38,7 +38,9 @@ async def transcribe_audio(audio_bytes: bytes, filename: str = "voice.ogg") -> s
     try:
         model = _get_model()
 
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=True) as f:
+        with tempfile.NamedTemporaryFile(
+            suffix=".ogg", delete=True
+        ) as f:  # delete=True sperrt Datei auf Windows – läuft nur auf Linux/macOS
             f.write(audio_bytes)
             f.flush()
             result = model.transcribe(f.name)
