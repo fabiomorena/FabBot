@@ -1165,6 +1165,13 @@ async def _post_init(app: Application) -> None:
 
     setup_telemetry()
 
+    from agent._bot_bridge import register as _register_bot_send
+    from bot.caffeinate import start as _caff_start, monitor as _caff_monitor
+
+    _caff_start()
+    asyncio.create_task(_caff_monitor())
+    _register_bot_send(app.bot.send_message)
+
     # Whisper-Modell vorladen – verzögert damit ChromaDB-Init abgeschlossen ist.
     async def _warmup_whisper_delayed():
         await asyncio.sleep(10)
@@ -1341,6 +1348,10 @@ async def _post_init(app: Application) -> None:
 
 
 async def _post_shutdown(app: Application) -> None:
+    from bot.caffeinate import stop as _caff_stop
+
+    _caff_stop()
+
     for task in _scheduler_tasks:
         if not task.done():
             task.cancel()
