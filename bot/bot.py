@@ -31,6 +31,7 @@ import contextlib
 import logging
 import asyncio
 from collections import deque, OrderedDict
+from datetime import datetime
 from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -93,16 +94,14 @@ _invoke_locks: OrderedDict[int, asyncio.Lock] = OrderedDict()
 
 # Letzter Aktivitäts-Zeitstempel pro chat_id – genutzt von evening_checkin, um
 # aktive Gespräche zu erkennen und den Check-in zu verzögern.
-_last_activity: dict[int, "datetime"] = {}
+_last_activity: dict[int, datetime] = {}
 
 
 def record_activity(chat_id: int) -> None:
-    from datetime import datetime
-
     _last_activity[chat_id] = datetime.now()
 
 
-def get_last_activity(chat_id: int) -> "datetime | None":
+def get_last_activity(chat_id: int) -> datetime | None:
     return _last_activity.get(chat_id)
 
 
