@@ -91,6 +91,20 @@ _dedup_lock: asyncio.Lock | None = None
 _MAX_INVOKE_LOCKS = 100
 _invoke_locks: OrderedDict[int, asyncio.Lock] = OrderedDict()
 
+# Letzter Aktivitäts-Zeitstempel pro chat_id – genutzt von evening_checkin, um
+# aktive Gespräche zu erkennen und den Check-in zu verzögern.
+_last_activity: dict[int, "datetime"] = {}
+
+
+def record_activity(chat_id: int) -> None:
+    from datetime import datetime
+
+    _last_activity[chat_id] = datetime.now()
+
+
+def get_last_activity(chat_id: int) -> "datetime | None":
+    return _last_activity.get(chat_id)
+
 
 def _get_dedup_lock() -> asyncio.Lock:
     global _dedup_lock
@@ -797,6 +811,7 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+    record_activity(chat_id)
     caption = update.message.caption or ""
     if caption:
         is_safe, result = await sanitize_input_async(caption, user_id)
@@ -831,6 +846,7 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+    record_activity(chat_id)
     doc = update.message.document
     if not doc or not doc.mime_type:
         await update.message.reply_text("Anhang konnte nicht verarbeitet werden.")
@@ -1072,6 +1088,7 @@ async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+    record_activity(chat_id)
 
     is_safe, clean_text = await _sanitize_and_validate(text, user_id, update)
     if not is_safe:

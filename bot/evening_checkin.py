@@ -26,6 +26,12 @@ _CHECKIN_STATE_FILE = Path.home() / ".fabbot" / "evening_checkin_state.json"
 _LLM_TIMEOUT = 8.0
 _FALLBACK_QUESTION = "Wie war dein Tag? Was hat dich heute beschäftigt?"
 
+# Gesprächs-Inaktivitätsfenster: Check-in wird verzögert, solange die letzte
+# Nachricht weniger als N Minuten zurückliegt.
+_ACTIVE_CONV_WINDOW_MINUTES = 20
+_ACTIVE_CONV_RETRY_SECONDS = 15 * 60  # 15 Min warten vor erneutem Versuch
+_ACTIVE_CONV_MAX_RETRIES = 3
+
 
 def _load_state() -> dict:
     try:
@@ -37,6 +43,20 @@ def _load_state() -> dict:
 def _save_state(data: dict) -> None:
     _CHECKIN_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     _CHECKIN_STATE_FILE.write_text(json.dumps(data))
+
+
+def _is_conversation_active(chat_id: int) -> bool:
+    from datetime import datetime
+
+    try:
+        from bot.bot import get_last_activity
+
+        last = get_last_activity(chat_id)
+        if last is None:
+            return False
+        return (datetime.now() - last).total_seconds() < _ACTIVE_CONV_WINDOW_MINUTES * 60
+    except Exception:
+        return False
 
 
 def _already_sent_today() -> bool:
@@ -112,6 +132,18 @@ async def run_evening_checkin_scheduler(bot, chat_id: int) -> None:
             logger.info("Abend-Check-in: heute bereits gesendet – skip")
             await asyncio.sleep(60)
             continue
+
+        for attempt in range(_ACTIVE_CONV_MAX_RETRIES + 1):
+            if not _is_conversation_active(chat_id):
+                break
+            if attempt < _ACTIVE_CONV_MAX_RETRIES:
+                logger.info(
+                    f"Abend-Check-in: Gespräch aktiv – warte {_ACTIVE_CONV_RETRY_SECONDS // 60} Min "
+                    f"(Versuch {attempt + 1}/{_ACTIVE_CONV_MAX_RETRIES})"
+                )
+                await asyncio.sleep(_ACTIVE_CONV_RETRY_SECONDS)
+            else:
+                logger.info("Abend-Check-in: Gespräch immer noch aktiv nach max. Retries – sende trotzdem")
 
         try:
             question = await _generate_checkin_question(chat_id)
