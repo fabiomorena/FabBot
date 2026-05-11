@@ -160,46 +160,37 @@ def _get_calendar_today() -> str:
         return "Kalender nicht verfügbar."
 
 
-async def _fetch_raw_news(query: str) -> str:
-    """
-    Holt rohe Tavily-Suchergebnisse für die News.
-    Gibt den Raw-Content zurück – Formatierung übernimmt Haiku.
-    """
-    try:
-        import httpx
+_RSS_FEEDS = [
+    ("Tagesschau", "https://www.tagesschau.de/xml/rss2/"),
+    ("Spiegel", "https://www.spiegel.de/schlagzeilen/index.rss"),
+    ("Zeit", "https://newsfeed.zeit.de/news/index"),
+]
 
-        _s = get_settings()
-        tavily_key = _s.tavily_api_key.get_secret_value() if _s.tavily_api_key else None
-        if not tavily_key:
-            return ""
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": tavily_key,
-                    "query": query,
-                    "search_depth": "advanced",
-                    "topic": "news",
-                    "max_results": 5,
-                    "include_raw_content": False,
-                    "days": 1,
-                },
-            )
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                return ""
-            parts = []
-            for r in results[:5]:
-                title = r.get("title", "").strip()
-                content = r.get("content", "").strip()
-                url = r.get("url", "").strip()
-                if title or content:
-                    parts.append(f"Titel: {title}\nInhalt: {content[:600]}\nURL: {url}")
-            return "\n\n".join(parts)
+
+async def _fetch_raw_news(_query: str) -> str:
+    """Holt News via RSS-Feeds von tagesschau.de, spiegel.de, zeit.de."""
+    import httpx
+    from xml.etree import ElementTree as ET
+    import re
+
+    parts = []
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            for source, url in _RSS_FEEDS:
+                try:
+                    resp = await client.get(url)
+                    root = ET.fromstring(resp.text)
+                    items = root.findall(".//item")[:3]
+                    for item in items:
+                        title = (item.findtext("title") or "").strip()
+                        desc = re.sub(r"<[^>]+>", "", item.findtext("description") or "").strip()
+                        if title:
+                            parts.append(f"Quelle: {source}\nTitel: {title}\nBeschreibung: {desc[:300]}")
+                except Exception as e:
+                    logger.warning(f"RSS-Fehler {source}: {e}")
     except Exception as e:
         logger.warning(f"News-Fetch Fehler: {e}")
-        return ""
+    return "\n\n".join(parts)
 
 
 async def _format_news_with_llm(raw: str) -> str:
@@ -286,7 +277,7 @@ async def generate_briefing() -> str:
         weather_fn=_get_weather_berlin,
         calendar_fn=lambda: asyncio.to_thread(_get_calendar_today),
         pending_fn=_pending_fn,
-        news_fn=lambda: _fetch_web(f"Nachrichten Deutschland {date.today().strftime('%d.%m.%Y')}"),
+        news_fn=lambda: _fetch_web(""),
     )
 
     pending_section = f"\n📋 *Offene Punkte:*\n{sections['pending']}\n" if sections["pending"] else ""
