@@ -6,7 +6,7 @@ Bestimme NUR action und category – extrahiere keine Daten.
 Aktuelles Datum/Uhrzeit: {current_datetime}
 
 Ausgabe (nur JSON):
-{"action": "save|update|delete|clarify", "category": "people|project|place|media|preference|job|location|custom|bot_instruction"}
+{"action": "save|update|delete|clarify", "category": "people|project|place|media|preference|event|job|location|custom|bot_instruction"}
 
 Routing-Regeln:
 - Restaurants, Bars, Cafés, Gyms, Shops → category=place
@@ -16,7 +16,8 @@ Routing-Regeln:
 - Bot-Verhalten, Antwort-Stil: Trigger "grundsätzlich", "von jetzt an", "du sollst immer", "dein Verhalten" → category=bot_instruction
 - Personen, Kontakte → category=people
 - Wohnort, Stadt, Land des Users → category=location
-- Persönliche Präferenzen, Vorlieben, Fakten über den User → category=preference
+- Einmalige Ereignisse, abgeschlossene Handlungen ("habe X gekauft/getan/gebucht/erledigt", "war in X", "bin nach X gefahren", "habe X abgeschlossen") → category=event
+- Dauerhafte Präferenzen, Vorlieben, Eigenschaften des Users (kein einmaliges Ereignis) → category=preference
 - Unklares, Sonstiges → category=custom
 
 action-Regeln:

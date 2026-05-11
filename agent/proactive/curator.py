@@ -179,10 +179,12 @@ Identifiziere:
 2. Veraltete Einträge (nicht mehr relevant, längst abgeschlossen, überholt)
 3. Redundante Notizen (mehrere Notes die dasselbe aussagen)
 4. Merge-Vorschläge (zwei Einträge die sinnvoll zusammengeführt werden könnten)
+5. Falsch kategorisierte Preference-Einträge: Einträge unter preferences.* die eigentlich einmalige Ereignisse/Fakten sind (z.B. "ticket_gekauft = true", "reise_erledigt = true") statt dauerhafter Eigenschaften
 
 KRITISCHE REGELN – Verstöße machen die Ausgabe ungültig:
 - index, indices und keep_index sind IMMER ganzzahlige Integer (0, 1, 2, ...) – niemals Strings, Schlüssel oder Bezeichnungen
 - section ist IMMER ein einfacher Schlüssel oder Pfad wie "notes", "people", "projects.active" – niemals mit Leerzeichen oder "+"
+- misclassified_preferences.path ist der vollständige Punkt-Pfad zum Schlüssel, z.B. "preferences.persoenlich.reise_kassel_ticket_gekauft"
 - Schlage NUR echte Probleme vor – lieber zu wenig als zu viel
 - Einträge mit _pinned: true NIEMALS anfassen
 - Archivieren statt löschen
@@ -201,6 +203,9 @@ Antworte mit diesem JSON-Schema:
   ],
   "redundant_notes": [
     {{"indices": [12, 18], "reason": "...", "keep_index": 12}}
+  ],
+  "misclassified_preferences": [
+    {{"path": "preferences.persoenlich.reise_kassel_ticket_gekauft", "reason": "Einmalige Handlung statt dauerhafter Zustand"}}
   ],
   "summary": "Kurze Zusammenfassung was gefunden wurde (1-2 Sätze)"
 }}
@@ -271,6 +276,13 @@ def _sanitize_analysis(analysis: dict) -> dict:
     redundant_notes = [
         e for e in analysis.get("redundant_notes", []) if all(valid_idx(i) for i in e.get("indices", []))
     ]
+    misclassified_prefs = [
+        e
+        for e in analysis.get("misclassified_preferences", [])
+        if isinstance(e.get("path"), str)
+        and e["path"].startswith("preferences.")
+        and "." in e["path"][len("preferences.") :]
+    ]
 
     dropped = (
         len(analysis.get("stale", []))
@@ -279,11 +291,19 @@ def _sanitize_analysis(analysis: dict) -> dict:
         - len(duplicates)
         + len(analysis.get("redundant_notes", []))
         - len(redundant_notes)
+        + len(analysis.get("misclassified_preferences", []))
+        - len(misclassified_prefs)
     )
     if dropped:
         logger.warning(f"curator _sanitize_analysis: {dropped} ungültige LLM-Einträge herausgefiltert.")
 
-    return {**analysis, "stale": stale, "duplicates": duplicates, "redundant_notes": redundant_notes}
+    return {
+        **analysis,
+        "stale": stale,
+        "duplicates": duplicates,
+        "redundant_notes": redundant_notes,
+        "misclassified_preferences": misclassified_prefs,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +424,44 @@ def _build_proposal(profile: dict, analysis: dict) -> dict:
         except (KeyError, TypeError, IndexError) as e:
             logger.warning(f"curator build_proposal duplicates navigation Fehler: {e}")
 
+    # Falsch kategorisierte Preference-Einträge archivieren
+    for mp in analysis.get("misclassified_preferences", []):
+        path = mp.get("path", "")
+        reason = mp.get("reason", "falsch kategorisiert")
+        if not path or not path.startswith("preferences."):
+            continue
+        parts = path.split(".")
+        if len(parts) < 3:
+            continue
+        subcategory = parts[1]
+        key = ".".join(parts[2:])
+        try:
+            prefs = target.get("preferences", {})
+            if not isinstance(prefs, dict):
+                continue
+            subdict = prefs.get(subcategory)
+            if not isinstance(subdict, dict) or key not in subdict:
+                logger.warning(f"curator: misclassified_preferences Pfad nicht gefunden: {path}")
+                continue
+            if isinstance(subdict.get(key), dict) and subdict[key].get("_pinned"):
+                logger.warning(f"curator: _pinned-Item in misclassified_preferences ignoriert: {path}")
+                continue
+            value = subdict.pop(key)
+            if not subdict:
+                del prefs[subcategory]
+            archived_list.append(
+                {
+                    "_key": path,
+                    "_value": value,
+                    "_archived_at": now_iso,
+                    "_archived_reason": reason,
+                    "_archived_from": "preferences",
+                }
+            )
+            operations.append({"type": "archive_preference", "path": path, "reason": reason})
+        except Exception as e:
+            logger.warning(f"curator build_proposal misclassified_preferences Fehler: {e}")
+
     return {
         "target_profile": target,
         "operations": operations,
@@ -450,6 +508,12 @@ def format_report(proposal: dict, expires_at: str) -> str:
         lines.append(f"*Redundante Notizen ({len(notes)}):*")
         for o in notes:
             lines.append(f"  • notes[{o['index']}] – {o['reason']}")
+
+    misclassified = [o for o in ops if o["type"] == "archive_preference"]
+    if misclassified:
+        lines.append(f"*Falsch kategorisierte Preferences ({len(misclassified)}):*")
+        for o in misclassified:
+            lines.append(f"  • {o['path']} – {o['reason']}")
 
     expires_short = expires_at[:16].replace("T", " ")
     lines.append("")
