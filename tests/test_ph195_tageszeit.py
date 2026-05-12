@@ -150,6 +150,7 @@ class TestEveningCheckinAlreadySent:
 class TestEveningCheckinGeneration:
     @pytest.mark.asyncio
     async def test_generates_question_from_context(self):
+        """Mit echtem Kontext wird der LLM aufgerufen und das Ergebnis zurückgegeben."""
         from bot.evening_checkin import _generate_checkin_question
 
         mock_response = MagicMock()
@@ -157,21 +158,44 @@ class TestEveningCheckinGeneration:
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
-        # Lokale Importe in _generate_checkin_question → an Quelle patchen
+        fake_msg = MagicMock()
+        fake_msg.type = "human"
+        fake_msg.content = "Ich hab heute an Phase 203 gearbeitet."
+
         with (
-            patch("bot.session_summary._get_messages_from_state", new=AsyncMock(return_value=[])),
-            patch("bot.session_summary._filter_messages", return_value=[]),
-            patch("bot.session_summary._format_for_summary", return_value=""),
+            patch("bot.session_summary._get_messages_from_state", new=AsyncMock(return_value=[fake_msg])),
+            patch("bot.session_summary._filter_messages", return_value=[fake_msg]),
+            patch("bot.evening_checkin._filter_checkin_context", return_value=[fake_msg]),
+            patch(
+                "bot.session_summary._format_for_summary", return_value="User: Ich hab heute an Phase 203 gearbeitet."
+            ),
             patch("agent.llm.get_fast_llm", return_value=mock_llm),
         ):
             result = await _generate_checkin_question(chat_id=123)
             assert result == "Wie lief dein Tag?"
 
     @pytest.mark.asyncio
+    async def test_empty_context_returns_fallback_without_llm(self):
+        """Ohne Kontext wird sofort der Fallback zurückgegeben, kein LLM-Call."""
+        from bot.evening_checkin import _generate_checkin_question, _FALLBACK_QUESTION
+
+        mock_llm = AsyncMock()
+
+        with (
+            patch("bot.session_summary._get_messages_from_state", new=AsyncMock(return_value=[])),
+            patch("bot.session_summary._filter_messages", return_value=[]),
+            patch("bot.evening_checkin._filter_checkin_context", return_value=[]),
+            patch("bot.session_summary._format_for_summary", return_value=""),
+            patch("agent.llm.get_fast_llm", return_value=mock_llm),
+        ):
+            result = await _generate_checkin_question(chat_id=123)
+            assert result == _FALLBACK_QUESTION
+            mock_llm.ainvoke.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_llm_error_returns_fallback(self):
         from bot.evening_checkin import _generate_checkin_question, _FALLBACK_QUESTION
 
-        # Exception im _get_messages_from_state → ganzes try/except schlägt fehl → Fallback
         with patch(
             "bot.session_summary._get_messages_from_state",
             side_effect=Exception("LLM nicht erreichbar"),
@@ -181,6 +205,7 @@ class TestEveningCheckinGeneration:
 
     @pytest.mark.asyncio
     async def test_empty_llm_response_returns_fallback(self):
+        """Leere LLM-Antwort bei vorhandenem Kontext → Fallback."""
         from bot.evening_checkin import _generate_checkin_question, _FALLBACK_QUESTION
 
         mock_response = MagicMock()
@@ -188,10 +213,15 @@ class TestEveningCheckinGeneration:
         mock_llm = AsyncMock()
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
+        fake_msg = MagicMock()
+        fake_msg.type = "human"
+        fake_msg.content = "Heute war ein langer Tag."
+
         with (
-            patch("bot.session_summary._get_messages_from_state", new=AsyncMock(return_value=[])),
-            patch("bot.session_summary._filter_messages", return_value=[]),
-            patch("bot.session_summary._format_for_summary", return_value=""),
+            patch("bot.session_summary._get_messages_from_state", new=AsyncMock(return_value=[fake_msg])),
+            patch("bot.session_summary._filter_messages", return_value=[fake_msg]),
+            patch("bot.evening_checkin._filter_checkin_context", return_value=[fake_msg]),
+            patch("bot.session_summary._format_for_summary", return_value="User: Heute war ein langer Tag."),
             patch("agent.llm.get_fast_llm", return_value=mock_llm),
         ):
             result = await _generate_checkin_question(chat_id=123)

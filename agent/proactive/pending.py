@@ -106,8 +106,76 @@ def mark_done(name_query: str) -> list[str]:
     return matched_names
 
 
+_STOPWORDS = {
+    "nach",
+    "beim",
+    "bei",
+    "den",
+    "die",
+    "der",
+    "das",
+    "ein",
+    "eine",
+    "zu",
+    "von",
+    "mit",
+    "für",
+    "und",
+    "oder",
+    "aber",
+    "auch",
+    "ist",
+    "war",
+    "wird",
+    "hat",
+    "zum",
+    "zur",
+    "dem",
+    "sich",
+    "aus",
+    "an",
+    "auf",
+    "vor",
+    "noch",
+    "nicht",
+    "sehr",
+    "mehr",
+    "dann",
+    "beim",
+}
+
+
+def _extract_keywords(name: str) -> set[str]:
+    return {w for w in name.lower().split() if len(w) > 3 and w not in _STOPWORDS}
+
+
+def _deduplicate_items(items: list[dict]) -> list[dict]:
+    """Behält pro Themen-Cluster nur den Eintrag mit dem höchsten Score.
+
+    Zwei Einträge gelten als Duplikate, wenn sie mindestens ein gemeinsames
+    Keyword teilen (Wörter >3 Zeichen, Stoppwörter ausgenommen).
+    Cluster expandieren auch durch verworfene Einträge, damit transitive
+    Ähnlichkeiten erkannt werden (z.B. A∼B und B∼C → A,B,C ein Cluster).
+    """
+    clusters: list[set[str]] = []
+    result = []
+    for item in items:
+        kws = _extract_keywords(item.get("name", ""))
+        if not kws:
+            result.append(item)
+            continue
+        overlapping = [c for c in clusters if kws & c]
+        if overlapping:
+            for c in overlapping:
+                c.update(kws)
+        else:
+            result.append(item)
+            clusters.append(set(kws))
+    return result
+
+
 def get_pending_items(limit: int = 10) -> list[dict]:
-    """Gibt offene Entitäten sortiert nach Prioritätsscore zurück."""
+    """Gibt offene Entitäten sortiert nach Prioritätsscore zurück, dedupliziert."""
     collection = _get_entities_collection()
     if collection is None:
         return []
@@ -136,4 +204,5 @@ def get_pending_items(limit: int = 10) -> list[dict]:
         items.append(item)
 
     items.sort(key=lambda x: x["priority_score"], reverse=True)
+    items = _deduplicate_items(items)
     return items[:limit]
