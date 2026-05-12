@@ -69,6 +69,25 @@ def _already_sent_today() -> bool:
         return False
 
 
+def _is_briefing_message(content: str) -> bool:
+    return content.startswith("*Guten Morgen") or content.startswith("Guten Morgen")
+
+
+def _filter_checkin_context(messages: list) -> list:
+    """Nur Human-Messages + AI-Antworten; keine Briefings, nur letzte 30 Nachrichten."""
+    result = []
+    for msg in messages:
+        content = msg.content if hasattr(msg, "content") else ""
+        if isinstance(content, list):
+            content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        if _is_briefing_message(str(content)):
+            continue
+        if getattr(msg, "type", "") not in ("human", "ai"):
+            continue
+        result.append(msg)
+    return result[-30:]
+
+
 async def _generate_checkin_question(chat_id: int) -> str:
     try:
         from bot.session_summary import _filter_messages, _format_for_summary, _get_messages_from_state
@@ -77,19 +96,23 @@ async def _generate_checkin_question(chat_id: int) -> str:
 
         messages = await _get_messages_from_state(chat_id)
         filtered = _filter_messages(messages)
+        filtered = _filter_checkin_context(filtered)
         chat_context = _format_for_summary(filtered) if filtered else ""
 
-        prompt = f"""Schreibe eine kurze, persönliche Abend-Frage für Fabio.
+        if not chat_context.strip():
+            return _FALLBACK_QUESTION
+
+        prompt = f"""Du bist FabBot. Schreibe eine kurze Abend-Frage für Fabio.
 
 === Heutiger Gesprächsverlauf ===
-{chat_context or "(keine Gespräche heute)"}
+{chat_context}
 
-Regeln:
-- 1–2 Sätze
-- Direkt und warm, kein "Guten Abend", kein "Hallo"
-- Frage über seinen Tag oder ein konkretes Thema aus dem Gesprächsverlauf
+STRENGE REGELN:
+- 1–2 Sätze, direkt und warm, kein Begrüßungswort
 - Deutsch, kein Emoji
-- Falls kein Verlauf: allgemeine, offene Frage"""
+- NUR Themen verwenden die explizit im Gesprächsverlauf oben stehen
+- NIEMALS Namen, Personen, Ereignisse oder Beziehungen erfinden die nicht wörtlich im Verlauf vorkommen
+- Falls zu wenig Kontext: genau zurückgeben: "{_FALLBACK_QUESTION}" """
 
         llm = get_fast_llm()
         response = await asyncio.wait_for(
