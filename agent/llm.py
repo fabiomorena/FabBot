@@ -143,3 +143,14 @@ def get_fast_llm() -> ChatAnthropic:
         _warn_if_unusual(model)
         _fast_llm = ChatAnthropic(model=model)
     return _fast_llm
+
+
+def get_grounding_llm() -> ChatAnthropic:
+    """Haiku mit temperature=0 fuer grounding-kritische Calls (kein Singleton).
+    Verwenden wenn deterministisches, faktengebundenes Output wichtiger ist
+    als kreative Variation – z.B. Evening Check-in, Pending-Zusammenfassung.
+    Phase 204 (Issue #215).
+    """
+    model = get_haiku_model()
+    _warn_if_unusual(model)
+    return ChatAnthropic(model=model, temperature=0)
