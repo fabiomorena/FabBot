@@ -16,7 +16,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 
 ## Features
 
-**Interface & Control** – Telegram bot (text/voice/photo), user authentication (whitelist), human-in-the-loop confirmation for all destructive actions, German date format
+**Interface & Control** – Telegram bot (text/voice/photo), user authentication (whitelist), human-in-the-loop confirmation for all destructive actions
 
 **Agents** – Terminal (shell commands), File (read/write/list), Web (Tavily+Brave search + fetch), Calendar (Apple), Chat (conversation history + follow-ups), Vision (Claude Sonnet, objects/OCR/scene), Computer Use (screenshot + desktop control), WhatsApp (whatsapp-web.js, HITL, QR via Telegram), Knowledge Clipper (`/clip <URL>` → Obsidian), Knowledge Search (`/search <term>`)
 
@@ -26,7 +26,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 
 **Security** – Two-stage prompt injection guard (pattern + LLM-Guard via Haiku, fail-closed), content isolation for web/clip agents, tamper-evident audit log, at-rest encryption (`personal_profile.yaml` via Fernet + macOS Keychain), SSRF + DNS-Rebinding protection (IPv4 + IPv6 via `getaddrinfo`), SSL validation, path/symlink traversal prevention, subprocess env isolation (no API-key leakage)
 
-**Operations** – GitHub Actions CI (1245 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 40), Whisper preload at startup, daily health check (06:00, 11 components), proactive heartbeat (hourly, 6h cooldown), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`)
+**Operations** – GitHub Actions CI (1546 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 40), Whisper preload at startup, daily health check (06:00, 11 components), proactive heartbeat (hourly, 6h cooldown), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`)
 
 ---
 
@@ -42,7 +42,7 @@ FabBot/
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
 ├── .github/workflows/test.yml
-├── tests/                   # pytest suite (1245 tests)
+├── tests/                   # pytest suite (1546 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver, _PRE_ROUTING_RULES
 │   ├── state.py             # LangGraph AgentState
@@ -174,7 +174,7 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 
 ```bash
 python main.py        # start bot
-.venv/bin/python -m pytest tests/ -v      # Run tests (1245 tests)
+.venv/bin/python -m pytest tests/ -v      # Run tests (1546 tests)
 ```
 
 ### Run as Launch Agent
@@ -338,7 +338,8 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 200** ✅ Bugfixes & UX-Improvements – Curator-Dry-Run sendet Report nur bei geänderten Operationen (MD5-Hash-Vergleich); Whisper-Fallback zeigt Zwischenstatus im Chat via _bot_bridge; caffeinate-Watchdog überwacht Prozess und startet bei Absturz neu (bot/caffeinate.py); yt-dlp auf >= gelockert (#183); NamedTemporaryFile Windows-Caveat kommentiert (#184); closes #175, #183, #184, #197; 1528 tests green
 - **Phase 201** ✅ Event-Kategorie + Curator Preference-Fix – neues category=event im Memory-Router für einmalige Handlungen ("habe X gekauft/getan/erledigt"); event.md Skill-Prompt; save/delete-Handler speichert Events als Liste unter events.*; Curator erkennt falsch kategorisierte Preferences via misclassified_preferences (neue Analyse-Kategorie im LLM-Prompt); _build_proposal archiviert fehlerhafte Einträge und bereinigt leere Subcategories; format_report zeigt neue Kategorie; closes #202, #205; 1546 tests green
 - **Phase 202** ✅ Evening Check-in Conversation-Aware – _last_activity Dict trackt letzten Aktivitäts-Zeitstempel pro chat_id (record_activity in handle_message_text, on_photo, on_document); evening_checkin erkennt aktives Gespräch (< 20 Min Inaktivität) und verzögert Check-in um 15 Min, max. 3 Retries; generierte Frage nutzt stets den aktuellen State nach dem Warten; 1546 tests green
-
+- **Phase 203** ✅ Briefing-Dedup + Evening Check-in Anti-Halluzination – _deduplicate_items() in pending.py entfernt thematisch ähnliche Offene-Punkte-Einträge per Keyword-Cluster (transitiv); evening_checkin filtert Briefing-Messages aus Kontext, Early-Return bei leerem Kontext, strikter Anti-Halluzinations-Prompt; Issues #211 #212; 1549 tests green
+    
 ---
 
 ## License
