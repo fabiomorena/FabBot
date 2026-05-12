@@ -169,7 +169,7 @@ class TestEveningCheckinGeneration:
             patch(
                 "bot.session_summary._format_for_summary", return_value="User: Ich hab heute an Phase 203 gearbeitet."
             ),
-            patch("agent.llm.get_fast_llm", return_value=mock_llm),
+            patch("agent.llm.get_grounding_llm", return_value=mock_llm),
         ):
             result = await _generate_checkin_question(chat_id=123)
             assert result == "Wie lief dein Tag?"
@@ -186,7 +186,7 @@ class TestEveningCheckinGeneration:
             patch("bot.session_summary._filter_messages", return_value=[]),
             patch("bot.evening_checkin._filter_checkin_context", return_value=[]),
             patch("bot.session_summary._format_for_summary", return_value=""),
-            patch("agent.llm.get_fast_llm", return_value=mock_llm),
+            patch("agent.llm.get_grounding_llm", return_value=mock_llm),
         ):
             result = await _generate_checkin_question(chat_id=123)
             assert result == _FALLBACK_QUESTION
@@ -222,7 +222,7 @@ class TestEveningCheckinGeneration:
             patch("bot.session_summary._filter_messages", return_value=[fake_msg]),
             patch("bot.evening_checkin._filter_checkin_context", return_value=[fake_msg]),
             patch("bot.session_summary._format_for_summary", return_value="User: Heute war ein langer Tag."),
-            patch("agent.llm.get_fast_llm", return_value=mock_llm),
+            patch("agent.llm.get_grounding_llm", return_value=mock_llm),
         ):
             result = await _generate_checkin_question(chat_id=123)
             assert result == _FALLBACK_QUESTION
