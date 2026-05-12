@@ -339,7 +339,8 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 201** ✅ Event-Kategorie + Curator Preference-Fix – neues category=event im Memory-Router für einmalige Handlungen ("habe X gekauft/getan/erledigt"); event.md Skill-Prompt; save/delete-Handler speichert Events als Liste unter events.*; Curator erkennt falsch kategorisierte Preferences via misclassified_preferences (neue Analyse-Kategorie im LLM-Prompt); _build_proposal archiviert fehlerhafte Einträge und bereinigt leere Subcategories; format_report zeigt neue Kategorie; closes #202, #205; 1546 tests green
 - **Phase 202** ✅ Evening Check-in Conversation-Aware – _last_activity Dict trackt letzten Aktivitäts-Zeitstempel pro chat_id (record_activity in handle_message_text, on_photo, on_document); evening_checkin erkennt aktives Gespräch (< 20 Min Inaktivität) und verzögert Check-in um 15 Min, max. 3 Retries; generierte Frage nutzt stets den aktuellen State nach dem Warten; 1546 tests green
 - **Phase 203** ✅ Briefing-Dedup + Evening Check-in Anti-Halluzination – _deduplicate_items() in pending.py entfernt thematisch ähnliche Offene-Punkte-Einträge per Keyword-Cluster (transitiv); evening_checkin filtert Briefing-Messages aus Kontext, Early-Return bei leerem Kontext, strikter Anti-Halluzinations-Prompt; Issues #211 #212; 1549 tests green
-    
+- **Phase 204** ✅ Anti-Halluzination Pro – Post-Generation Entity Guard (_has_hallucination prüft LLM-Output gegen Kontext-Whitelist, erfundene Namen → Fallback); get_grounding_llm() mit temperature=0 für deterministisches Grounding; Whitelist-Injection im Prompt (erlaubte Entitäten aus Kontext); Issues #214 #215 #216; 1570 tests green
+
 ---
 
 ## License

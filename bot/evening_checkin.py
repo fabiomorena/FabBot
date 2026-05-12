@@ -13,6 +13,7 @@ API:
 import asyncio
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,6 +26,91 @@ _TZ_BERLIN = ZoneInfo("Europe/Berlin")
 _CHECKIN_STATE_FILE = Path.home() / ".fabbot" / "evening_checkin_state.json"
 _LLM_TIMEOUT = 8.0
 _FALLBACK_QUESTION = "Wie war dein Tag? Was hat dich heute beschäftigt?"
+
+# Phase 204 (#214/#216): Wörter die im Entity Guard und der Whitelist-Extraktion
+# übersprungen werden – häufige deutsche Substantive und Funktionswörter, die
+# regelmäßig in Check-in-Fragen auftauchen, aber keine Eigennamen sind.
+_COMMON_GERMAN_WORDS: frozenset[str] = frozenset(
+    {
+        "Der",
+        "Die",
+        "Das",
+        "Ein",
+        "Eine",
+        "Einen",
+        "Einem",
+        "Einer",
+        "Eines",
+        "Ich",
+        "Du",
+        "Er",
+        "Sie",
+        "Es",
+        "Wir",
+        "Ihr",
+        "Mein",
+        "Meine",
+        "Dein",
+        "Deine",
+        "Sein",
+        "Ihre",
+        "Was",
+        "Wie",
+        "Wo",
+        "Wann",
+        "Warum",
+        "Welche",
+        "Welcher",
+        "Welches",
+        "Wer",
+        "Heute",
+        "Gestern",
+        "Morgen",
+        "Tag",
+        "Nacht",
+        "Woche",
+        "Monat",
+        "Jahr",
+        "Uhr",
+        "Zeit",
+        "Stunden",
+        "Minuten",
+        "Arbeit",
+        "Musik",
+        "Projekt",
+        "Projekte",
+        "Session",
+        "Thema",
+        "Themen",
+        "Gespräch",
+        "Frage",
+        "Antwort",
+        "Plan",
+        "Idee",
+        "Fortschritt",
+        "Stand",
+        "Nachrichten",
+        "Gedanken",
+        "Gedanke",
+        "Gefühl",
+        "Gefühle",
+        "Dinge",
+        "Ding",
+        "Sache",
+        "Sachen",
+        "Bereich",
+        "Teil",
+        "Weg",
+        "Studio",
+        "Mix",
+        "Track",
+        "Tracks",
+        "Beat",
+        "Beats",
+        "FabBot",
+        "Fabio",
+    }
+)
 
 # Gesprächs-Inaktivitätsfenster: Check-in wird verzögert, solange die letzte
 # Nachricht weniger als N Minuten zurückliegt.
@@ -88,10 +174,53 @@ def _filter_checkin_context(messages: list) -> list:
     return result[-30:]
 
 
+def _build_context_word_set(text: str) -> frozenset[str]:
+    """Alle Tokens aus text (lowercase) als Whitelist für den Entity Guard."""
+    return frozenset(w.lower() for w in re.findall(r"\b[a-zA-ZäöüÄÖÜß]{2,}\b", text))
+
+
+def _mid_sentence_caps(text: str) -> list[str]:
+    """Großgeschriebene Wörter die NICHT Satzanfang sind (potenzielle Eigennamen)."""
+    tokens = list(re.finditer(r"\b([A-ZÄÖÜ][a-zäöüß]{2,})\b", text))
+    result = []
+    for m in tokens:
+        prefix = text[: m.start()].rstrip()
+        if not prefix or prefix[-1] in ".!?":
+            continue
+        result.append(m.group(1))
+    return result
+
+
+def _has_hallucination(response: str, context_words: frozenset[str]) -> bool:
+    """True wenn response kapitalisierte Wörter enthält die nicht im Kontext stehen.
+    Phase 204 (Issue #214): Post-Generation Entity Guard.
+    """
+    for word in _mid_sentence_caps(response):
+        if word in _COMMON_GERMAN_WORDS:
+            continue
+        if word.lower() not in context_words:
+            logger.warning("Entity Guard: potenzielle Halluzination – '%s' nicht im Kontext", word)
+            return True
+    return False
+
+
+def _extract_named_entities(text: str) -> list[str]:
+    """Extrahiert potenzielle Eigennamen aus text für Whitelist-Injection im Prompt.
+    Phase 204 (Issue #216).
+    """
+    seen: set[str] = set()
+    result = []
+    for w in re.findall(r"\b([A-ZÄÖÜ][a-zäöüß]{2,})\b", text):
+        if w not in _COMMON_GERMAN_WORDS and w not in seen:
+            seen.add(w)
+            result.append(w)
+    return result[:20]
+
+
 async def _generate_checkin_question(chat_id: int) -> str:
     try:
+        from agent.llm import get_grounding_llm
         from bot.session_summary import _filter_messages, _format_for_summary, _get_messages_from_state
-        from agent.llm import get_fast_llm
         from langchain_core.messages import HumanMessage
 
         messages = await _get_messages_from_state(chat_id)
@@ -102,6 +231,10 @@ async def _generate_checkin_question(chat_id: int) -> str:
         if not chat_context.strip():
             return _FALLBACK_QUESTION
 
+        context_words = _build_context_word_set(chat_context)
+        named_entities = _extract_named_entities(chat_context)
+        entity_list = ", ".join(named_entities) if named_entities else "keine"
+
         prompt = f"""Du bist FabBot. Schreibe eine kurze Abend-Frage für Fabio.
 
 === Heutiger Gesprächsverlauf ===
@@ -111,10 +244,11 @@ STRENGE REGELN:
 - 1–2 Sätze, direkt und warm, kein Begrüßungswort
 - Deutsch, kein Emoji
 - NUR Themen verwenden die explizit im Gesprächsverlauf oben stehen
+- Erlaubte Entitäten aus dem Gespräch: {entity_list}
 - NIEMALS Namen, Personen, Ereignisse oder Beziehungen erfinden die nicht wörtlich im Verlauf vorkommen
 - Falls zu wenig Kontext: genau zurückgeben: "{_FALLBACK_QUESTION}" """
 
-        llm = get_fast_llm()
+        llm = get_grounding_llm()
         response = await asyncio.wait_for(
             llm.ainvoke([HumanMessage(content=prompt)]),
             timeout=_LLM_TIMEOUT,
@@ -122,7 +256,13 @@ STRENGE REGELN:
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        return content.strip() or _FALLBACK_QUESTION
+        result = content.strip() or _FALLBACK_QUESTION
+
+        if _has_hallucination(result, context_words):
+            logger.warning("Entity Guard: Fallback wegen Halluzination in Check-in-Antwort")
+            return _FALLBACK_QUESTION
+
+        return result
     except Exception as e:
         logger.warning(f"Evening Check-in Generierung fehlgeschlagen: {e}")
         return _FALLBACK_QUESTION
