@@ -14,3 +14,21 @@ personal_profile.yaml
 claude.md
 whatsapp_service/node_modules/
 whatsapp_service/.wwebjs_cache/
+
+# FabBot Runtime-Daten
+.fabbot/
+*.db
+*.db-shm
+*.db-wal
+
+# Test-Artefakte
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Lokale Konfiguration
+*.local.yaml
+*.local.env
+
+# Sonstiges
+open-issues.html
