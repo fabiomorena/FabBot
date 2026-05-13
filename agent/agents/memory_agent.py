@@ -1176,7 +1176,7 @@ async def memory_agent(state: AgentState) -> AgentState:
                 confirmation = _build_confirmation(action, category, data)
                 return _make_result(f"{confirmation}\n_(als Notiz gespeichert)_")
 
-            updated_profile = mem_result.updated_profile
+            updated_profile = mem_result.updated_profile or {}
             original_yaml = yaml.dump(current_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
             new_yaml = yaml.dump(updated_profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
 

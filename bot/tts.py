@@ -165,7 +165,7 @@ async def _synthesize_openai(text: str) -> bytes | None:
 
     except Exception as e:
         logger.warning(f"OpenAI TTS Fehler (Fallback zu edge-tts): {e}")
-        return None
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -39,7 +39,7 @@ def add_reminder(chat_id: int, text: str, remind_at: datetime) -> int:
             "INSERT INTO reminders (chat_id, text, remind_at) VALUES (?, ?, ?)", (chat_id, text, remind_at.isoformat())
         )
         conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid or 0
 
 
 def get_pending_reminders() -> list[dict]:

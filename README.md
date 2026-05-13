@@ -343,6 +343,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 205** ✅ Watchdog Logging – 13 print()-Aufrufe in watchdog.py durch strukturiertes logging ersetzt (basicConfig stdout, ISO-Timestamp, Level-Steuerung); LOG_PREFIX entfernt; log levels: info/warning/error/critical je nach Schwere; Issue #218; 1570 tests green
 - **Phase 206** ✅ Context-Overhead Reduction – CHAT_CONTEXT_WINDOW Default 40→20 (#229); Sessions-Doppelladung entfernt (load_session_summaries aus statischem Prompt, #228); last_agent_result auf 2000 Zeichen truncated (#227); CLAUDE.md auf 24 Non-Blank-Zeilen gekürzt (#226); 1570 tests green
 - **Phase 207** ✅ .gitignore erweitern – SQLite-Artefakte (*.db, *.db-shm, *.db-wal), .fabbot/, Test-Artefakte (.pytest_cache/, htmlcov/, .coverage), lokale Konfig (*.local.yaml, *.local.env), open-issues.html; Issue #222; 1570 tests green
+- **Phase 208** ✅ Type-Safety – AgentState auf NotRequired umgestellt (48 typeddict-item Fehler); assert-Guards in 20 Telegram-Handlern (88 union-attr Fehler); RunnableConfig für aupdate_state/ainvoke (6 Dateien); Neben-Fixes: PIL.Resampling.LANCZOS, tts.py return-Pfad, BaseException-Check; Mypy 176 → 0 Fehler; Issue #219; 1569 tests green
 
 ---
 

@@ -12,7 +12,9 @@ Phase 76: News via Haiku formatiert – saubere Bullets ohne Artefakte.
 import asyncio
 import logging
 import subprocess
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
+
+from langchain_core.runnables import RunnableConfig
 
 from agent.config import get_settings
 from agent.proactive.pending import get_pending_items
@@ -329,7 +331,7 @@ async def run_briefing_scheduler(bot, chat_id: int) -> None:
                 from agent.supervisor import get_graph
                 from langchain_core.messages import AIMessage
 
-                config = {"configurable": {"thread_id": str(chat_id)}}
+                config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
                 await get_graph().aupdate_state(
                     config,
                     {"messages": [AIMessage(content=briefing)]},

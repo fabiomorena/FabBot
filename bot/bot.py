@@ -30,6 +30,7 @@ Phase 84 Änderungen: handle_message_text aufgeteilt, _delete_thinking mit suppr
 import contextlib
 import logging
 import asyncio
+from typing import Any
 from collections import deque, OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,7 @@ from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError, RetryAfter, Conflict
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
 from langgraph.errors import GraphRecursionError
 
@@ -127,20 +129,20 @@ def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
         from PIL import Image
         import io
 
-        img = Image.open(io.BytesIO(img_bytes))
-        if max(img.width, img.height) <= _IMAGE_MAX_PX:
+        img_obj: Any = Image.open(io.BytesIO(img_bytes))
+        if max(img_obj.width, img_obj.height) <= _IMAGE_MAX_PX:
             return img_bytes, mime_type
-        img.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.LANCZOS)
+        img_obj.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         fmt = "PNG" if mime_type == "image/png" else "JPEG"
-        save_kwargs = {"optimize": True}
+        save_kwargs: dict = {"optimize": True}
         if fmt == "JPEG":
             save_kwargs["quality"] = 90
-        if img.mode in ("RGBA", "P") and fmt == "JPEG":
-            img = img.convert("RGB")
-        img.save(output, format=fmt, **save_kwargs)
+        if img_obj.mode in ("RGBA", "P") and fmt == "JPEG":
+            img_obj = img_obj.convert("RGB")
+        img_obj.save(output, format=fmt, **save_kwargs)
         result = output.getvalue()
-        logger.info(f"Bild skaliert: {img.width}x{img.height}px, {len(img_bytes)}b → {len(result)}b")
+        logger.info(f"Bild skaliert: {img_obj.width}x{img_obj.height}px, {len(img_bytes)}b → {len(result)}b")
         return result, mime_type
     except Exception as e:
         logger.warning(f"Bild-Resize fehlgeschlagen (Original wird verwendet): {e}")
@@ -182,7 +184,7 @@ async def _update_memory(chat_id: int, result_text: str) -> None:
     try:
         from agent.supervisor import get_graph
 
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
         await get_graph().aupdate_state(
             config,
             {"messages": [AIMessage(content=f"__MEMORY__:{result_text}")]},
@@ -196,7 +198,7 @@ async def _update_music_memory(chat_id: int, caption: str, analysis_text: str) -
         from agent.supervisor import get_graph
         from langchain_core.messages import HumanMessage as HM
 
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Audio] {caption}" if caption else "[Audio gesendet]"
         await get_graph().aupdate_state(
             config,
@@ -216,7 +218,7 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
         from agent.supervisor import get_graph
         from langchain_core.messages import HumanMessage as HM
 
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
         human_text = f"[Foto] {caption}" if caption else "[Foto gesendet]"
         # Issue #123: last_agent_name=vision_agent setzen damit #122-Guard Folgefragen zu chat_agent routet
         await get_graph().aupdate_state(
@@ -235,13 +237,13 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
 _TRANSIENT_EXCEPTIONS = (APIConnectionError, RateLimitError)
 
 
-async def _invoke_with_retry(state: dict, config: dict) -> dict:
+async def _invoke_with_retry(state: dict, config: RunnableConfig) -> dict:
     from agent.supervisor import get_graph
 
-    last_exception = None
+    last_exception: Exception | None = None
     for attempt in range(_RETRY_MAX_ATTEMPTS):
         try:
-            return await get_graph().ainvoke(state, config=config)
+            return await get_graph().ainvoke(state, config)
         except _TRANSIENT_EXCEPTIONS as e:
             # Vor APIStatusError prüfen – RateLimitError ist Subklasse von APIStatusError
             last_exception = e
@@ -258,7 +260,7 @@ async def _invoke_with_retry(state: dict, config: dict) -> dict:
         if attempt < _RETRY_MAX_ATTEMPTS - 1:
             await asyncio.sleep(delay)
 
-    raise last_exception
+    raise last_exception or RuntimeError("Alle Retry-Versuche fehlgeschlagen")
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +274,7 @@ async def _delete_thinking(thinking) -> None:
 
 
 async def _sanitize_and_validate(text: str, user_id: int, update: Update) -> tuple[bool, str]:
+    assert update.message is not None
     is_safe, result = await sanitize_input_async(text, user_id)
     if not is_safe:
         log_blocked(result, text, user_id)
@@ -279,7 +282,7 @@ async def _sanitize_and_validate(text: str, user_id: int, update: Update) -> tup
     return is_safe, result
 
 
-async def _invoke_and_extract(state: dict, config: dict) -> str:
+async def _invoke_and_extract(state: dict, config: RunnableConfig) -> str:
     """Phase 107: last_human_idx als Ankerpunkt statt input_count.
 
     input_count=1 (nur neue HumanMessage in state["messages"]) aber
@@ -309,6 +312,7 @@ async def _invoke_and_extract(state: dict, config: dict) -> str:
 
 
 async def _dispatch_response(response_msg: str, bot: Bot, chat_id: int, update: Update) -> None:
+    assert update.message is not None
     # Phase 107: leere Antwort = FINISH – nichts senden, kein Fallback-Text.
     if not response_msg:
         logger.debug("_dispatch_response: leere Antwort – nichts gesendet (FINISH)")
@@ -440,7 +444,7 @@ async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **
         log_action("whatsapp_agent", "send", f"user rejected: {whatsapp_name}", chat_id, status="rejected")
 
 
-_RESPONSE_DISPATCH: list[tuple[str, callable]] = [
+_RESPONSE_DISPATCH: list[tuple[str, Any]] = [
     (Proto.SCREENSHOT, _handle_screenshot),
     (Proto.CONFIRM_COMPUTER, _handle_confirm_computer),
     (Proto.CONFIRM_TERMINAL, _handle_confirm_terminal),
@@ -457,6 +461,7 @@ _RESPONSE_DISPATCH: list[tuple[str, callable]] = [
 
 @restricted
 async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     if not ctx.args:
         await update.message.reply_text(
             "Verwendung:\n"
@@ -489,6 +494,8 @@ async def cmd_wa_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
 @restricted
 async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
+    assert update.effective_chat is not None
     chat_id = update.effective_chat.id
     thinking = await update.message.reply_text("Prüfe WhatsApp Status...")
     try:
@@ -542,6 +549,7 @@ async def cmd_wa_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     await update.message.reply_text(
         "Mac Agent bereit.\n\n"
         "Schick mir eine Nachricht oder Sprachnachricht, oder nutze:\n"
@@ -564,6 +572,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     tts_status = "aktiviert" if is_tts_enabled() else "deaktiviert"
     wa_status = "✅ verbunden" if is_session_ready() else "❌ nicht verbunden"
     try:
@@ -580,6 +589,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.effective_chat is not None
     from bot.health_check import run_health_check
 
     await run_health_check(ctx.bot, update.effective_chat.id)
@@ -587,6 +597,7 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     logger.info("cmd_briefing: manuell ausgelöst")
     from bot.briefing import generate_briefing
 
@@ -596,8 +607,9 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         from agent.supervisor import get_graph
 
+        assert update.effective_chat is not None
         chat_id = update.effective_chat.id
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
         await get_graph().aupdate_state(
             config,
             {"messages": [AIMessage(content=briefing)]},
@@ -609,6 +621,7 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     from agent.proactive.pending import mark_done
 
     query = " ".join(ctx.args or []).strip()
@@ -627,6 +640,7 @@ async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     from agent.proactive.heartbeat import mute_proactive, unmute_proactive
 
     args = ctx.args or []
@@ -643,11 +657,12 @@ async def cmd_mute_proactive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 
 @restricted
 async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     log_path = Path.home() / ".fabbot" / "audit.log"
     if not log_path.exists():
         await update.message.reply_text("Noch keine Aktionen geloggt.")
         return
-    last = deque(maxlen=10)
+    last: deque[str] = deque(maxlen=10)
     with log_path.open(encoding="utf-8", errors="replace") as f:
         for line in f:
             stripped = line.rstrip()
@@ -658,6 +673,7 @@ async def cmd_auditlog(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     if not ctx.args or ctx.args[0].lower() not in ("on", "off"):
         status = "aktiviert" if is_tts_enabled() else "deaktiviert"
         await update.message.reply_text(f"Sprachausgabe ist aktuell {status}.\nVerwendung: /tts on oder /tts off")
@@ -669,6 +685,7 @@ async def cmd_tts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     if stop_speaking():
         await update.message.reply_text("Sprachausgabe gestoppt.")
     else:
@@ -677,7 +694,8 @@ async def cmd_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    text = " ".join(ctx.args)
+    assert update.message is not None
+    text = " ".join(ctx.args or [])
     if not text:
         await update.message.reply_text("Verwendung: /ask <deine Frage>")
         return
@@ -686,10 +704,12 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     if not ctx.args:
         await update.message.reply_text("Verwendung: /clip <URL>")
         return
     url = ctx.args[0]
+    assert update.effective_chat is not None
     chat_id = update.effective_chat.id
     thinking = await update.message.reply_text(f"Lese {url} ...")
     result = await clip_agent(url, chat_id)
@@ -715,6 +735,8 @@ async def cmd_clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
+    assert update.effective_chat is not None
     chat_id = update.effective_chat.id
     result = list_knowledge() if not ctx.args else search_knowledge(" ".join(ctx.args))
     await update.message.reply_text(result, parse_mode="Markdown")
@@ -723,6 +745,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     text = " ".join(ctx.args) if ctx.args else ""
     if not text:
         await update.message.reply_text("Verwendung: /remember <was ich mir merken soll>")
@@ -739,6 +762,7 @@ async def cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Profil-Konsolidierung: dryrun | apply | cancel | status"""
+    assert update.message is not None
     sub = ctx.args[0].lower() if ctx.args else ""
 
     if sub == "dryrun":
@@ -784,6 +808,7 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     thinking = await update.message.reply_text("Indexiere Wissensbasis (force=True)...")
     try:
         from agent.retrieval import index_all, _get_collection
@@ -808,6 +833,9 @@ async def cmd_reindex(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
+    assert update.message is not None
+    assert update.effective_chat is not None
+    assert update.effective_user is not None
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     record_activity(chat_id)
@@ -843,6 +871,9 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
+    assert update.message is not None
+    assert update.effective_chat is not None
+    assert update.effective_user is not None
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     record_activity(chat_id)
@@ -932,7 +963,7 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
             "telegram_chat_id": chat_id,
             "next_agent": None,
         }
-        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
         async with _get_invoke_lock(chat_id):
             response_msg = await _invoke_and_extract(state, config)
         await _dispatch_response(response_msg, ctx.bot, chat_id, update)
@@ -994,6 +1025,7 @@ async def _handle_document_audio(update, ctx, doc, chat_id, user_id) -> None:
 async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
+    assert update.message is not None
     location = update.message.location
     if not location:
         return
@@ -1007,16 +1039,19 @@ async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
-    await handle_message_text(update, ctx.bot, update.message.text)
+    assert update.message is not None
+    await handle_message_text(update, ctx.bot, update.message.text or "")
 
 
 @restricted
 async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
-    thinking = await update.message.reply_text("Transkribiere...")
+    assert update.message is not None
+    thinking: Any = await update.message.reply_text("Transkribiere...")
     try:
         voice = update.message.voice
+        assert voice is not None
         tg_file = await ctx.bot.get_file(voice.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
         text = await transcribe_audio(bytes(audio_bytes))
@@ -1041,11 +1076,14 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await _is_duplicate(update):
         return
+    assert update.message is not None
+    assert update.effective_chat is not None
     chat_id = update.effective_chat.id
     caption = update.message.caption or ""
-    thinking = await update.message.reply_text("Transkribiere...")
+    thinking: Any = await update.message.reply_text("Transkribiere...")
     try:
         audio = update.message.audio
+        assert audio is not None
         tg_file = await ctx.bot.get_file(audio.file_id)
         audio_bytes = await tg_file.download_as_bytearray()
         text = await transcribe_audio(bytes(audio_bytes))
@@ -1085,6 +1123,9 @@ async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
+    assert update.message is not None
+    assert update.effective_chat is not None
+    assert update.effective_user is not None
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     record_activity(chat_id)
@@ -1100,7 +1141,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
             "telegram_chat_id": chat_id,
             "next_agent": None,
         }
-        config = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
         # Phase 104 (Issue #16b): Lock verhindert concurrent ainvoke() auf denselben
         # thread_id – bei schnellem Chatten würden sonst zwei Handler gleichzeitig
         # den LangGraph SQLite-Checkpointer beschreiben → Race Condition → Duplikate.

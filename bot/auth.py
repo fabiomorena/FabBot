@@ -49,6 +49,7 @@ def restricted(func):
             return
         user_id = update.effective_user.id
         if user_id not in ALLOWED_IDS:
+            assert update.message is not None
             await update.message.reply_text("⛔ Kein Zugriff.")
             return
         return await func(update, ctx, *args, **kwargs)
