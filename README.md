@@ -341,6 +341,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 203** ✅ Briefing-Dedup + Evening Check-in Anti-Halluzination – _deduplicate_items() in pending.py entfernt thematisch ähnliche Offene-Punkte-Einträge per Keyword-Cluster (transitiv); evening_checkin filtert Briefing-Messages aus Kontext, Early-Return bei leerem Kontext, strikter Anti-Halluzinations-Prompt; Issues #211 #212; 1549 tests green
 - **Phase 204** ✅ Anti-Halluzination Pro – Post-Generation Entity Guard (_has_hallucination prüft LLM-Output gegen Kontext-Whitelist, erfundene Namen → Fallback); get_grounding_llm() mit temperature=0 für deterministisches Grounding; Whitelist-Injection im Prompt (erlaubte Entitäten aus Kontext); Issues #214 #215 #216; 1570 tests green
 - **Phase 205** ✅ Watchdog Logging – 13 print()-Aufrufe in watchdog.py durch strukturiertes logging ersetzt (basicConfig stdout, ISO-Timestamp, Level-Steuerung); LOG_PREFIX entfernt; log levels: info/warning/error/critical je nach Schwere; Issue #218; 1570 tests green
+- **Phase 206** ✅ Context-Overhead Reduction – CHAT_CONTEXT_WINDOW Default 40→20 (#229); Sessions-Doppelladung entfernt (load_session_summaries aus statischem Prompt, #228); last_agent_result auf 2000 Zeichen truncated (#227); CLAUDE.md auf 24 Non-Blank-Zeilen gekürzt (#226); 1570 tests green
 
 ---
 
