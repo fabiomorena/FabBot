@@ -19,6 +19,9 @@ _background_tasks: set[asyncio.Task] = set()
 _turn_counter: int = 0
 _MEMORY_NUDGE_INTERVAL: int = get_settings().memory_nudge_interval
 
+# Phase 206 (#227): Maximale Länge von last_agent_result im System-Prompt
+_MAX_AGENT_RESULT_CHARS = 2000
+
 _CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
 Beantworte die Frage des Users. Du hast Zugriff auf:
@@ -123,17 +126,7 @@ def _build_chat_prompt() -> str:
     except Exception as e:
         logger.debug(f"claude.md konnte nicht geladen werden (ignoriert): {e}")
 
-    # Block 2: Letzte Session-Summaries
-    try:
-        from bot.session_summary import load_session_summaries
-
-        sessions = load_session_summaries(n=5)
-        if sessions:
-            parts.append("\n## Letzte Sessions\n" + sessions)
-    except Exception as e:
-        logger.debug(f"Session-Summaries konnten nicht geladen werden (ignoriert): {e}")
-
-    # Block 3: Persoenliches Profil
+    # Block 2: Persoenliches Profil
     try:
         from agent.profile import get_profile_context_full
 
@@ -175,9 +168,12 @@ def _build_dynamic_prompt_suffix(
 
     if last_agent_result and last_agent_result.strip():
         agent_label = last_agent_name or "vorheriger Agent"
+        result_text = last_agent_result.strip()
+        if len(result_text) > _MAX_AGENT_RESULT_CHARS:
+            result_text = result_text[:_MAX_AGENT_RESULT_CHARS] + "\n…[gekürzt]"
         parts.append(
             f"\n## Kontext: Ergebnis des {agent_label}\n"
-            f"{last_agent_result.strip()}\n"
+            f"{result_text}\n"
             f"WICHTIG: Wiederhole diese Information NICHT in deiner Antwort. "
             f"Nutze sie nur als Hintergrundwissen wenn der User explizit "
             f"eine inhaltliche Folgefrage dazu stellt. "
@@ -231,12 +227,12 @@ def _get_last_human_message(messages: list) -> str:
 
 
 def _get_context_window_size() -> int:
-    """Liest CHAT_CONTEXT_WINDOW aus .env. Default: 40."""
+    """Liest CHAT_CONTEXT_WINDOW aus .env. Default: 20."""
     try:
         val = int(get_settings().chat_context_window)
         return max(10, min(200, val))
     except (ValueError, TypeError):
-        return 40
+        return 20
 
 
 _SHORT_CONFIRMATIONS = frozenset(
