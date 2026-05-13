@@ -425,7 +425,7 @@ def _pre_route(state: AgentState, messages: list, routing: list) -> str | None:
     return None
 
 
-async def supervisor_node(state: AgentState) -> AgentState:
+async def supervisor_node(state: AgentState) -> dict:
     messages = state["messages"]
     clean_messages = _filter_hitl_messages(messages)
     last_human = [m for m in clean_messages if isinstance(m, HumanMessage)]
@@ -472,7 +472,7 @@ async def supervisor_node(state: AgentState) -> AgentState:
 
 
 def route(state: AgentState) -> AgentName:
-    return state["next_agent"]
+    return state.get("next_agent") or "chat_agent"
 
 
 def _build_graph() -> StateGraph:
@@ -485,9 +485,9 @@ def _build_graph() -> StateGraph:
 
     graph.set_entry_point("supervisor")
 
-    edge_map = {name: name for name in _AGENTS}
+    edge_map: dict[str, str] = {name: name for name in _AGENTS}
     edge_map["FINISH"] = END
-    graph.add_conditional_edges("supervisor", route, edge_map)
+    graph.add_conditional_edges("supervisor", route, edge_map)  # type: ignore[arg-type]
 
     for name in _AGENTS:
         graph.add_edge(name, "supervisor")

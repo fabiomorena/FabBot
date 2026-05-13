@@ -76,7 +76,7 @@ try:
 except Exception:
     PARTY_REPORT_DAY = 2
 
-CLUBS = [
+CLUBS: list[dict] = [
     {
         "name": "Golden Gate",
         "query": "Golden Gate Berlin club events resident advisor",

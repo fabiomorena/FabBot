@@ -109,7 +109,7 @@ async def reminder_agent(state: AgentState) -> AgentState:
     except (json.JSONDecodeError, AttributeError):
         return _make_result("Fehler beim Verarbeiten der Erinnerung.")
 
-    chat_id = state.get("telegram_chat_id", 0)
+    chat_id = state.get("telegram_chat_id") or 0
 
     if action == "create":
         text = parsed.get("text", "").strip()

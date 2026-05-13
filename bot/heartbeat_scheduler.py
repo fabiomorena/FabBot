@@ -12,6 +12,8 @@ Trigger-Priorität:
 import asyncio
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from agent.proactive.heartbeat import (
     evaluate_time_triggers,
     generate_proactive_message,
@@ -37,7 +39,7 @@ async def _send_proactive(bot, chat_id: int, trigger: dict) -> None:
         from agent.supervisor import get_graph
         from langchain_core.messages import AIMessage
 
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
         await get_graph().aupdate_state(
             config,
             {"messages": [AIMessage(content=message)]},

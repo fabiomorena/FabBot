@@ -3,6 +3,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
@@ -437,11 +438,13 @@ async def chat_agent(state: AgentState) -> AgentState:
     # Phase 164: Anthropic Prompt Caching – statischer Block wird server-seitig gecacht.
     # cache_control auf Block 1 → Anthropic cached alles bis hier (~90% günstiger).
     # Dynamische Inhalte (Uhrzeit, Retrieval, last_agent_result) bleiben unkecacht.
-    content_blocks: list[dict] = [{"type": "text", "text": static_prompt, "cache_control": {"type": "ephemeral"}}]
+    content_blocks: list[dict[str, Any]] = [
+        {"type": "text", "text": static_prompt, "cache_control": {"type": "ephemeral"}}
+    ]
     if dynamic_content.strip():
         content_blocks.append({"type": "text", "text": dynamic_content})
 
-    messages = [SystemMessage(content=content_blocks)] + trimmed_messages
+    messages = [SystemMessage(content=content_blocks)] + trimmed_messages  # type: ignore[arg-type]
 
     response = await llm.ainvoke(messages)
     content = response.content

@@ -127,7 +127,7 @@ def get_llm() -> ChatAnthropic:
     model = get_sonnet_model()
     if _llm is None or _llm.model != model:
         _warn_if_unusual(model)
-        _llm = ChatAnthropic(model=model)
+        _llm = ChatAnthropic(model=model)  # type: ignore[call-arg]
     return _llm
 
 
@@ -141,7 +141,7 @@ def get_fast_llm() -> ChatAnthropic:
     model = get_haiku_model()
     if _fast_llm is None or _fast_llm.model != model:
         _warn_if_unusual(model)
-        _fast_llm = ChatAnthropic(model=model)
+        _fast_llm = ChatAnthropic(model=model)  # type: ignore[call-arg]
     return _fast_llm
 
 
@@ -153,4 +153,4 @@ def get_grounding_llm() -> ChatAnthropic:
     """
     model = get_haiku_model()
     _warn_if_unusual(model)
-    return ChatAnthropic(model=model, temperature=0)
+    return ChatAnthropic(model=model, temperature=0)  # type: ignore[call-arg]

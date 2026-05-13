@@ -15,6 +15,8 @@ import json
 import logging
 import re
 from datetime import date, datetime, timedelta
+
+from langchain_core.runnables import RunnableConfig
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -317,7 +319,7 @@ async def run_evening_checkin_scheduler(bot, chat_id: int) -> None:
                 from agent.supervisor import get_graph
                 from langchain_core.messages import AIMessage
 
-                config = {"configurable": {"thread_id": str(chat_id)}}
+                config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
                 await get_graph().aupdate_state(
                     config,
                     {"messages": [AIMessage(content=question)]},

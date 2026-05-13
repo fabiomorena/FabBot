@@ -35,6 +35,8 @@ import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from langchain_core.runnables import RunnableConfig
+
 from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -127,7 +129,7 @@ async def _get_messages_from_state(chat_id: int) -> list:
         if agent_graph is None:
             logger.debug("SessionSummary: agent_graph nicht initialisiert – skip")
             return []
-        config = {"configurable": {"thread_id": str(chat_id)}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}}
         state = await agent_graph.aget_state(config)
         if not state or not state.values:
             return []

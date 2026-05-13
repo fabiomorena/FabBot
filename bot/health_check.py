@@ -374,7 +374,7 @@ async def run_health_check(bot, chat_id: int) -> None:
         all_ok = True
 
         for label, result in zip(labels, checks):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 # asyncio.gather hat eine Exception gefangen
                 ok, detail = False, str(result)[:80]
             else:
