@@ -3223,7 +3223,7 @@ class TestChatAgentContextTrim:
     """Tests fuer den Context Trim in chat_agent."""
 
     def test_get_context_window_size_default(self) -> None:
-        """Default-Wert ist 40 wenn CHAT_CONTEXT_WINDOW nicht gesetzt."""
+        """Default-Wert ist 20 wenn CHAT_CONTEXT_WINDOW nicht gesetzt."""
         from unittest.mock import patch
         from agent.agents.chat_agent import _get_context_window_size
 
@@ -3232,7 +3232,7 @@ class TestChatAgentContextTrim:
 
             os.environ.pop("CHAT_CONTEXT_WINDOW", None)
             result = _get_context_window_size()
-        assert result == 40
+        assert result == 20
 
     def test_get_context_window_size_from_env(self) -> None:
         """Wert wird aus CHAT_CONTEXT_WINDOW gelesen."""
@@ -3244,13 +3244,13 @@ class TestChatAgentContextTrim:
         assert result == 30
 
     def test_get_context_window_size_invalid_falls_back(self) -> None:
-        """Ungültiger Wert fällt auf Default 40 zurück."""
+        """Ungültiger Wert fällt auf Default 20 zurück."""
         from unittest.mock import patch
         from agent.agents.chat_agent import _get_context_window_size
 
         with patch.dict("os.environ", {"CHAT_CONTEXT_WINDOW": "abc"}):
             result = _get_context_window_size()
-        assert result == 40
+        assert result == 20
 
     def test_get_context_window_size_min_clamped(self) -> None:
         """Zu kleiner Wert wird auf Minimum 10 begrenzt."""
@@ -5814,15 +5814,17 @@ class TestChatAgentSessionContext:
             result = load_session_summaries(n=5)
         assert result == ""
 
-    def test_session_section_in_prompt_via_mock(self) -> None:
-        """Session-Summaries erscheinen im Prompt wenn load_session_summaries Inhalt liefert."""
-        from agent.agents.chat_agent import _build_chat_prompt
+    def test_session_section_not_in_static_prompt(self) -> None:
+        """Phase 206 (#228): Session-Summaries sind NICHT mehr im statischen Prompt.
+        Sessions werden via _load_all_sessions() im Retrieval-Kontext geladen."""
+        from agent.agents.chat_agent import _build_chat_prompt, invalidate_chat_cache
 
+        invalidate_chat_cache()
         with patch("bot.session_summary.load_session_summaries", return_value="PHASE73_SESSION_CONTENT"):
             prompt = _build_chat_prompt()
 
-        assert "PHASE73_SESSION_CONTENT" in prompt
-        assert "Letzte Sessions" in prompt
+        assert "PHASE73_SESSION_CONTENT" not in prompt
+        assert "Letzte Sessions" not in prompt
 
     def test_no_session_section_when_empty_via_mock(self) -> None:
         """Kein Session-Block im Prompt wenn load_session_summaries leer."""
@@ -5852,21 +5854,16 @@ class TestChatAgentSessionContext:
         # der echte Prompt hat das ersetzt – daher nur einen stabilen Teil prüfen
         assert "Du bist ein hilfreicher persoenlicher Assistent" in prompt
 
-    def test_session_load_called_with_n5(self) -> None:
-        """load_session_summaries wird mit n=5 aufgerufen."""
-        from agent.agents.chat_agent import _build_chat_prompt
+    def test_session_load_not_called_in_static_prompt(self) -> None:
+        """Phase 206 (#228): load_session_summaries wird NICHT mehr in _build_chat_prompt aufgerufen.
+        Sessions werden via _load_all_sessions() im Retrieval-Kontext bereitgestellt."""
+        from agent.agents.chat_agent import _build_chat_prompt, invalidate_chat_cache
 
-        with patch("bot.session_summary.load_session_summaries", return_value="") as mock_load:
-            # Auch claude_md und profile muessen erreichbar sein damit
-            # der outer try-Block nicht fehlschlaegt
-            with patch("bot.session_summary.load_session_summaries", return_value="") as mock_load2:
-                from agent.agents.chat_agent import invalidate_chat_cache
+        with patch("bot.session_summary.load_session_summaries", return_value="DUMMY") as mock_load:
+            invalidate_chat_cache()
+            _build_chat_prompt()
 
-                invalidate_chat_cache()
-                _build_chat_prompt()
-
-        # Einer der beiden Mocks wurde aufgerufen
-        assert mock_load.called or mock_load2.called
+        assert not mock_load.called
 
 
 class TestFilterMessages:

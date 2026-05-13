@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     knowledge_dir: str = Field(default_factory=_default_knowledge_dir)
 
     # ── Chat ──────────────────────────────────────────────────────────────────
-    chat_context_window: int = 40
+    chat_context_window: int = 20
     memory_nudge_interval: int = 10
     profile_snapshot_ttl: float = 300.0
     fabbot_extra_paths: str = ""
