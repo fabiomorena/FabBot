@@ -191,9 +191,14 @@ class TestRunHeartbeat:
         ]
         mock_bot = AsyncMock()
 
+        trigger = {**pending[0], "trigger_type": "time", "days_until_due": trigger_days}
         with (
-            patch("agent.proactive.heartbeat.COOLDOWN_FILE", cooldown_file),
+            patch("bot.heartbeat_scheduler.is_on_cooldown", return_value=False),
+            patch("bot.heartbeat_scheduler.is_muted", return_value=False),
+            patch("bot.heartbeat_scheduler.is_quiet_hours", return_value=False),
+            patch("bot.heartbeat_scheduler.run_api_health_check", new_callable=AsyncMock),
             patch("bot.heartbeat_scheduler.get_pending_items", return_value=pending),
+            patch("bot.heartbeat_scheduler.evaluate_time_triggers", return_value=[trigger]),
             patch(
                 "bot.heartbeat_scheduler.generate_proactive_message",
                 new_callable=AsyncMock,
