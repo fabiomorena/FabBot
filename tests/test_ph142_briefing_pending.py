@@ -83,7 +83,7 @@ class TestFormatPendingItems:
             {"entity_type": "event", "name": "B", "priority_score": 20},
         ]
         result = _format_pending_items(items)
-        lines = [l for l in result.split("\n") if l.strip()]
+        lines = [line for line in result.split("\n") if line.strip()]
         assert len(lines) == 2
 
 
