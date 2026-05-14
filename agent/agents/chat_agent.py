@@ -189,7 +189,12 @@ _HITL_PREFIXES = ("__CONFIRM_", "__SCREENSHOT__", "__MEMORY__", "__VISION_RESULT
 
 
 def _clean_messages_for_chat(messages: list) -> list:
-    """Ersetzt HITL-Nachrichten durch lesbare Platzhalter fuer den chat_agent."""
+    """Ersetzt HITL-Nachrichten durch lesbare Platzhalter fuer den chat_agent.
+
+    Phase 212 (Issue #129): terminal + file produzieren keine __CONFIRM_*-Strings
+    mehr (HITL über LangGraph interrupt()). Die elif-Branches dafür bleiben für
+    backward-compat mit alten SQLite-Checkpoints im State.
+    """
     cleaned = []
     for msg in messages:
         content = msg.content if hasattr(msg, "content") else ""

@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 
 from langchain_core.messages import SystemMessage, AIMessage
+from langgraph.types import interrupt
 
 from agent.config import get_settings
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
-from agent.protocol import Proto
 
 logger = logging.getLogger(__name__)
 from agent.utils import extract_llm_text
@@ -179,16 +179,54 @@ async def file_agent(state: AgentState) -> AgentState:
     elif action == "read":
         return _read_file(path, state)
     elif action == "write":
-        preview = f"{len(file_content)} Zeichen" if file_content else "leer"
-        return {
-            "messages": [AIMessage(content=f"{Proto.CONFIRM_FILE_WRITE}{path}::{file_content}")],
-            "next_agent": None,
-            "_confirm_display": f"Schreibe {preview} nach: {path}",
-            "last_agent_result": None,
-            "last_agent_name": "file_agent",
-        }
+        return await _write_file_with_hitl(path, file_content, state)
     else:
         return _err(f"Unbekannte Aktion: {action}")
+
+
+async def _write_file_with_hitl(path: Path, file_content: str, state: AgentState) -> AgentState:
+    """Phase 212 (Issue #129): HITL via LangGraph interrupt() statt Magic-String-Return.
+
+    Defensive: path und content kommen aus Decision (Source of Truth post-confirm),
+    weil der Node bei resume neu durchläuft und der LLM-Call eine andere Antwort liefern könnte.
+    """
+    chat_id = state.get("telegram_chat_id")
+    preview = f"{len(file_content)} Zeichen" if file_content else "leer"
+    decision = interrupt(
+        {
+            "type": "file_write",
+            "path": str(path),
+            "content": file_content,
+            "display": f"Schreibe {preview} nach: {path}",
+        }
+    )
+
+    if not isinstance(decision, dict) or not decision.get("confirmed"):
+        log_action("file_agent", "write", f"user rejected: {path}", chat_id, status="rejected")
+        msg = "Schreibvorgang abgebrochen."
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "file_agent",
+        }
+
+    if not decision.get("rate_limit_ok", True):
+        log_action("file_agent", "write", f"action-rate-limited: {path}", chat_id, status="blocked")
+        msg = "Rate Limit: zu viele Aktionen – bitte kurz warten."
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "file_agent",
+        }
+
+    confirmed_path = Path(decision.get("path", str(path)))
+    confirmed_content = decision.get("content", file_content)
+    output = file_agent_write(confirmed_path, confirmed_content, chat_id or 0)
+    return {
+        "messages": [AIMessage(content=output)],
+        "last_agent_result": output,
+        "last_agent_name": "file_agent",
+    }
 
 
 def _list_dir(path: Path, state: AgentState) -> AgentState:

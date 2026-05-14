@@ -41,6 +41,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
 from langgraph.errors import GraphRecursionError
+from langgraph.types import Command
 
 from agent.config import get_settings
 from bot.auth import restricted
@@ -51,8 +52,6 @@ from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled, stop_speaki
 from agent.security import sanitize_input_async, check_action_rate_limit
 from agent.audit import log_action, log_blocked
 from agent.protocol import Proto
-from agent.agents.terminal import terminal_agent_execute
-from agent.agents.file import file_agent_write
 from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
@@ -237,7 +236,8 @@ async def _update_vision_memory(chat_id: int, caption: str, result: str) -> None
 _TRANSIENT_EXCEPTIONS = (APIConnectionError, RateLimitError)
 
 
-async def _invoke_with_retry(state: dict, config: RunnableConfig) -> dict:
+async def _invoke_with_retry(state, config: RunnableConfig) -> dict:
+    """state kann ein dict oder Command sein (für interrupt resume)."""
     from agent.supervisor import get_graph
 
     last_exception: Exception | None = None
@@ -263,6 +263,42 @@ async def _invoke_with_retry(state: dict, config: RunnableConfig) -> dict:
     raise last_exception or RuntimeError("Alle Retry-Versuche fehlgeschlagen")
 
 
+# Phase 212 (Issue #129): HITL via LangGraph interrupt() – Bot resumed bei Interrupt
+# mit User-Bestätigung. Magic-String-Dispatch für terminal/file entfällt damit.
+_INTERRUPT_MAX_LOOPS = 3
+
+
+async def _handle_interrupt(interrupt_value: dict, bot: Bot, chat_id: int) -> dict:
+    """Zeigt Confirmation-UI, baut Resume-Decision für interrupt()."""
+    action_type = interrupt_value.get("type")
+
+    if action_type == "terminal":
+        command = interrupt_value.get("command", "")
+        confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
+        if not confirmed:
+            return {"confirmed": False}
+        rate_limit_ok = check_action_rate_limit(chat_id, "destructive")
+        return {"confirmed": True, "rate_limit_ok": rate_limit_ok, "command": command}
+
+    if action_type == "file_write":
+        path = interrupt_value.get("path", "")
+        content = interrupt_value.get("content", "")
+        display = interrupt_value.get("display", f"Schreibe nach: {path}")
+        confirmed = await request_confirmation(bot, chat_id, "file_agent", display)
+        if not confirmed:
+            return {"confirmed": False}
+        rate_limit_ok = check_action_rate_limit(chat_id, "destructive")
+        return {
+            "confirmed": True,
+            "rate_limit_ok": rate_limit_ok,
+            "path": path,
+            "content": content,
+        }
+
+    logger.warning(f"_handle_interrupt: unbekannter Typ {action_type!r} – ablehnen")
+    return {"confirmed": False}
+
+
 # ---------------------------------------------------------------------------
 # Phase 84: Shared Helpers
 # ---------------------------------------------------------------------------
@@ -282,8 +318,18 @@ async def _sanitize_and_validate(text: str, user_id: int, update: Update) -> tup
     return is_safe, result
 
 
-async def _invoke_and_extract(state: dict, config: RunnableConfig) -> str:
+async def _invoke_and_extract(
+    state: dict,
+    config: RunnableConfig,
+    bot: Bot | None = None,
+    chat_id: int | None = None,
+) -> str:
     """Phase 107: last_human_idx als Ankerpunkt statt input_count.
+
+    Phase 212 (Issue #129): Erkennt LangGraph-interrupt() für HITL.
+    Bei Interrupt holt _handle_interrupt User-Confirmation und resumed via
+    Command(resume=...). Mehrere Interrupts pro Turn werden in einer Loop
+    behandelt (max _INTERRUPT_MAX_LOOPS gegen Endlosschleife).
 
     input_count=1 (nur neue HumanMessage in state["messages"]) aber
     result_state enthält den kompletten LangGraph-Checkpoint. Bei FINISH
@@ -294,6 +340,19 @@ async def _invoke_and_extract(state: dict, config: RunnableConfig) -> str:
     nur AIMessages danach (ohne __MEMORY__) sind die neue Antwort.
     """
     result_state = await _invoke_with_retry(state, config)
+
+    for _ in range(_INTERRUPT_MAX_LOOPS):
+        interrupts = result_state.get("__interrupt__") if isinstance(result_state, dict) else None
+        if not interrupts:
+            break
+        if bot is None or chat_id is None:
+            logger.error("_invoke_and_extract: Interrupt erhalten ohne bot/chat_id – ablehnen")
+            decision = {"confirmed": False}
+        else:
+            interrupt_value = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+            decision = await _handle_interrupt(interrupt_value, bot, chat_id)
+        result_state = await _invoke_with_retry(Command(resume=decision), config)
+
     messages = result_state["messages"]
 
     last_human_idx = max(
@@ -366,23 +425,6 @@ async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **
         log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
 
 
-async def _handle_confirm_terminal(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    command = response_msg[len(Proto.CONFIRM_TERMINAL) :]
-    confirmed = await request_confirmation(bot, chat_id, "terminal_agent", command)
-    if confirmed:
-        if not check_action_rate_limit(chat_id, "destructive"):
-            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
-            log_action("terminal_agent", command[:200], "action-rate-limited", chat_id, status="blocked")
-            return
-        output = terminal_agent_execute(command, chat_id)
-        await bot.send_message(chat_id=chat_id, text=f"Output:\n\n{output}")
-        if len(output) <= _TTS_MAX_HITL_OUTPUT:
-            await speak_and_send(output, bot, chat_id)
-        await _update_memory(chat_id, f"Terminal-Befehl ausgefuehrt: {command}\nErgebnis: {output}")
-    else:
-        log_action("terminal_agent", command, "user rejected", chat_id, status="rejected")
-
-
 async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
     parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT) :].split("::")
     title = parts[0] if len(parts) > 0 else ""
@@ -397,25 +439,6 @@ async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int
         await _update_memory(chat_id, f"Kalendereintrag erstellt: {title} um {start_time}\nErgebnis: {output}")
     else:
         log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
-
-
-async def _handle_confirm_file_write(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_FILE_WRITE) :].split("::", 1)
-    path_str = parts[0]
-    file_content = parts[1] if len(parts) > 1 else ""
-    confirmed = await request_confirmation(bot, chat_id, "file_agent", f"Schreibe nach: {path_str}")
-    if confirmed:
-        if not check_action_rate_limit(chat_id, "destructive"):
-            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
-            log_action("file_agent", "write", f"action-rate-limited: {path_str}", chat_id, status="blocked")
-            return
-        output = file_agent_write(Path(path_str), file_content, chat_id)
-        await bot.send_message(chat_id=chat_id, text=output)
-        if len(output) <= _TTS_MAX_HITL_OUTPUT:
-            await speak_and_send(output, bot, chat_id)
-        await _update_memory(chat_id, f"Datei geschrieben: {path_str}\nErgebnis: {output}")
-    else:
-        log_action("file_agent", "write", f"user rejected: {path_str}", chat_id, status="rejected")
 
 
 async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
@@ -447,9 +470,7 @@ async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **
 _RESPONSE_DISPATCH: list[tuple[str, Any]] = [
     (Proto.SCREENSHOT, _handle_screenshot),
     (Proto.CONFIRM_COMPUTER, _handle_confirm_computer),
-    (Proto.CONFIRM_TERMINAL, _handle_confirm_terminal),
     (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
-    (Proto.CONFIRM_FILE_WRITE, _handle_confirm_file_write),
     (Proto.CONFIRM_WHATSAPP, _handle_confirm_whatsapp),
 ]
 
@@ -965,7 +986,7 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
         }
         config: RunnableConfig = {"configurable": {"thread_id": str(chat_id)}, "recursion_limit": 10}
         async with _get_invoke_lock(chat_id):
-            response_msg = await _invoke_and_extract(state, config)
+            response_msg = await _invoke_and_extract(state, config, ctx.bot, chat_id)
         await _dispatch_response(response_msg, ctx.bot, chat_id, update)
     except Exception as e:
         logger.error(f"on_document PDF-Fehler: {e}", exc_info=True)
@@ -1146,7 +1167,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         # thread_id – bei schnellem Chatten würden sonst zwei Handler gleichzeitig
         # den LangGraph SQLite-Checkpointer beschreiben → Race Condition → Duplikate.
         async with _get_invoke_lock(chat_id):
-            response_msg = await _invoke_and_extract(state, config)
+            response_msg = await _invoke_and_extract(state, config, bot, chat_id)
         await _delete_thinking(thinking)
         await _dispatch_response(response_msg, bot, chat_id, update)
         if response_msg:

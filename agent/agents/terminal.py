@@ -4,10 +4,10 @@ import subprocess
 import shlex
 from pathlib import Path
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langgraph.types import interrupt
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
-from agent.protocol import Proto
 from agent.utils import extract_llm_text
 
 logger = logging.getLogger(__name__)
@@ -239,8 +239,6 @@ def execute_command(command: str) -> str:
 def _extract_command(response_content) -> str:
     content = extract_llm_text(response_content)
     command = content.strip().strip("`")
-    if command.startswith("__CONFIRM_TERMINAL__:"):
-        command = command[len("__CONFIRM_TERMINAL__:") :]
     return command
 
 
@@ -264,7 +262,7 @@ async def terminal_agent(state: AgentState) -> AgentState:
         if not (
             hasattr(m, "content")
             and isinstance(m.content, str)
-            and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__"))
+            and m.content.startswith(("__MEMORY__:", "__CONFIRM_", "__SCREENSHOT__", "__VISION_RESULT__"))
         )
     ]
     messages = [SystemMessage(content=PROMPT)] + filtered
@@ -327,8 +325,10 @@ async def terminal_agent(state: AgentState) -> AgentState:
             ]
             messages = correction_msgs
 
+    chat_id = state.get("telegram_chat_id")
+
     if not allowed:
-        log_action("terminal_agent", command[:200], reason, state.get("telegram_chat_id"), status="blocked")
+        log_action("terminal_agent", command[:200], reason, chat_id, status="blocked")
         msg = f"Blockiert: {reason}"
         return {
             "messages": [AIMessage(content=msg)],
@@ -336,11 +336,36 @@ async def terminal_agent(state: AgentState) -> AgentState:
             "last_agent_name": "terminal_agent",
         }
 
-    # HITL – kein last_agent_result (Ergebnis kommt erst nach Bestätigung)
+    # Phase 212 (Issue #129): HITL via LangGraph interrupt() statt Magic-String-Return.
+    # Bot.py erkennt den Interrupt, holt User-Bestätigung und resumed via Command(resume=...).
+    # Defensive: confirmed_command kommt aus Decision (Source of Truth post-confirm),
+    # weil der Node bei resume neu durchläuft und der LLM-Call eine andere Antwort liefern könnte.
+    decision = interrupt({"type": "terminal", "command": command})
+
+    if not isinstance(decision, dict) or not decision.get("confirmed"):
+        log_action("terminal_agent", command[:200], "user rejected", chat_id, status="rejected")
+        msg = "Befehl abgebrochen."
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "terminal_agent",
+        }
+
+    if not decision.get("rate_limit_ok", True):
+        log_action("terminal_agent", command[:200], "action-rate-limited", chat_id, status="blocked")
+        msg = "Rate Limit: zu viele Aktionen – bitte kurz warten."
+        return {
+            "messages": [AIMessage(content=msg)],
+            "last_agent_result": msg,
+            "last_agent_name": "terminal_agent",
+        }
+
+    confirmed_command = decision.get("command", command)
+    output = terminal_agent_execute(confirmed_command, chat_id or 0)
+    result_text = f"Output:\n\n{output}"
     return {
-        "messages": [AIMessage(content=f"{Proto.CONFIRM_TERMINAL}{command}")],
-        "next_agent": None,
-        "last_agent_result": None,
+        "messages": [AIMessage(content=result_text)],
+        "last_agent_result": output,
         "last_agent_name": "terminal_agent",
     }
 
