@@ -345,6 +345,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 207** ✅ .gitignore erweitern – SQLite-Artefakte (*.db, *.db-shm, *.db-wal), .fabbot/, Test-Artefakte (.pytest_cache/, htmlcov/, .coverage), lokale Konfig (*.local.yaml, *.local.env), open-issues.html; Issue #222; 1570 tests green
 - **Phase 208** ✅ Type-Safety – AgentState auf NotRequired umgestellt (48 typeddict-item Fehler); assert-Guards in 20 Telegram-Handlern (88 union-attr Fehler); RunnableConfig für aupdate_state/ainvoke (6 Dateien); Neben-Fixes: PIL.Resampling.LANCZOS, tts.py return-Pfad, BaseException-Check; Mypy 176 → 0 Fehler; Issue #219; 1569 tests green
 - **Phase 209** ✅ Pre-Commit Hooks + Ruff E741 – .pre-commit-config.yaml mit ruff, ruff-format, mypy, bandit (alle local/system); E741 aus ruff ignore entfernt, 14 `l`→`line` Umbenennungen in 7 Dateien; [tool.mypy] ignore_missing_imports=true in pyproject.toml; bot/local_api.py Queue|None-Fix; Issues #220 #221; 1570 tests green
+- **Phase 210** ✅ Kostenoptimierung: Session-Summaries kürzen – SESSION_SUMMARY_MAX_CHARS (Default 600) via .env konfigurierbar; _load_all_sessions() truncated pro Summary auf max N Zeichen; Issue #115; 1572 tests green
 
 ---
 

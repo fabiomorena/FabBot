@@ -343,12 +343,15 @@ def _load_all_sessions(max_days: int | None = None) -> str:
         if _sessions_cache is not None and _sessions_cache[0] == max_mtime:
             return _sessions_cache[1]
 
+        max_chars = get_settings().session_summary_max_chars
         label = "alle" if effective_days is None else f"letzte {effective_days} Tage"
         parts = [f"\n## Deine Session-Erinnerungen ({label}):"]
         for f in active_files:
             try:
                 content = f.read_text(encoding="utf-8").strip()
                 if content:
+                    if len(content) > max_chars:
+                        content = content[:max_chars] + "…"
                     parts.append(f"[{f.stem}]\n{content}")
             except Exception:
                 continue
