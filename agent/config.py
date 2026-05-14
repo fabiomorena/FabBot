@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     health_check_time: str = "06:00"
     session_summary_time: str = "23:30"
     session_summary_min_messages: int = 10
+    session_summary_max_chars: int = 600
     party_report_day: int = 2
     party_report_time: str = "20:00"
     evening_checkin_time: str = "21:00"

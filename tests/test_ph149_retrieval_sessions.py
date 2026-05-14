@@ -329,3 +329,54 @@ def test_load_sessions_cache_hit(tmp_path):
 
     assert result == "cached_result"
     ca._sessions_cache = None
+
+
+# ---------------------------------------------------------------------------
+# #115 – _load_all_sessions() Summary-Truncation
+# ---------------------------------------------------------------------------
+
+
+def test_load_sessions_truncates_long_summary(tmp_path):
+    """Lange Summaries werden auf SESSION_SUMMARY_MAX_CHARS gekürzt."""
+    stems = _stems(3)
+    long_content = "A" * 1000
+    _make_session_files(tmp_path, stems, content=long_content)
+
+    mock_settings = MagicMock()
+    mock_settings.session_summary_max_chars = 50
+
+    import agent.agents.chat_agent as ca
+
+    ca._sessions_cache = None
+    with (
+        patch("agent.retrieval._SESSIONS_DIR", tmp_path),
+        patch("agent.agents.chat_agent.get_settings", return_value=mock_settings),
+    ):
+        result = ca._load_all_sessions()
+
+    # Datei-Inhalt: "# YYYY-MM-DD\n" (13 Zeichen) + 1000 * "A" → max_chars=50 → 37 "A"s bleiben
+    assert "A" * 37 in result
+    assert "A" * 38 not in result
+    assert "…" in result
+
+
+def test_load_sessions_short_summary_not_truncated(tmp_path):
+    """Kurze Summaries werden nicht verändert."""
+    stems = _stems(2)
+    short_content = "kurz"
+    _make_session_files(tmp_path, stems, content=short_content)
+
+    mock_settings = MagicMock()
+    mock_settings.session_summary_max_chars = 600
+
+    import agent.agents.chat_agent as ca
+
+    ca._sessions_cache = None
+    with (
+        patch("agent.retrieval._SESSIONS_DIR", tmp_path),
+        patch("agent.agents.chat_agent.get_settings", return_value=mock_settings),
+    ):
+        result = ca._load_all_sessions()
+
+    assert "kurz" in result
+    assert "…" not in result
