@@ -186,7 +186,7 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
 
     # Phase 67 Fix: Entry-Detection erkennt -, * und + als Listenmarker
     lines = section_body.split("\n")
-    entry_indices = [i for i, l in enumerate(lines) if re.match(r"\s*[-*+]\s", l)]
+    entry_indices = [i for i, line in enumerate(lines) if re.match(r"\s*[-*+]\s", line)]
 
     if len(entry_indices) <= max_entries:
         return content  # Kein Trim noetig
@@ -194,7 +194,7 @@ def _trim_auto_section(content: str, max_entries: int = _MAX_AUTO_ENTRIES) -> st
     # FIFO: aelteste Eintraege (erste) entfernen
     to_remove_count = len(entry_indices) - max_entries
     indices_to_remove = set(entry_indices[:to_remove_count])
-    trimmed_lines = [l for i, l in enumerate(lines) if i not in indices_to_remove]
+    trimmed_lines = [line for i, line in enumerate(lines) if i not in indices_to_remove]
 
     logger.info(
         f"claude.md FIFO-Trim: {to_remove_count} alte Eintraege entfernt (max. {max_entries} in {_AUTO_SECTION})"

@@ -4276,7 +4276,7 @@ class TestNewlineSanitizingAppendToClaudeMd:
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
             await append_to_claude_md("Erste Zeile\nZweite Zeile\nDritte Zeile")
         content = md.read_text(encoding="utf-8")
-        lines = [l for l in content.split("\n") if "Erste" in l or "Zweite" in l or "Dritte" in l]
+        lines = [line for line in content.split("\n") if "Erste" in line or "Zweite" in line or "Dritte" in line]
         assert len(lines) == 1, "Newlines wurden nicht entfernt – mehrere Zeilen gefunden"
         assert "Erste Zeile Zweite Zeile" in lines[0]
 
@@ -4596,7 +4596,7 @@ class TestTrimAutoSection:
             asyncio.get_event_loop().run_until_complete(append_to_claude_md("Neuer Eintrag"))
 
         content = md.read_text(encoding="utf-8")
-        entry_lines = [l for l in content.split("\n") if l.strip().startswith("- ")]
+        entry_lines = [line for line in content.split("\n") if line.strip().startswith("- ")]
         assert len(entry_lines) == _MAX_AUTO_ENTRIES, (
             f"Erwartet {_MAX_AUTO_ENTRIES} Eintraege, gefunden: {len(entry_lines)}"
         )
@@ -4709,7 +4709,7 @@ class TestRobustHeadingRegex:
         content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n\n##OhneSpace\nText\n"
         result = _trim_auto_section(content, max_entries=50)
         # Trim soll trotzdem funktionieren
-        entry_lines = [l for l in result.split("\n") if l.strip().startswith("- ")]
+        entry_lines = [line for line in result.split("\n") if line.strip().startswith("- ")]
         assert len(entry_lines) == 50
 
 
@@ -4723,7 +4723,7 @@ class TestEntryDetectionAllMarkers:
         entries = "\n".join(f"- Eintrag {i}" for i in range(55))
         content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
         result = _trim_auto_section(content, max_entries=50)
-        entry_lines = [l for l in result.split("\n") if re.match(r"\s*[-*+]\s", l)]
+        entry_lines = [line for line in result.split("\n") if re.match(r"\s*[-*+]\s", line)]
         assert len(entry_lines) == 50
 
     def test_asterisk_entries_counted(self) -> None:
@@ -4733,7 +4733,7 @@ class TestEntryDetectionAllMarkers:
         entries = "\n".join(f"* Eintrag {i}" for i in range(55))
         content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
         result = _trim_auto_section(content, max_entries=50)
-        entry_lines = [l for l in result.split("\n") if re.match(r"\s*[-*+]\s", l)]
+        entry_lines = [line for line in result.split("\n") if re.match(r"\s*[-*+]\s", line)]
         assert len(entry_lines) == 50
 
     def test_plus_entries_counted(self) -> None:
@@ -4743,7 +4743,7 @@ class TestEntryDetectionAllMarkers:
         entries = "\n".join(f"+ Eintrag {i}" for i in range(55))
         content = f"# FabBot\n\n## Automatisch gelernt\n{entries}\n"
         result = _trim_auto_section(content, max_entries=50)
-        entry_lines = [l for l in result.split("\n") if re.match(r"\s*[-*+]\s", l)]
+        entry_lines = [line for line in result.split("\n") if re.match(r"\s*[-*+]\s", line)]
         assert len(entry_lines) == 50
 
     def test_mixed_markers_counted_together(self) -> None:
@@ -4756,7 +4756,7 @@ class TestEntryDetectionAllMarkers:
             entries.append(f"{marker} Eintrag {i}")
         content = "# FabBot\n\n## Automatisch gelernt\n" + "\n".join(entries) + "\n"
         result = _trim_auto_section(content, max_entries=50)
-        entry_lines = [l for l in result.split("\n") if re.match(r"\s*[-*+]\s", l)]
+        entry_lines = [line for line in result.split("\n") if re.match(r"\s*[-*+]\s", line)]
         assert len(entry_lines) == 50
 
 

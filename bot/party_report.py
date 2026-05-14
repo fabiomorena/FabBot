@@ -412,9 +412,9 @@ async def generate_party_report() -> str:
             # Trailing-Sätze entfernen die LLM trotz Anweisung manchmal anhängt
             lines = events_text.splitlines()
             cleaned = [
-                l
-                for l in lines
-                if not any(phrase in l for phrase in ["Keine weiteren", "Keine Events gefunden", "keine weiteren"])
+                line
+                for line in lines
+                if not any(phrase in line for phrase in ["Keine weiteren", "Keine Events gefunden", "keine weiteren"])
             ]
             events_text = "\n".join(cleaned).strip() or "Keine Events gefunden."
         club_sections.append(f"{emoji} *{club['name']}*\n{events_text}")

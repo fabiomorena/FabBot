@@ -101,8 +101,8 @@ class TestSupervisorPreRouting:
         from agent.supervisor import _PRE_ROUTING_RULES
 
         labels = [rule[2] for rule in _PRE_ROUTING_RULES]
-        bot_idx = next(i for i, l in enumerate(labels) if "bot-instruction" in l)
-        del_idx = next(i for i, l in enumerate(labels) if l == "delete-trigger")
+        bot_idx = next(i for i, label in enumerate(labels) if "bot-instruction" in label)
+        del_idx = next(i for i, label in enumerate(labels) if label == "delete-trigger")
         assert bot_idx < del_idx
 
 

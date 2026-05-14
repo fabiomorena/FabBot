@@ -12,7 +12,7 @@ from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
-_message_queue: asyncio.Queue = None
+_message_queue: asyncio.Queue | None = None
 
 # Token-Datei unter ~/.fabbot/local_api_token
 TOKEN_PATH = Path.home() / ".fabbot" / "local_api_token"
