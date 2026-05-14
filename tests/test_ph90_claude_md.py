@@ -585,7 +585,7 @@ class TestAppendRegressions:
         with patch("agent.claude_md._CLAUDE_MD_PATH", md):
             await append_to_claude_md("Neuer Eintrag nach Trim")
         content = md.read_text(encoding="utf-8")
-        entry_lines = [l for l in content.split("\n") if l.strip().startswith("- ")]
+        entry_lines = [line for line in content.split("\n") if line.strip().startswith("- ")]
         assert len(entry_lines) == _MAX_AUTO_ENTRIES
         assert "Neuer Eintrag nach Trim" in content
         assert "Eintrag 0 " not in content  # ältester entfernt

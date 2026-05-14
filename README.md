@@ -344,6 +344,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 206** ✅ Context-Overhead Reduction – CHAT_CONTEXT_WINDOW Default 40→20 (#229); Sessions-Doppelladung entfernt (load_session_summaries aus statischem Prompt, #228); last_agent_result auf 2000 Zeichen truncated (#227); CLAUDE.md auf 24 Non-Blank-Zeilen gekürzt (#226); 1570 tests green
 - **Phase 207** ✅ .gitignore erweitern – SQLite-Artefakte (*.db, *.db-shm, *.db-wal), .fabbot/, Test-Artefakte (.pytest_cache/, htmlcov/, .coverage), lokale Konfig (*.local.yaml, *.local.env), open-issues.html; Issue #222; 1570 tests green
 - **Phase 208** ✅ Type-Safety – AgentState auf NotRequired umgestellt (48 typeddict-item Fehler); assert-Guards in 20 Telegram-Handlern (88 union-attr Fehler); RunnableConfig für aupdate_state/ainvoke (6 Dateien); Neben-Fixes: PIL.Resampling.LANCZOS, tts.py return-Pfad, BaseException-Check; Mypy 176 → 0 Fehler; Issue #219; 1569 tests green
+- **Phase 209** ✅ Pre-Commit Hooks + Ruff E741 – .pre-commit-config.yaml mit ruff, ruff-format, mypy, bandit (alle local/system); E741 aus ruff ignore entfernt, 14 `l`→`line` Umbenennungen in 7 Dateien; [tool.mypy] ignore_missing_imports=true in pyproject.toml; bot/local_api.py Queue|None-Fix; Issues #220 #221; 1570 tests green
 
 ---
 
