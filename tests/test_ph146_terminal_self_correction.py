@@ -3,6 +3,10 @@ Tests für terminal_agent Self-Correction (Issue #38 / Phase 146)
 
 Der terminal_agent korrigiert sich bei ungültigem Befehl automatisch:
 bis zu MAX_RETRIES Versuche bevor blockiert oder HITL ausgelöst wird.
+
+Phase 212 (Issue #129): HITL via LangGraph interrupt() statt Magic-String-Return.
+_call_terminal_agent_capturing_interrupt() patcht interrupt() um den Wert
+abzufangen, ohne den Pregel-Kontext zu benötigen.
 """
 
 import pytest
@@ -23,6 +27,32 @@ def _llm_response(text: str) -> MagicMock:
     return mock
 
 
+class _InterruptCaptured(Exception):
+    """Test-Helper: simuliert Pregel-Interrupt für direkte agent-calls."""
+
+    def __init__(self, value: dict) -> None:
+        self.value = value
+
+
+async def _call_terminal_agent_capturing_interrupt(state: dict):
+    """Ruft terminal_agent auf, fängt interrupt() Wert ab statt Pregel-Context.
+
+    Gibt zurück:
+    - {"interrupt": {...}}: HITL erreicht, interrupt-Wert gecaptured
+    - das Agent-Result-Dict: kein HITL erreicht (Block/Unsupported/etc)
+    """
+    from agent.agents import terminal as terminal_mod
+
+    def _fake_interrupt(value):
+        raise _InterruptCaptured(value)
+
+    with patch.object(terminal_mod, "interrupt", _fake_interrupt):
+        try:
+            return await terminal_mod.terminal_agent(state)
+        except _InterruptCaptured as ic:
+            return {"interrupt": ic.value}
+
+
 # ---------------------------------------------------------------------------
 # _extract_command
 # ---------------------------------------------------------------------------
@@ -38,11 +68,6 @@ class TestExtractCommand:
         from agent.agents.terminal import _extract_command
 
         assert _extract_command("`ls -la`") == "ls -la"
-
-    def test_strips_confirm_prefix(self) -> None:
-        from agent.agents.terminal import _extract_command
-
-        assert _extract_command("__CONFIRM_TERMINAL__:ls -la") == "ls -la"
 
     def test_strips_whitespace(self) -> None:
         from agent.agents.terminal import _extract_command
@@ -89,13 +114,11 @@ class TestTerminalAgentSuccess:
         mock_llm.ainvoke = AsyncMock(return_value=_llm_response("ls -la"))
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
-            from agent.agents.terminal import terminal_agent
+            result = await _call_terminal_agent_capturing_interrupt(_make_state())
 
-            result = await terminal_agent(_make_state())
-
-        content = result["messages"][0].content
-        assert "__CONFIRM_TERMINAL__" in content
-        assert "ls" in content
+        assert "interrupt" in result
+        assert result["interrupt"]["type"] == "terminal"
+        assert result["interrupt"]["command"].startswith("ls")
 
     @pytest.mark.asyncio
     async def test_llm_called_once_on_valid_command(self) -> None:
@@ -103,9 +126,7 @@ class TestTerminalAgentSuccess:
         mock_llm.ainvoke = AsyncMock(return_value=_llm_response("pwd"))
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
-            from agent.agents.terminal import terminal_agent
-
-            await terminal_agent(_make_state())
+            await _call_terminal_agent_capturing_interrupt(_make_state())
 
         assert mock_llm.ainvoke.call_count == 1
 
@@ -141,12 +162,11 @@ class TestTerminalAgentSelfCorrectionBase:
         )
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
-            from agent.agents.terminal import terminal_agent
-
-            result = await terminal_agent(_make_state())
+            result = await _call_terminal_agent_capturing_interrupt(_make_state())
 
         assert mock_llm.ainvoke.call_count == 2
-        assert "__CONFIRM_TERMINAL__" in result["messages"][0].content
+        assert "interrupt" in result
+        assert result["interrupt"]["command"] == "ls"
 
     @pytest.mark.asyncio
     async def test_error_feedback_sent_to_llm(self) -> None:
@@ -163,9 +183,7 @@ class TestTerminalAgentSelfCorrectionBase:
         mock_llm.ainvoke = capture_invoke
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
-            from agent.agents.terminal import terminal_agent
-
-            await terminal_agent(_make_state())
+            await _call_terminal_agent_capturing_interrupt(_make_state())
 
         second_call_messages = captured_messages[1]
         last_human = next((m for m in reversed(second_call_messages) if isinstance(m, HumanMessage)), None)
@@ -226,12 +244,11 @@ class TestTerminalAgentSelfCorrectionSecurity:
         )
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
-            from agent.agents.terminal import terminal_agent
-
-            result = await terminal_agent(_make_state("finde test.txt"))
+            result = await _call_terminal_agent_capturing_interrupt(_make_state("finde test.txt"))
 
         assert mock_llm.ainvoke.call_count == 2
-        assert "__CONFIRM_TERMINAL__" in result["messages"][0].content
+        assert "interrupt" in result
+        assert "find" in result["interrupt"]["command"]
 
     @pytest.mark.asyncio
     async def test_security_error_feedback_contains_reason(self) -> None:
@@ -248,9 +265,7 @@ class TestTerminalAgentSelfCorrectionSecurity:
         mock_llm.ainvoke = capture_invoke
 
         with patch("agent.agents.terminal.get_llm", return_value=mock_llm):
-            from agent.agents.terminal import terminal_agent
-
-            await terminal_agent(_make_state())
+            await _call_terminal_agent_capturing_interrupt(_make_state())
 
         second_call = captured_messages[1]
         last_human = next((m for m in reversed(second_call) if isinstance(m, HumanMessage)), None)
