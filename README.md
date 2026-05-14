@@ -112,16 +112,58 @@ FabBot/
 
 ### Data Stores
 
-FabBot distributes persistent state across 6 stores:
+FabBot distributes persistent state across **6 primary stores** plus several auxiliary stores for logs, health and tokens. The diagram below maps where each kind of information lives and which modules write to it.
 
-| Store | Path | Content | Written by | Backup |
-|-------|------|---------|------------|--------|
-| `personal_profile.yaml` | `~/personal_profile.yaml` | Profile, preferences, learning entries (Fernet-encrypted) | `memory_agent`, `profile_learner` | yes |
-| LangGraph Checkpoints | `~/.fabbot/memory.db` | Conversation checkpoints (SQLite, AsyncSqliteSaver) | LangGraph internal | yes |
-| ChromaDB | `~/.fabbot/chroma/` | Embeddings, entities, entity_links (3 collections) | `retrieval`, `collector`, `linker` | yes |
-| Bot Instructions | `~/Documents/Wissen/claude.md` | Persistent system instructions for chat_agent | manual / `memory_agent` | optional |
-| Sessions | `~/Documents/Wissen/sessions/` | Daily conversation summaries (Markdown) | `session_summary` | optional |
-| Reminders | `~/.fabbot/reminders.json` | Due reminders with timestamp | `reminder_agent` | optional |
+```mermaid
+flowchart LR
+    subgraph User["User-Facing State"]
+        PROF["personal_profile.yaml<br/>~/personal_profile.yaml<br/><i>Fernet-encrypted YAML</i>"]
+        CMD["Bot Instructions<br/>~/.fabbot/claude.md<br/><i>Markdown</i>"]
+        SESS["Sessions<br/>~/Documents/Wissen/Sessions/<br/><i>Markdown, daily</i>"]
+    end
+    subgraph Conv["Conversation State"]
+        MEM["LangGraph Checkpoints<br/>~/.fabbot/memory.db<br/><i>SQLite</i>"]
+    end
+    subgraph Sem["Semantic Layer"]
+        CHR["ChromaDB<br/>~/.fabbot/chroma/<br/><i>3 collections</i>"]
+    end
+    subgraph Sched["Scheduled"]
+        REM["Reminders<br/>~/.fabbot/reminders.db<br/><i>SQLite</i>"]
+    end
+
+    memory_agent --> PROF
+    profile_learner --> PROF
+    memory_agent --> CMD
+    session_summary --> SESS
+    supervisor --> MEM
+    retrieval --> CHR
+    collector --> CHR
+    linker --> CHR
+    reminder_agent --> REM
+```
+
+| Store | Path | Format | Content | Written by | Backup |
+|-------|------|--------|---------|------------|--------|
+| `personal_profile.yaml` | `~/personal_profile.yaml` | YAML (Fernet) | Profile, preferences, learning entries | `memory_agent`, `profile_learner` | yes |
+| LangGraph Checkpoints | `~/.fabbot/memory.db` | SQLite | Conversation checkpoints (AsyncSqliteSaver) | LangGraph internal (`supervisor`) | yes |
+| ChromaDB | `~/.fabbot/chroma/` | Vector DB | Embeddings, entities, entity_links (3 collections) | `retrieval`, `collector`, `linker` | yes |
+| Bot Instructions | `~/.fabbot/claude.md` | Markdown | Persistent system instructions for `chat_agent` | manual / `memory_agent` | optional |
+| Sessions | `~/Documents/Wissen/Sessions/` | Markdown | Daily conversation summaries (`YYYY-MM-DD.md`) | `session_summary` | optional |
+| Reminders | `~/.fabbot/reminders.db` | SQLite | Due reminders with timestamp | `reminder_agent` | optional |
+
+#### Auxiliary Stores
+
+Derived state, logs and runtime tokens – not part of the semantic memory, but useful for debugging and ops:
+
+| Store | Path | Purpose |
+|-------|------|---------|
+| Audit Log | `~/.fabbot/audit.log` | Tamper-evident action log (`agent/audit.py`) |
+| Main Log | `~/.fabbot/fabbot.log` | Application log, daily rotation (7 days) |
+| Chroma Metadata | `~/.fabbot/chroma_meta.json` | Profile-change checksum for embedding refresh |
+| Watchdog State | `~/.fabbot/watchdog_state.json` | launchd health snapshot |
+| API Health State | `~/.fabbot/api_health_state.json` | Heartbeat status for Anthropic / Tavily / Brave |
+| WhatsApp Token | `~/.fabbot/wa_service_token` | WhatsApp session secret |
+| Local API Token | `~/.fabbot/local_api_token` | Auth for bot status API |
 
 ---
 
@@ -346,6 +388,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 208** ✅ Type-Safety – AgentState auf NotRequired umgestellt (48 typeddict-item Fehler); assert-Guards in 20 Telegram-Handlern (88 union-attr Fehler); RunnableConfig für aupdate_state/ainvoke (6 Dateien); Neben-Fixes: PIL.Resampling.LANCZOS, tts.py return-Pfad, BaseException-Check; Mypy 176 → 0 Fehler; Issue #219; 1569 tests green
 - **Phase 209** ✅ Pre-Commit Hooks + Ruff E741 – .pre-commit-config.yaml mit ruff, ruff-format, mypy, bandit (alle local/system); E741 aus ruff ignore entfernt, 14 `l`→`line` Umbenennungen in 7 Dateien; [tool.mypy] ignore_missing_imports=true in pyproject.toml; bot/local_api.py Queue|None-Fix; Issues #220 #221; 1570 tests green
 - **Phase 210** ✅ Kostenoptimierung: Session-Summaries kürzen – SESSION_SUMMARY_MAX_CHARS (Default 600) via .env konfigurierbar; _load_all_sessions() truncated pro Summary auf max N Zeichen; Issue #115; 1572 tests green
+- **Phase 211** ✅ Memory-Architektur-Diagramm in README – Mermaid-Diagramm der 6 Haupt-Stores; Tabellen-Bugfixes (claude.md-Pfad `~/.fabbot/claude.md`, Sessions-Großschreibung, reminders.json→reminders.db); Auxiliary-Stores-Sektion (audit.log, fabbot.log, chroma_meta.json, watchdog_state.json, api_health_state.json, Tokens); Folge-Issues #238 (Sessions+Reminder→SQLite) und #239 (Memory-Interface); Issue #128; 1572 tests green
 
 ---
 
