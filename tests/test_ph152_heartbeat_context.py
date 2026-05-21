@@ -214,10 +214,11 @@ class TestGatherHeartbeatContext:
             patch("agent.proactive.heartbeat._fetch_profile_ctx", side_effect=slow),
             patch("agent.proactive.heartbeat._fetch_memory_ctx", side_effect=lambda q: slow()),
             patch("agent.proactive.heartbeat._fetch_session_ctx", side_effect=lambda n: slow()),
+            patch("agent.proactive.heartbeat._fetch_location_ctx", side_effect=slow),
             patch("agent.proactive.heartbeat.CONTEXT_FETCH_TIMEOUT", 0.1),
         ):
             ctx = await _gather_heartbeat_context(TRIGGER_ITEM)
-        assert ctx == {"profile": "", "memory": "", "sessions": ""}
+        assert ctx == {"profile": "", "memory": "", "sessions": "", "location": ""}
 
 
 # ── generate_proactive_message (Prompt-Aufbau) ───────────────────────────────
