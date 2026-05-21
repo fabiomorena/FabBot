@@ -27,6 +27,7 @@ PERSON_THRESHOLD_DAYS = 14
 OTHER_THRESHOLD_DAYS = 30
 ALERT_COOLDOWN_DAYS = 7
 MAX_ALERTS_PER_RUN = 3
+MIN_MENTION_COUNT = 2
 
 _BACKFILL_MARKER = Path.home() / ".fabbot" / ".relationship_alert_backfill_done"
 _OTHER_TYPES = ("place", "event", "task")
@@ -105,6 +106,7 @@ def _query_unmentioned(collection, entity_type: str, cutoff_ts: float, now_ts: f
                 "$and": [
                     {"entity_type": {"$eq": entity_type}},
                     {"last_mentioned_at_ts": {"$lt": cutoff_ts}},
+                    {"mention_count": {"$gte": MIN_MENTION_COUNT}},
                 ]
             },
             include=["metadatas"],
