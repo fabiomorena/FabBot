@@ -1,6 +1,6 @@
 """
 agent/proactive/heartbeat.py – Phase 145 (Issue #92), erweitert Phase 152 (Issue #95),
-                               Phase 195 (Issue #103)
+                               Phase 195 (Issue #103), Phase 213 (Issue #248)
 
 Heartbeat-Logik: Cooldown-Management, Trigger-Evaluation, Nachrichtengenerierung.
 
@@ -58,6 +58,10 @@ def _get_tageszeit_label() -> str:
     if 18 <= h < 22:
         return "Abend"
     return "Nacht"
+
+
+def _get_today_str() -> str:
+    return datetime.now(_TZ_BERLIN).strftime("%d.%m.%Y")
 
 
 def _load_cooldown() -> dict:
@@ -189,23 +193,43 @@ async def _fetch_session_ctx(entity_name: str) -> str:
         return ""
 
 
+async def _fetch_location_ctx() -> str:
+    """Fragt Memory nach aktuellem Standort/Aufenthalt ab (fail-safe)."""
+    try:
+        from agent.retrieval import search
+
+        results = await search("aktueller Standort Aufenthalt Reise unterwegs", n_results=2)
+        if not results:
+            return ""
+        lines = []
+        for r in results:
+            doc = (r.get("document", "") or "")[:200]
+            if doc:
+                lines.append(doc)
+        return "\n".join(lines)
+    except Exception as e:
+        logger.debug(f"heartbeat location ctx fehlgeschlagen: {e}")
+        return ""
+
+
 async def _gather_heartbeat_context(trigger_item: dict) -> dict[str, str]:
     name = trigger_item.get("name", "")
     source_ctx = trigger_item.get("source_context", "")
     query = f"{name} {source_ctx}".strip()
     try:
-        profile, memory, sessions = await asyncio.wait_for(
+        profile, memory, sessions, location = await asyncio.wait_for(
             asyncio.gather(
                 _fetch_profile_ctx(),
                 _fetch_memory_ctx(query),
                 _fetch_session_ctx(name),
+                _fetch_location_ctx(),
             ),
             timeout=CONTEXT_FETCH_TIMEOUT,
         )
     except asyncio.TimeoutError:
         logger.warning("heartbeat context fetch timeout")
-        return {"profile": "", "memory": "", "sessions": ""}
-    return {"profile": profile, "memory": memory, "sessions": sessions}
+        return {"profile": "", "memory": "", "sessions": "", "location": ""}
+    return {"profile": profile, "memory": memory, "sessions": sessions, "location": location}
 
 
 def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
@@ -215,6 +239,7 @@ def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
     entity_type = trigger_item.get("entity_type", "")
     context = trigger_item.get("source_context", "")
     tageszeit = _get_tageszeit_label()
+    today = _get_today_str()
     return f"""Schreibe eine kurze, freundliche proaktive Telegram-Nachricht für Fabio.
 
 === Persönliches Profil ===
@@ -226,7 +251,11 @@ def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
 === Frühere Sessions zu "{name}" ===
 {ctx["sessions"] or "(keine Erwähnungen)"}
 
+=== Aktueller Aufenthalt ===
+{ctx["location"] or "(kein Standort bekannt)"}
+
 === Trigger ===
+- Heute: {today}
 - {entity_type} "{name}" ist in {days} Tag(en) fällig ({due})
 - Ursprünglicher Kontext: {context}
 - Tageszeit: {tageszeit}
@@ -234,6 +263,7 @@ def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
 Regeln:
 - Max. 2 Sätze
 - Direkt und persönlich ("Du wolltest...", "Hast du schon...")
+- Wenn Fabio laut "Aktueller Aufenthalt" bereits am Event-Ort ist, entsprechend formulieren (nicht "steht bevor")
 - Kein "Guten Morgen", keine förmliche Begrüßung
 - Ton passend zur Tageszeit (Morgen: motivierend, Abend: ruhiger)
 - Deutsch, keine URLs
@@ -246,6 +276,7 @@ def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str]) ->
     entity_type = trigger_item.get("entity_type", "")
     context = trigger_item.get("source_context", "")
     tageszeit = _get_tageszeit_label()
+    today = _get_today_str()
     return f"""Schreibe eine kurze, warme Erinnerung für Fabio.
 
 === Persönliches Profil ===
@@ -254,7 +285,11 @@ def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str]) ->
 === Frühere Sessions zu "{name}" ===
 {ctx["sessions"] or "(keine Erwähnungen)"}
 
+=== Aktueller Aufenthalt ===
+{ctx["location"] or "(kein Standort bekannt)"}
+
 === Trigger ===
+- Heute: {today}
 - {entity_type} "{name}" wurde seit {days} Tagen nicht mehr erwähnt
 - Letzter bekannter Kontext: {context}
 - Tageszeit: {tageszeit}
