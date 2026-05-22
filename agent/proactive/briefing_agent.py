@@ -20,7 +20,7 @@ _TIMEOUTS = {
     "weather": 10.0,
     "calendar": 20.0,
     "pending": 5.0,
-    "news": 30.0,
+    "news": 45.0,
 }
 
 _FALLBACKS = {
