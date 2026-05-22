@@ -20,6 +20,7 @@ Phase 93 (Issue #5):
 """
 
 import asyncio
+import json
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -215,23 +216,77 @@ def _strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", parser.get_text()).strip()
 
 
+def _extract_next_data_events(html: str, slug: str) -> str:
+    """Phase 215: __NEXT_DATA__ JSON aus RA-Seite extrahieren.
+
+    RA nutzt Next.js SSR – Event-Daten liegen im <script id="__NEXT_DATA__">-Block,
+    der von _HTMLTextExtractor (skip_tags=script) bisher komplett verworfen wurde.
+    """
+    match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+    if not match:
+        return ""
+    try:
+        data = json.loads(match.group(1))
+    except (json.JSONDecodeError, ValueError):
+        return ""
+
+    # Bekannte RA-Datenpfade für Events
+    events: list = []
+    for path in (
+        ("props", "pageProps", "venue", "events"),
+        ("props", "pageProps", "data", "venue", "events"),
+        ("props", "pageProps", "initialData", "venue", "events"),
+    ):
+        node = data
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, list) and node:
+            events = node
+            break
+
+    if events:
+        lines = [f"RA Events für {slug}:"]
+        for ev in events[:10]:
+            title = ev.get("title") or ev.get("name") or ""
+            start = ev.get("startTime") or ev.get("date") or ""
+            url = ev.get("contentUrl") or ev.get("url") or ""
+            artists_raw = ev.get("artists") or ev.get("lineUp") or []
+            artist_names = ", ".join(
+                a.get("name", "") for a in artists_raw[:5] if isinstance(a, dict) and a.get("name")
+            )
+            parts = filter(None, [title, artist_names, start, url])
+            lines.append(" | ".join(parts))
+        return "\n".join(lines)
+
+    # Fallback: kompaktes JSON für LLM
+    compact = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return compact[:6000]
+
+
 # ---------------------------------------------------------------------------
 # RA direkt fetchen
 # ---------------------------------------------------------------------------
 
 
 async def _fetch_ra_page(slug: str) -> str:
-    """Phase 93: RA-Clubseite direkt fetchen – parallel zu Tavily."""
+    """Phase 215: RA-Clubseite fetchen – __NEXT_DATA__ JSON bevorzugt."""
     url = f"https://ra.co/clubs/{slug}/events"
     try:
         async with httpx.AsyncClient(
             timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (compatible; FabBot/1.0)"}
         ) as client:
             resp = await client.get(url)
-            if resp.status_code == 200:
-                text = _strip_html(resp.text[:60_000])
-                logger.info(f"RA direkt: {slug} – {len(text)} Zeichen")
-                return text[:6000]
+            if resp.status_code != 200:
+                return ""
+            html = resp.text
+            next_data = _extract_next_data_events(html, slug)
+            if next_data:
+                logger.info(f"RA __NEXT_DATA__: {slug} – {len(next_data)} Zeichen")
+                return next_data
+            # Fallback: HTML-Text (für Nicht-Next.js-Seiten)
+            text = _strip_html(html[:60_000])
+            logger.info(f"RA HTML-Fallback: {slug} – {len(text)} Zeichen")
+            return text[:6000]
     except Exception as e:
         logger.warning(f"RA-Fetch für {slug} fehlgeschlagen: {e}")
     return ""
