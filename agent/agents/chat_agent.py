@@ -241,6 +241,58 @@ def _get_context_window_size() -> int:
         return 20
 
 
+async def _summarize_overflow(messages: list) -> SystemMessage:
+    """Phase 216 (#232): Komprimiert aus dem Context-Window gefallene Messages."""
+    from agent.llm import get_fast_llm
+
+    lines = []
+    for m in messages:
+        if isinstance(m, HumanMessage):
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            lines.append(f"User: {content[:300]}")
+        elif isinstance(m, AIMessage):
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            lines.append(f"Bot: {content[:300]}")
+
+    if not lines:
+        return SystemMessage(content="[Früherer Kontext: keine Details]")
+
+    conversation_text = "\n".join(lines)
+    prompt = f"""Fasse diese frühere Konversation in maximal 3 Sätzen zusammen. Nur die wichtigsten Fakten, Entscheidungen und Themen. Keine Einleitung, kein Kommentar.
+
+{conversation_text}"""
+
+    try:
+        llm = get_fast_llm()
+        response = await asyncio.wait_for(
+            llm.ainvoke([HumanMessage(content=prompt)]),
+            timeout=8.0,
+        )
+        content = response.content if isinstance(response.content, str) else str(response.content)
+        return SystemMessage(content=f"[Früherer Kontext]\n{content.strip()}")
+    except Exception as e:
+        logger.debug(f"Overflow-Komprimierung fehlgeschlagen: {e}")
+        return SystemMessage(content=f"[Früherer Kontext]\n{conversation_text[:500]}")
+
+
+async def _apply_context_window(messages: list, context_window: int) -> list:
+    """Phase 216 (#231 + #232): Anchor-Messages + Inline-Komprimierung.
+
+    - Erste Message bleibt immer erhalten (Gesprächsthema, #231)
+    - Overflow zwischen anchor und recent wird zu Summary komprimiert (#232)
+    """
+    if len(messages) <= context_window:
+        return messages
+    anchor = messages[:1]
+    recent_count = context_window - 1
+    recent = messages[-recent_count:]
+    overflow = messages[1 : len(messages) - recent_count]
+    if not overflow:
+        return anchor + recent
+    summary_msg = await _summarize_overflow(overflow)
+    return anchor + [summary_msg] + recent
+
+
 _SHORT_CONFIRMATIONS = frozenset(
     {
         # Deutsch
@@ -423,7 +475,7 @@ async def chat_agent(state: AgentState) -> AgentState:
     llm = get_llm()
     clean_messages = _clean_messages_for_chat(state["messages"])
     context_window = _get_context_window_size()
-    trimmed_messages = clean_messages[-context_window:]
+    trimmed_messages = await _apply_context_window(clean_messages, context_window)
 
     human_text = _get_last_human_message(state["messages"])
 
