@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 218_
+_Letzte Aktualisierung: Phase 219_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -107,7 +107,7 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 
 ### Dynamischer Block (nicht gecacht, immer frisch)
 - Aktuelles Datum/Uhrzeit
-- `last_agent_result` (Ergebnis des vorherigen Agents, max. 2000 Zeichen, TTL: 1 Request)
+- `last_agent_result` (Ergebnis des vorherigen Agents, max. `AGENT_RESULT_MAX_CHARS` Zeichen, TTL: `AGENT_RESULT_TTL_TURNS` Requests – beide via .env konfigurierbar)
 - Retrieval-Kontext (ChromaDB-Ergebnisse, wenn vorhanden)
 
 ### Cache-Mechanismus
@@ -148,7 +148,7 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 | Morning Briefing | 07:30 | `bot/briefing.py` | Wetter (Open-Meteo), Kalender, News. |
 | Evening Check-in | 21:00 | `bot/evening_checkin.py` | Personalisierte Frage via `get_grounding_llm()` (temperature=0). |
 | Session Summary | 23:30 | `bot/session_summary.py` | Tages-Summary via `get_fast_llm()`. Rolling-Window-Sessions. |
-| Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown zwischen Nachrichten. |
+| Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown; temperature=0 + Entity Guard (agent/proactive/entity_guard.py). |
 
 ---
 
