@@ -3,6 +3,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
@@ -22,6 +23,9 @@ _MEMORY_NUDGE_INTERVAL: int = get_settings().memory_nudge_interval
 
 # Phase 206 (#227): Maximale Länge von last_agent_result im System-Prompt
 _MAX_AGENT_RESULT_CHARS = 2000
+
+# Phase 218 (#225): SELF.md – Architektur-Selbstwissen für den Bot
+_SELF_MD_PATH = Path(__file__).parent.parent.parent / "SELF.md"
 
 _CHAT_PROMPT_BASE = """Du bist ein hilfreicher persoenlicher Assistent mit Zugriff auf den bisherigen Gespraechsverlauf.
 
@@ -85,6 +89,7 @@ class _CachedPrompt:
 
 
 _prompt_cache: _CachedPrompt | None = None
+_self_md_cache: str | None = None
 
 
 def invalidate_chat_cache() -> None:
@@ -93,9 +98,35 @@ def invalidate_chat_cache() -> None:
     Muss von memory_agent und profile.py aufgerufen werden,
     wenn Profil, claude.md oder Session-Summaries geschrieben werden.
     """
-    global _prompt_cache
+    global _prompt_cache, _self_md_cache
     _prompt_cache = None
+    _self_md_cache = None
     logger.debug("chat_agent: Prompt-Cache invalidiert.")
+
+
+def load_self_md() -> str:
+    """Phase 218 (#225): Laedt SELF.md aus dem Projektroot.
+
+    Read-only, kein Lock noetig. Gecacht nach erstem Aufruf da SELF.md sich
+    nur bei Code-Updates aendert. Cache wird via invalidate_chat_cache()
+    zurueckgesetzt (konsistent mit _prompt_cache).
+    """
+    global _self_md_cache
+    if _self_md_cache is not None:
+        return _self_md_cache
+    if not _SELF_MD_PATH.exists():
+        logger.debug("SELF.md nicht gefunden – kein Architektur-Selbstwissen geladen.")
+        _self_md_cache = ""
+        return _self_md_cache
+    try:
+        content = _SELF_MD_PATH.read_text(encoding="utf-8").strip()
+        _self_md_cache = content
+        logger.info("SELF.md geladen: %d Zeichen aus %s", len(content), _SELF_MD_PATH)
+        return _self_md_cache
+    except Exception as e:
+        logger.warning("Fehler beim Laden von SELF.md (ignoriert): %s", e)
+        _self_md_cache = ""
+        return _self_md_cache
 
 
 def _build_chat_prompt() -> str:
@@ -116,6 +147,14 @@ def _build_chat_prompt() -> str:
 
     logger.debug("chat_agent: Prompt-Cache miss – baue neu.")
     parts = [_CHAT_PROMPT_BASE]
+
+    # Block 0b: Architektur-Selbstwissen aus SELF.md (Phase 218, Issue #225)
+    try:
+        self_md = load_self_md()
+        if self_md:
+            parts.append("\n## Architektur-Selbstwissen\n" + self_md)
+    except Exception as e:
+        logger.debug("SELF.md konnte nicht geladen werden (ignoriert): %s", e)
 
     # Block 1: Bot-Instruktionen aus claude.md
     try:
