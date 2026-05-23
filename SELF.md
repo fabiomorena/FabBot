@@ -1,5 +1,7 @@
 # FabBot – Selbstwissen
 
+_Letzte Aktualisierung: Phase 218_
+
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
 
