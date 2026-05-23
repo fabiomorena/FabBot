@@ -35,7 +35,7 @@ class TestApplyContextWindow:
 
         msgs = [HumanMessage(content=f"msg{i}") for i in range(25)]
         with patch("agent.agents.chat_agent._summarize_overflow", new_callable=AsyncMock) as mock_sum:
-            mock_sum.return_value = SystemMessage(content="[Summary]")
+            mock_sum.return_value = AIMessage(content="[Summary]")
             result = await _apply_context_window(msgs, context_window=20)
 
         assert result[0] == msgs[0]  # erste Nachricht erhalten
@@ -46,7 +46,7 @@ class TestApplyContextWindow:
 
         msgs = [HumanMessage(content=f"msg{i}") for i in range(25)]
         with patch("agent.agents.chat_agent._summarize_overflow", new_callable=AsyncMock) as mock_sum:
-            mock_sum.return_value = SystemMessage(content="[Summary]")
+            mock_sum.return_value = AIMessage(content="[Summary]")
             result = await _apply_context_window(msgs, context_window=20)
 
         # Die letzten 19 Nachrichten müssen enthalten sein (context_window - 1)
@@ -58,7 +58,7 @@ class TestApplyContextWindow:
         from agent.agents.chat_agent import _apply_context_window
 
         msgs = [HumanMessage(content=f"msg{i}") for i in range(25)]
-        summary = SystemMessage(content="[Früherer Kontext]\nZusammenfassung")
+        summary = AIMessage(content="[Früherer Kontext]\nZusammenfassung")
         with patch("agent.agents.chat_agent._summarize_overflow", new_callable=AsyncMock) as mock_sum:
             mock_sum.return_value = summary
             result = await _apply_context_window(msgs, context_window=20)
@@ -84,7 +84,7 @@ class TestApplyContextWindow:
 
         msgs = [HumanMessage(content=f"msg{i}") for i in range(25)]
         with patch("agent.agents.chat_agent._summarize_overflow", new_callable=AsyncMock) as mock_sum:
-            mock_sum.return_value = SystemMessage(content="[Summary]")
+            mock_sum.return_value = AIMessage(content="[Summary]")
             await _apply_context_window(msgs, context_window=20)
 
         overflow_passed = mock_sum.call_args[0][0]
@@ -96,7 +96,7 @@ class TestApplyContextWindow:
 
 class TestSummarizeOverflow:
     @pytest.mark.asyncio
-    async def test_returns_system_message(self):
+    async def test_returns_ai_message(self):
         from agent.agents.chat_agent import _summarize_overflow
 
         msgs = [HumanMessage(content="Hallo"), AIMessage(content="Hi")]
@@ -106,7 +106,7 @@ class TestSummarizeOverflow:
         with patch("agent.llm.get_fast_llm", return_value=mock_llm):
             result = await _summarize_overflow(msgs)
 
-        assert isinstance(result, SystemMessage)
+        assert isinstance(result, AIMessage)
         assert "Früherer Kontext" in result.content
 
     @pytest.mark.asyncio
@@ -114,7 +114,7 @@ class TestSummarizeOverflow:
         from agent.agents.chat_agent import _summarize_overflow
 
         result = await _summarize_overflow([])
-        assert isinstance(result, SystemMessage)
+        assert isinstance(result, AIMessage)
         assert "keine Details" in result.content
 
     @pytest.mark.asyncio
@@ -128,7 +128,7 @@ class TestSummarizeOverflow:
         with patch("agent.llm.get_fast_llm", return_value=mock_llm):
             result = await _summarize_overflow(msgs)
 
-        assert isinstance(result, SystemMessage)
+        assert isinstance(result, AIMessage)
         assert "Früherer Kontext" in result.content
         assert "Test" in result.content  # Fallback enthält den Originaltext
 
