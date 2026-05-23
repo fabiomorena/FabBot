@@ -65,6 +65,12 @@ async def _run_heartbeat(bot, chat_id: int) -> None:
     if is_quiet_hours():
         return
 
+    # Issue #104: Focus-Mode – Muting bei Inaktivität
+    from agent.proactive.focus_mode import is_focus_muted
+
+    if is_focus_muted():
+        return
+
     pending = get_pending_items(limit=20)
     triggered = evaluate_time_triggers(pending)
     if triggered:

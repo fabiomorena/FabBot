@@ -59,16 +59,21 @@ def _save_state(data: dict) -> None:
 
 
 def get_idle_seconds() -> float:
-    """Sekunden seit letzter User-Aktivität (via mtime von memory.db)."""
+    """Sekunden seit letzter User-Aktivität (via activity.json, mtime als Fallback)."""
+    from agent.proactive.focus_mode import get_idle_seconds as _focus_idle
+
+    idle = _focus_idle()
+    if idle > 0.0:
+        return idle
+    # Fallback: mtime von memory.db oder Log-Datei (unzuverlässig, nur wenn activity.json fehlt)
     try:
         if _MEMORY_DB.exists():
             mtime = _MEMORY_DB.stat().st_mtime
-            return (datetime.now(timezone.utc).timestamp()) - mtime
-        # Fallback: Log-Datei
+            return max(0.0, datetime.now(timezone.utc).timestamp() - mtime)
         if _FABBOT_LOG.exists():
-            return (datetime.now(timezone.utc).timestamp()) - _FABBOT_LOG.stat().st_mtime
+            return max(0.0, datetime.now(timezone.utc).timestamp() - _FABBOT_LOG.stat().st_mtime)
     except Exception as e:
-        logger.debug(f"curator idle_seconds Fehler: {e}")
+        logger.debug(f"curator idle_seconds Fallback Fehler: {e}")
     return 0.0
 
 
