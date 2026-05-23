@@ -13,7 +13,6 @@ API:
 import asyncio
 import json
 import logging
-import re
 from datetime import date, datetime, timedelta
 
 from langchain_core.runnables import RunnableConfig
@@ -21,6 +20,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from agent.config import get_settings
+from agent.proactive.entity_guard import (
+    build_context_word_set as _build_context_word_set,
+    extract_named_entities as _extract_named_entities,
+    has_hallucination as _has_hallucination,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,91 +32,6 @@ _TZ_BERLIN = ZoneInfo("Europe/Berlin")
 _CHECKIN_STATE_FILE = Path.home() / ".fabbot" / "evening_checkin_state.json"
 _LLM_TIMEOUT = 8.0
 _FALLBACK_QUESTION = "Wie war dein Tag? Was hat dich heute beschäftigt?"
-
-# Phase 204 (#214/#216): Wörter die im Entity Guard und der Whitelist-Extraktion
-# übersprungen werden – häufige deutsche Substantive und Funktionswörter, die
-# regelmäßig in Check-in-Fragen auftauchen, aber keine Eigennamen sind.
-_COMMON_GERMAN_WORDS: frozenset[str] = frozenset(
-    {
-        "Der",
-        "Die",
-        "Das",
-        "Ein",
-        "Eine",
-        "Einen",
-        "Einem",
-        "Einer",
-        "Eines",
-        "Ich",
-        "Du",
-        "Er",
-        "Sie",
-        "Es",
-        "Wir",
-        "Ihr",
-        "Mein",
-        "Meine",
-        "Dein",
-        "Deine",
-        "Sein",
-        "Ihre",
-        "Was",
-        "Wie",
-        "Wo",
-        "Wann",
-        "Warum",
-        "Welche",
-        "Welcher",
-        "Welches",
-        "Wer",
-        "Heute",
-        "Gestern",
-        "Morgen",
-        "Tag",
-        "Nacht",
-        "Woche",
-        "Monat",
-        "Jahr",
-        "Uhr",
-        "Zeit",
-        "Stunden",
-        "Minuten",
-        "Arbeit",
-        "Musik",
-        "Projekt",
-        "Projekte",
-        "Session",
-        "Thema",
-        "Themen",
-        "Gespräch",
-        "Frage",
-        "Antwort",
-        "Plan",
-        "Idee",
-        "Fortschritt",
-        "Stand",
-        "Nachrichten",
-        "Gedanken",
-        "Gedanke",
-        "Gefühl",
-        "Gefühle",
-        "Dinge",
-        "Ding",
-        "Sache",
-        "Sachen",
-        "Bereich",
-        "Teil",
-        "Weg",
-        "Studio",
-        "Mix",
-        "Track",
-        "Tracks",
-        "Beat",
-        "Beats",
-        "FabBot",
-        "Fabio",
-    }
-)
 
 # Gesprächs-Inaktivitätsfenster: Check-in wird verzögert, solange die letzte
 # Nachricht weniger als N Minuten zurückliegt.
@@ -174,49 +93,6 @@ def _filter_checkin_context(messages: list) -> list:
             continue
         result.append(msg)
     return result[-30:]
-
-
-def _build_context_word_set(text: str) -> frozenset[str]:
-    """Alle Tokens aus text (lowercase) als Whitelist für den Entity Guard."""
-    return frozenset(w.lower() for w in re.findall(r"\b[a-zA-ZäöüÄÖÜß]{2,}\b", text))
-
-
-def _mid_sentence_caps(text: str) -> list[str]:
-    """Großgeschriebene Wörter die NICHT Satzanfang sind (potenzielle Eigennamen)."""
-    tokens = list(re.finditer(r"\b([A-ZÄÖÜ][a-zäöüß]{2,})\b", text))
-    result = []
-    for m in tokens:
-        prefix = text[: m.start()].rstrip()
-        if not prefix or prefix[-1] in ".!?":
-            continue
-        result.append(m.group(1))
-    return result
-
-
-def _has_hallucination(response: str, context_words: frozenset[str]) -> bool:
-    """True wenn response kapitalisierte Wörter enthält die nicht im Kontext stehen.
-    Phase 204 (Issue #214): Post-Generation Entity Guard.
-    """
-    for word in _mid_sentence_caps(response):
-        if word in _COMMON_GERMAN_WORDS:
-            continue
-        if word.lower() not in context_words:
-            logger.warning("Entity Guard: potenzielle Halluzination – '%s' nicht im Kontext", word)
-            return True
-    return False
-
-
-def _extract_named_entities(text: str) -> list[str]:
-    """Extrahiert potenzielle Eigennamen aus text für Whitelist-Injection im Prompt.
-    Phase 204 (Issue #216).
-    """
-    seen: set[str] = set()
-    result = []
-    for w in re.findall(r"\b([A-ZÄÖÜ][a-zäöüß]{2,})\b", text):
-        if w not in _COMMON_GERMAN_WORDS and w not in seen:
-            seen.add(w)
-            result.append(w)
-    return result[:20]
 
 
 async def _generate_checkin_question(chat_id: int) -> str:

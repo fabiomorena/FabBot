@@ -247,7 +247,7 @@ class TestGenerateProactiveMessageContext:
             patch(
                 "agent.proactive.heartbeat._fetch_memory_ctx",
                 new_callable=AsyncMock,
-                return_value="[Reise] Salvador info",
+                return_value="[Reise] Salvador Hotel info",
             ),
             patch(
                 "agent.proactive.heartbeat._fetch_session_ctx",

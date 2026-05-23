@@ -21,8 +21,6 @@ _background_tasks: set[asyncio.Task] = set()
 _turn_counter: int = 0
 _MEMORY_NUDGE_INTERVAL: int = get_settings().memory_nudge_interval
 
-# Phase 206 (#227): Maximale Länge von last_agent_result im System-Prompt
-_MAX_AGENT_RESULT_CHARS = 2000
 
 # Phase 218 (#225): SELF.md – Architektur-Selbstwissen für den Bot
 _SELF_MD_PATH = Path(__file__).parent.parent.parent / "SELF.md"
@@ -209,8 +207,9 @@ def _build_dynamic_prompt_suffix(
     if last_agent_result and last_agent_result.strip():
         agent_label = last_agent_name or "vorheriger Agent"
         result_text = last_agent_result.strip()
-        if len(result_text) > _MAX_AGENT_RESULT_CHARS:
-            result_text = result_text[:_MAX_AGENT_RESULT_CHARS] + "\n…[gekürzt]"
+        max_chars = get_settings().agent_result_max_chars
+        if len(result_text) > max_chars:
+            result_text = result_text[:max_chars] + "\n…[gekürzt]"
         parts.append(
             f"\n## Kontext: Ergebnis des {agent_label}\n"
             f"{result_text}\n"
@@ -601,10 +600,10 @@ async def chat_agent(state: AgentState) -> AgentState:
         except Exception as e:
             logger.debug(f"Fork-Agent Batch-Learning konnte nicht gestartet werden (ignoriert): {e}")
 
-    # Phase 99: last_agent_result nach Verarbeitung zurücksetzen
-    # Verhindert dass veraltete Ergebnisse in Folge-Requests auftauchen
-    return {
-        "messages": [AIMessage(content=result)],
-        "last_agent_result": None,
-        "last_agent_name": None,
-    }
+    # Phase 99: last_agent_result nach TTL-Ablauf zurücksetzen
+    ttl = state.get("last_agent_result_turn") or 1
+    if ttl <= 1:
+        cleanup: dict = {"last_agent_result": None, "last_agent_name": None, "last_agent_result_turn": None}
+    else:
+        cleanup = {"last_agent_result_turn": ttl - 1}
+    return {"messages": [AIMessage(content=result)], **cleanup}

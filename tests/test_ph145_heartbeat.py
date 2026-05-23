@@ -148,7 +148,15 @@ class TestGenerateProactiveMessage:
 
         mock_llm = AsyncMock()
         mock_llm.ainvoke.return_value = MagicMock(content="Hast du schon ein Hotel gebucht?")
-        with patch("agent.proactive.heartbeat._get_llm", return_value=mock_llm):
+        mock_ctx = {"profile": "Hotel Salvador Reise", "memory": "", "sessions": "", "location": ""}
+        with (
+            patch("agent.proactive.heartbeat._get_llm", return_value=mock_llm),
+            patch(
+                "agent.proactive.heartbeat._gather_heartbeat_context",
+                new_callable=AsyncMock,
+                return_value=mock_ctx,
+            ),
+        ):
             result = await generate_proactive_message(
                 {
                     "name": "Salvador",

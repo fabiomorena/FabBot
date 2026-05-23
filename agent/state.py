@@ -27,4 +27,5 @@ class AgentState(TypedDict):
     image_media_type: NotRequired[str | None]
     last_agent_result: NotRequired[str | None]
     last_agent_name: NotRequired[str | None]
+    last_agent_result_turn: NotRequired[int | None]
     _confirm_display: NotRequired[str | None]
