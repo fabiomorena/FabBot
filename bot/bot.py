@@ -72,12 +72,6 @@ logger = logging.getLogger(__name__)
 
 _TTS_MAX_HITL_OUTPUT = 300
 
-_IMAGE_MAX_PX = 1920
-_IMAGE_MAX_BYTES = 5_000_000  # 5 MB
-_PDF_MAX_BYTES = 20_000_000  # 20 MB
-_PDF_MAX_CHARS = 100_000  # Zeichen-Limit für extrahierten Text
-_AUDIO_MAX_BYTES = 25_000_000  # 25 MB
-
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
 _background_tasks: set[asyncio.Task] = set()
 
@@ -123,15 +117,16 @@ def _get_invoke_lock(chat_id: int) -> asyncio.Lock:
 
 
 def _resize_image(img_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
-    """Skaliert Bild auf max. 1920px falls nötig."""
+    """Skaliert Bild auf max. image_max_px falls nötig."""
     try:
         from PIL import Image
         import io
 
+        max_px = get_settings().image_max_px
         img_obj: Any = Image.open(io.BytesIO(img_bytes))
-        if max(img_obj.width, img_obj.height) <= _IMAGE_MAX_PX:
+        if max(img_obj.width, img_obj.height) <= max_px:
             return img_bytes, mime_type
-        img_obj.thumbnail((_IMAGE_MAX_PX, _IMAGE_MAX_PX), Image.Resampling.LANCZOS)
+        img_obj.thumbnail((max_px, max_px), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         fmt = "PNG" if mime_type == "image/png" else "JPEG"
         save_kwargs: dict = {"optimize": True}
@@ -915,8 +910,9 @@ async def on_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _handle_document_image(update, ctx, doc, mime, chat_id, user_id) -> None:
-    if doc.file_size and doc.file_size > _IMAGE_MAX_BYTES:
-        await update.message.reply_text(f"Bild zu groß (max. {_IMAGE_MAX_BYTES // 1_000_000} MB).")
+    image_max_bytes = get_settings().image_max_bytes
+    if doc.file_size and doc.file_size > image_max_bytes:
+        await update.message.reply_text(f"Bild zu groß (max. {image_max_bytes // 1_000_000} MB).")
         return
     caption = update.message.caption or ""
     if caption:
@@ -946,8 +942,9 @@ async def _handle_document_image(update, ctx, doc, mime, chat_id, user_id) -> No
 
 
 async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
-    if doc.file_size and doc.file_size > _PDF_MAX_BYTES:
-        await update.message.reply_text(f"PDF zu groß (max. {_PDF_MAX_BYTES // 1_000_000} MB).")
+    cfg = get_settings()
+    if doc.file_size and doc.file_size > cfg.pdf_max_bytes:
+        await update.message.reply_text(f"PDF zu groß (max. {cfg.pdf_max_bytes // 1_000_000} MB).")
         return
     caption = update.message.caption or ""
     if caption:
@@ -969,8 +966,8 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
         if not text:
             await update.message.reply_text("PDF enthält keinen lesbaren Text (z.B. gescanntes Bild).")
             return
-        if len(text) > _PDF_MAX_CHARS:
-            text = text[:_PDF_MAX_CHARS] + f"\n\n[… Text auf {_PDF_MAX_CHARS} Zeichen gekürzt]"
+        if len(text) > cfg.pdf_max_chars:
+            text = text[: cfg.pdf_max_chars] + f"\n\n[… Text auf {cfg.pdf_max_chars} Zeichen gekürzt]"
         filename = doc.file_name or "dokument.pdf"
         prefix = f"[PDF: {filename}]"
         if caption:
@@ -995,8 +992,9 @@ async def _handle_document_pdf(update, ctx, doc, chat_id, user_id) -> None:
 
 
 async def _handle_document_audio(update, ctx, doc, chat_id, user_id) -> None:
-    if doc.file_size and doc.file_size > _AUDIO_MAX_BYTES:
-        await update.message.reply_text(f"Audio-Datei zu groß (max. {_AUDIO_MAX_BYTES // 1_000_000} MB).")
+    audio_max_bytes = get_settings().audio_max_bytes
+    if doc.file_size and doc.file_size > audio_max_bytes:
+        await update.message.reply_text(f"Audio-Datei zu groß (max. {audio_max_bytes // 1_000_000} MB).")
         return
     caption = update.message.caption or ""
     if caption:
