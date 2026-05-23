@@ -27,6 +27,11 @@ def wrap_agent_node(agent_name: str):
                     content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
                 result = {**result, "last_agent_result": content}
 
+            if "last_agent_result_turn" not in result:
+                from agent.config import get_settings
+
+                result = {**result, "last_agent_result_turn": get_settings().agent_result_ttl_turns}
+
             return result
 
         return wrapper

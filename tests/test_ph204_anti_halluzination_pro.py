@@ -74,24 +74,24 @@ class TestBuildContextWordSet:
 
 class TestMidSentenceCaps:
     def test_ignores_first_word(self):
-        from bot.evening_checkin import _mid_sentence_caps
+        from agent.proactive.entity_guard import _mid_sentence_caps
 
         assert "Wie" not in _mid_sentence_caps("Wie läuft das Projekt?")
 
     def test_ignores_word_after_sentence_end(self):
-        from bot.evening_checkin import _mid_sentence_caps
+        from agent.proactive.entity_guard import _mid_sentence_caps
 
         result = _mid_sentence_caps("Gut. Morgen geht es weiter.")
         assert "Morgen" not in result
 
     def test_catches_mid_sentence_name(self):
-        from bot.evening_checkin import _mid_sentence_caps
+        from agent.proactive.entity_guard import _mid_sentence_caps
 
         result = _mid_sentence_caps("Hast du mit Salvador gesprochen?")
         assert "Salvador" in result
 
     def test_catches_multiple_names(self):
-        from bot.evening_checkin import _mid_sentence_caps
+        from agent.proactive.entity_guard import _mid_sentence_caps
 
         result = _mid_sentence_caps("Ich traf Raven und Salvador heute.")
         assert "Raven" in result

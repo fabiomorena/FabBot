@@ -223,11 +223,11 @@ async def _format_news_with_llm(raw: str) -> str:
     if not raw.strip():
         return "Keine News verfügbar."
     try:
-        from agent.llm import get_fast_llm
+        from agent.llm import get_grounding_llm
         from langchain_core.messages import HumanMessage
 
         today = date.today().strftime("%d.%m.%Y")
-        llm = get_fast_llm()
+        llm = get_grounding_llm()
         prompt = f"""Du bist ein News-Redakteur. Heute ist {today}.
 
 Extrahiere aus den folgenden Suchergebnissen die 3 wichtigsten aktuellen Nachrichten.

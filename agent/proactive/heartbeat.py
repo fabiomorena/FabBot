@@ -134,9 +134,9 @@ def evaluate_time_triggers(pending_items: list[dict]) -> list[dict]:
 
 
 def _get_llm():
-    from agent.llm import get_fast_llm
+    from agent.llm import get_grounding_llm
 
-    return get_fast_llm()
+    return get_grounding_llm()
 
 
 async def _fetch_profile_ctx() -> str:
@@ -232,7 +232,7 @@ async def _gather_heartbeat_context(trigger_item: dict) -> dict[str, str]:
     return {"profile": profile, "memory": memory, "sessions": sessions, "location": location}
 
 
-def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
+def _build_time_trigger_prompt(trigger_item: dict, ctx: dict[str, str], entity_list: str = "") -> str:
     days = trigger_item.get("days_until_due", "?")
     name = trigger_item.get("name", "")
     due = trigger_item.get("due_date", "")
@@ -267,10 +267,12 @@ Regeln:
 - Kein "Guten Morgen", keine förmliche Begrüßung
 - Ton passend zur Tageszeit (Morgen: motivierend, Abend: ruhiger)
 - Deutsch, keine URLs
-- Leere Sektionen ignorieren"""
+- Leere Sektionen ignorieren
+- Erlaubte Entitäten aus dem Kontext: {entity_list or "keine"}
+- NIEMALS Namen, Orte oder Projekte erfinden die nicht im Kontext oben vorkommen"""
 
 
-def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str]) -> str:
+def _build_relationship_alert_prompt(trigger_item: dict, ctx: dict[str, str], entity_list: str = "") -> str:
     name = trigger_item.get("name", "")
     days = trigger_item.get("days_since_mention", "?")
     entity_type = trigger_item.get("entity_type", "")
@@ -301,7 +303,9 @@ Regeln:
 - Ton passend zur Tageszeit (Morgen: motivierend, Abend: ruhiger)
 - Kein "Guten Morgen", keine förmliche Begrüßung
 - Deutsch, keine URLs
-- Leere Sektionen ignorieren"""
+- Leere Sektionen ignorieren
+- Erlaubte Entitäten aus dem Kontext: {entity_list or "keine"}
+- NIEMALS Namen, Orte oder Projekte erfinden die nicht im Kontext oben vorkommen"""
 
 
 async def generate_proactive_message(trigger_item: dict) -> str:
@@ -309,13 +313,20 @@ async def generate_proactive_message(trigger_item: dict) -> str:
     try:
         from langchain_core.messages import HumanMessage
 
+        from agent.proactive.entity_guard import build_context_word_set, extract_named_entities, has_hallucination
+
         llm = _get_llm()
         ctx = await _gather_heartbeat_context(trigger_item)
 
+        all_ctx = " ".join(v for v in ctx.values() if v)
+        context_words = build_context_word_set(all_ctx)
+        named = extract_named_entities(all_ctx)
+        entity_list = ", ".join(named) if named else "keine"
+
         if trigger_item.get("trigger_type") == "relationship_alert":
-            prompt = _build_relationship_alert_prompt(trigger_item, ctx)
+            prompt = _build_relationship_alert_prompt(trigger_item, ctx, entity_list)
         else:
-            prompt = _build_time_trigger_prompt(trigger_item, ctx)
+            prompt = _build_time_trigger_prompt(trigger_item, ctx, entity_list)
 
         response = await asyncio.wait_for(
             llm.ainvoke([HumanMessage(content=prompt)]),
@@ -324,7 +335,13 @@ async def generate_proactive_message(trigger_item: dict) -> str:
         content = response.content
         if isinstance(content, list):
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
-        return content.strip() or _fallback_message(trigger_item)
+        msg = content.strip()
+        if not msg:
+            return _fallback_message(trigger_item)
+        if has_hallucination(msg, context_words):
+            logger.warning("heartbeat entity guard: Fallback wegen Halluzination")
+            return _fallback_message(trigger_item)
+        return msg
     except Exception as e:
         logger.warning(f"generate_proactive_message Fehler: {e}")
         return _fallback_message(trigger_item)

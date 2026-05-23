@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     memory_nudge_interval: int = 10
     profile_snapshot_ttl: float = 300.0
     fabbot_extra_paths: str = ""
+    agent_result_max_chars: int = 2000
+    agent_result_ttl_turns: int = 1
 
     # ── Telegram ──────────────────────────────────────────────────────────────
     telegram_bot_token: SecretStr = SecretStr("")
