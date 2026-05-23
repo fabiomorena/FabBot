@@ -92,8 +92,25 @@ _invoke_locks: OrderedDict[int, asyncio.Lock] = OrderedDict()
 _last_activity: dict[int, datetime] = {}
 
 
+_ACTIVITY_FILE = Path.home() / ".fabbot" / "activity.json"
+
+
 def record_activity(chat_id: int) -> None:
     _last_activity[chat_id] = datetime.now()
+    _persist_activity()
+
+
+def _persist_activity() -> None:
+    """Schreibt den aktuellen Aktivitäts-Timestamp in activity.json (UTC ISO)."""
+    try:
+        import json
+        from datetime import timezone
+
+        _ACTIVITY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat()
+        _ACTIVITY_FILE.write_text(json.dumps({"last_activity": ts}))
+    except Exception as e:
+        logging.getLogger(__name__).debug(f"record_activity persist Fehler: {e}")
 
 
 def get_last_activity(chat_id: int) -> datetime | None:
