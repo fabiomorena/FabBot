@@ -167,9 +167,10 @@ class TestOnDocumentAudioDispatch:
 class TestHandleDocumentAudio:
     @pytest.mark.asyncio
     async def test_too_large_replies_error(self):
-        from bot.bot import _handle_document_audio, _AUDIO_MAX_BYTES
+        from bot.bot import _handle_document_audio
+        from agent.config import get_settings
 
-        update = _make_update(mime_type="audio/mpeg", file_size=_AUDIO_MAX_BYTES + 1)
+        update = _make_update(mime_type="audio/mpeg", file_size=get_settings().audio_max_bytes + 1)
         ctx = _make_ctx()
         await _handle_document_audio(update, ctx, update.message.document, 42, 99)
 

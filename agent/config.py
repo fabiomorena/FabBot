@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # ── LangSmith Telemetry ───────────────────────────────────────────────────
     langchain_tracing_v2: str = ""
-    langchain_api_key: str = ""
+    langchain_api_key: SecretStr = SecretStr("")
     langchain_project: str = "FabBot"
     langchain_endpoint: str = "https://api.smith.langchain.com"
 
@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     watchdog_auto_restart: bool = True
     watchdog_restart_delay_min: int = 5
     watchdog_max_restarts: int = 3
+
+    # ── Media-Limits ──────────────────────────────────────────────────────────
+    image_max_px: int = 1920
+    image_max_bytes: int = 5_000_000
+    pdf_max_bytes: int = 20_000_000
+    pdf_max_chars: int = 100_000
+    audio_max_bytes: int = 25_000_000
 
     model_config = {"extra": "ignore"}
 

@@ -203,9 +203,10 @@ class TestHandleDocumentPdf:
 
     @pytest.mark.asyncio
     async def test_pdf_text_truncated_at_limit(self):
-        from bot.bot import _handle_document_pdf, _PDF_MAX_CHARS
+        from bot.bot import _handle_document_pdf
+        from agent.config import get_settings
 
-        long_text = "X" * (_PDF_MAX_CHARS + 5000)
+        long_text = "X" * (get_settings().pdf_max_chars + 5000)
         update = _make_update(mime_type="application/pdf", file_size=1000)
         ctx = _make_ctx(pdf_bytes=b"%PDF")
         fitz_doc = _make_fitz_doc([long_text])
