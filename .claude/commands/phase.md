@@ -49,6 +49,16 @@ Lies README.md und füge nach der letzten `Phase NNN`-Zeile (vor der `---` Trenn
 - **Phase NNN** ✅ <beschreibung> – <details>; X tests green
 ```
 
+### 2.5 SELF.md prüfen (bedingt)
+
+Prüfe ob die Phase Architektur-relevante Dateien geändert hat:
+```bash
+git diff HEAD --name-only | grep -E "^(agent/llm\.py|agent/supervisor\.py|agent/agents/|bot/)"
+```
+
+- Wenn **Treffer**: Prüfe ob SELF.md aktualisiert werden muss (neue/entfernte Agenten, geänderte LLM-Konfiguration, neue Scheduler-Features, neue Architektur-Entscheidungen). Falls ja: SELF.md anpassen und die Zeile `_Letzte Aktualisierung: Phase NNN_` im Header auf die aktuelle Phasen-Nummer setzen. SELF.md dann mit in den Commit aufnehmen.
+- Wenn **kein Treffer**: Schritt überspringen.
+
 ### 3. Feature-Branch erstellen
 ```bash
 git checkout -b phase/NNN-<slug>
