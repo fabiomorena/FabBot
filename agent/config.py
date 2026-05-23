@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     pdf_max_chars: int = 100_000
     audio_max_bytes: int = 25_000_000
 
+    # ── Focus-Mode ────────────────────────────────────────────────────────────
+    focus_soft_mute_min: int = 15
+    focus_hard_mute_min: int = 60
+
     model_config = {"extra": "ignore"}
 
 

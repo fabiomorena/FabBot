@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 219_
+_Letzte Aktualisierung: Phase 221_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -148,7 +148,7 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 | Morning Briefing | 07:30 | `bot/briefing.py` | Wetter (Open-Meteo), Kalender, News. |
 | Evening Check-in | 21:00 | `bot/evening_checkin.py` | Personalisierte Frage via `get_grounding_llm()` (temperature=0). |
 | Session Summary | 23:30 | `bot/session_summary.py` | Tages-Summary via `get_fast_llm()`. Rolling-Window-Sessions. |
-| Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown; temperature=0 + Entity Guard (agent/proactive/entity_guard.py). |
+| Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown; temperature=0 + Entity Guard (agent/proactive/entity_guard.py); Focus-Mode-Check (agent/proactive/focus_mode.py): SOFT_MUTE ab 15 min, HARD_MUTE ab 60 min Inaktivität. |
 
 ---
 
