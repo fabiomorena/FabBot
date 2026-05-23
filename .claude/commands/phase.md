@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Bash(git status:*), Bash(git checkout:*), Bash(git pull:*), Bash(gh issue close:*), Bash(gh pr create:*), Bash(gh pr merge:*), Bash(gh pr checks:*), Bash(gh run list:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Bash(pytest:*), Read, Edit
+allowed-tools: Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Bash(git status:*), Bash(git checkout:*), Bash(git pull:*), Bash(gh issue close:*), Bash(gh pr create:*), Bash(gh pr merge:*), Bash(gh pr checks:*), Bash(gh run list:*), Bash(git diff:*), Bash(grep:*), Bash(launchctl:*), Bash(pytest:*), Bash(ruff:*), Bash(vulture:*), Read, Edit
 description: Schließt eine FabBot-Phase ab – Security-Check, README-Eintrag, Commit, PR-Workflow mit CI, Bot-Neustart.
 ---
 
@@ -32,13 +32,27 @@ Wenn ein Treffer gefunden wird:
 
 Wenn alles sauber: kurze Bestätigung „Security-Check OK" und weiter.
 
-### 0.5 Tests
-Führe die Test-Suite aus:
+### 0.5 Lint + Tests
+
+**ruff** (Gate – STOP bei Fehlern):
+```bash
+ruff check agent/ bot/
+```
+- Wenn sauber: kurze Bestätigung „ruff OK" und weiter.
+- Wenn Fehler: **STOP** – zeige die Fundstellen und frage ob trotzdem fortgefahren werden soll.
+
+**pytest** (Gate – STOP bei Fehlern):
 ```bash
 pytest --tb=short -q
 ```
 - Wenn alle Tests grün: kurze Bestätigung „Tests OK (X passed)" und weiter.
 - Wenn Tests fehlschlagen: **STOP** – zeige die fehlgeschlagenen Tests und frage ob trotzdem fortgefahren werden soll.
+
+**vulture** (Info – kein STOP):
+```bash
+vulture agent/ bot/ --min-confidence 80
+```
+Ausgabe immer anzeigen. Bei Findings kurz kommentieren ob es False Positives sind. Kein Abbruch.
 
 ### 1. Phasen-Nummer
 Nächste Nummer = gefundene Nummer + 1. Format: dreistellig (Phase 001, Phase 123).

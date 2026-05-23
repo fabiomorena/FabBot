@@ -261,3 +261,7 @@ bandit
 ruff==0.15.12
 
 keyring
+
+pytest-cov>=5.0.0
+vulture>=2.0
+
