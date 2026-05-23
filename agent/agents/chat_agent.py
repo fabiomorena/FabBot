@@ -280,8 +280,12 @@ def _get_context_window_size() -> int:
         return 20
 
 
-async def _summarize_overflow(messages: list) -> SystemMessage:
-    """Phase 216 (#232): Komprimiert aus dem Context-Window gefallene Messages."""
+async def _summarize_overflow(messages: list) -> AIMessage:
+    """Phase 216 (#232): Komprimiert aus dem Context-Window gefallene Messages.
+
+    Gibt AIMessage zurück (nicht SystemMessage) – Anthropic erlaubt keine
+    nicht-konsekutiven System-Messages (würde ValueError auslösen).
+    """
     from agent.llm import get_fast_llm
 
     lines = []
@@ -294,7 +298,7 @@ async def _summarize_overflow(messages: list) -> SystemMessage:
             lines.append(f"Bot: {content[:300]}")
 
     if not lines:
-        return SystemMessage(content="[Früherer Kontext: keine Details]")
+        return AIMessage(content="[Früherer Kontext: keine Details]")
 
     conversation_text = "\n".join(lines)
     prompt = f"""Fasse diese frühere Konversation in maximal 3 Sätzen zusammen. Nur die wichtigsten Fakten, Entscheidungen und Themen. Keine Einleitung, kein Kommentar.
@@ -308,10 +312,10 @@ async def _summarize_overflow(messages: list) -> SystemMessage:
             timeout=8.0,
         )
         content = response.content if isinstance(response.content, str) else str(response.content)
-        return SystemMessage(content=f"[Früherer Kontext]\n{content.strip()}")
+        return AIMessage(content=f"[Früherer Kontext]\n{content.strip()}")
     except Exception as e:
         logger.debug(f"Overflow-Komprimierung fehlgeschlagen: {e}")
-        return SystemMessage(content=f"[Früherer Kontext]\n{conversation_text[:500]}")
+        return AIMessage(content=f"[Früherer Kontext]\n{conversation_text[:500]}")
 
 
 async def _apply_context_window(messages: list, context_window: int) -> list:
