@@ -40,6 +40,9 @@ Nur Entitäten mit klarer semantischer Bedeutung extrahieren.
 Keine trivialen Entitäten (z.B. "Bot", "Antwort").
 Keine Absichten oder Verpflichtungen ("ich muss X", "ich wollte Y") – diese werden separat verarbeitet.
 Verwandtschaftsbeziehungen wie "Steffis Vater" oder "der Bruder von X" nur extrahieren wenn ein eigenständiger Name bekannt ist – sonst weglassen.
+Keine Personen extrahieren die nur als Empfänger oder Argument eines Kommandos vorkommen
+(z.B. "Schreibe an X", "Ruf Y an", "Sende X eine Nachricht", "Nachricht an X: ...") –
+nur wenn die Person in einem natürlichen Gesprächskontext erwähnt wird.
 Falls keine relevanten Entitäten vorhanden: leeres Array [].
 
 Antwort NUR als JSON-Array, kein Text darum."""

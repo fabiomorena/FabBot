@@ -38,7 +38,7 @@ def setup_telemetry() -> None:
         logger.debug("LangSmith Telemetry deaktiviert (LANGCHAIN_TRACING_V2 nicht gesetzt oder nicht 'true').")
         return
 
-    api_key = cfg.langchain_api_key.strip()
+    api_key = cfg.langchain_api_key.get_secret_value().strip()
     if not api_key:
         logger.warning(
             "LANGCHAIN_TRACING_V2=true aber LANGCHAIN_API_KEY fehlt – "

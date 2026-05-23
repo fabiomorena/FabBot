@@ -3572,12 +3572,15 @@ class TestClaudeMdInChatPrompt:
 
     def test_empty_claude_md_not_in_prompt(self) -> None:
         """Leere claude.md fuegt keinen leeren Abschnitt ein."""
+        import agent.agents.chat_agent as ca
         from agent.agents.chat_agent import _build_chat_prompt
 
         with (
             patch("agent.claude_md.load_claude_md", return_value=""),
             patch("agent.profile.get_profile_context_full", return_value=""),
+            patch.object(ca, "load_self_md", return_value=""),
         ):
+            ca._prompt_cache = None
             prompt = _build_chat_prompt()
 
         assert "Bot-Instruktionen" not in prompt

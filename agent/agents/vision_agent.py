@@ -13,7 +13,6 @@ from agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
 _DEFAULT_MEDIA_TYPE = "image/jpeg"
 
 VISION_SYSTEM_PROMPT = """Du bist ein präziser Bild-Analyse-Assistent.
