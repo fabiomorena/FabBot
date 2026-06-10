@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fabbot.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/.venv/bin/python</string>
+        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/main.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Phase 103 (Issue #16): Verhindert Crash-Loop – min. 30s zwischen Neustarts.
+         Ohne ThrottleInterval startet launchd sofort neu → mehrere Bot-Instanzen
+         verarbeiten dieselben gepufferten Telegram-Updates. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/fabbot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/fabbot.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/fmorena</string>
+        <key>PYTHONPATH</key>
+        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/.venv/lib/python3.11/site-packages</string>
+        <key>VIRTUAL_ENV</key>
+        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/.venv</string>
+    </dict>
+</dict>
+</plist>
