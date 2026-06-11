@@ -17,7 +17,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _TIMEOUTS = {
-    "weather": 10.0,
+    "weather": 45.0,
     "calendar": 20.0,
     "pending": 5.0,
     "news": 45.0,

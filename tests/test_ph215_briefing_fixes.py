@@ -72,9 +72,10 @@ class TestOpenMeteo:
 
     @pytest.mark.asyncio
     async def test_get_weather_fallback_on_error(self):
+        from bot import briefing
         from bot.briefing import _get_weather_berlin
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("httpx.AsyncClient") as mock_client_cls, patch.object(briefing, "_WEATHER_RETRY_DELAY", 0):
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)

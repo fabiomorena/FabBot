@@ -94,38 +94,95 @@ _OPEN_METEO_URL = (
 )
 
 
+_BRIGHTSKY_CURRENT_URL = "https://api.brightsky.dev/current_weather?lat=52.52&lon=13.41"
+_BRIGHTSKY_DAILY_URL = "https://api.brightsky.dev/weather?lat=52.52&lon=13.41&date={date}"
+
+_BRIGHTSKY_ICONS: dict[str, tuple[str, str]] = {
+    "clear-day": ("Clear sky", "☀️"),
+    "clear-night": ("Clear sky", "🌙"),
+    "partly-cloudy-day": ("Partly cloudy", "⛅"),
+    "partly-cloudy-night": ("Partly cloudy", "⛅"),
+    "cloudy": ("Cloudy", "☁️"),
+    "fog": ("Fog", "🌫️"),
+    "wind": ("Windy", "💨"),
+    "rain": ("Rain", "🌧️"),
+    "sleet": ("Sleet", "🌨️"),
+    "snow": ("Snow", "❄️"),
+    "hail": ("Hail", "🌨️"),
+    "thunderstorm": ("Thunderstorm", "⛈️"),
+}
+
+# Open-Meteo hing morgens um 07:30 mehrfach (502/504) → Retry über zwei Provider.
+_WEATHER_RETRIES = 3
+_WEATHER_RETRY_DELAY = 3.0
+
+
+async def _fetch_open_meteo(client) -> str:
+    """Primärer Provider: Open-Meteo – kein API-Key nötig, genaue Humidity."""
+    resp = await client.get(_OPEN_METEO_URL)
+    resp.raise_for_status()
+    data = resp.json()
+
+    current = data["current"]
+    temp = round(current["temperature_2m"])
+    feels = round(current["apparent_temperature"])
+    humidity = round(current["relative_humidity_2m"])
+    wind = round(current["windspeed_10m"])
+    code = current["weather_code"]
+
+    desc, icon = _WMO_DESCRIPTIONS.get(code, ("Cloudy", "☁️"))
+
+    daily = data.get("daily", {})
+    max_temp = round(daily.get("temperature_2m_max", [None])[0] or temp)
+    min_temp = round(daily.get("temperature_2m_min", [None])[0] or temp)
+
+    return (
+        f"{icon} {desc}\n"
+        f"🌡️ Aktuell: {temp}°C (gefühlt {feels}°C)\n"
+        f"📊 Heute: {min_temp}°C – {max_temp}°C\n"
+        f"💧 Luftfeuchtigkeit: {humidity}% | 💨 Wind: {wind} km/h"
+    )
+
+
+async def _fetch_brightsky(client) -> str:
+    """Fallback-Provider: Brightsky (DWD-Daten) – kein API-Key, ohne gefühlte Temperatur."""
+    resp = await client.get(_BRIGHTSKY_CURRENT_URL)
+    resp.raise_for_status()
+    current = resp.json()["weather"]
+    temp = round(current["temperature"])
+    humidity = round(current["relative_humidity"])
+    wind = round(current["wind_speed_10"])
+    desc, icon = _BRIGHTSKY_ICONS.get(current.get("icon", ""), ("Cloudy", "☁️"))
+
+    daily_resp = await client.get(_BRIGHTSKY_DAILY_URL.format(date=date.today().isoformat()))
+    daily_resp.raise_for_status()
+    temps = [h["temperature"] for h in daily_resp.json()["weather"] if h.get("temperature") is not None]
+    max_temp = round(max(temps)) if temps else temp
+    min_temp = round(min(temps)) if temps else temp
+
+    return (
+        f"{icon} {desc}\n"
+        f"🌡️ Aktuell: {temp}°C\n"
+        f"📊 Heute: {min_temp}°C – {max_temp}°C\n"
+        f"💧 Luftfeuchtigkeit: {humidity}% | 💨 Wind: {wind} km/h"
+    )
+
+
 async def _get_weather_berlin() -> str:
-    """Holt aktuelles Berliner Wetter via Open-Meteo – kein API-Key nötig, genaue Humidity."""
-    try:
-        import httpx
+    """Holt aktuelles Berliner Wetter – Open-Meteo primär, Brightsky als Fallback, mit Retry."""
+    import httpx
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(_OPEN_METEO_URL)
-            resp.raise_for_status()
-            data = resp.json()
-
-        current = data["current"]
-        temp = round(current["temperature_2m"])
-        feels = round(current["apparent_temperature"])
-        humidity = round(current["relative_humidity_2m"])
-        wind = round(current["windspeed_10m"])
-        code = current["weather_code"]
-
-        desc, icon = _WMO_DESCRIPTIONS.get(code, ("Cloudy", "☁️"))
-
-        daily = data.get("daily", {})
-        max_temp = round(daily.get("temperature_2m_max", [None])[0] or temp)
-        min_temp = round(daily.get("temperature_2m_min", [None])[0] or temp)
-
-        return (
-            f"{icon} {desc}\n"
-            f"🌡️ Aktuell: {temp}°C (gefühlt {feels}°C)\n"
-            f"📊 Heute: {min_temp}°C – {max_temp}°C\n"
-            f"💧 Luftfeuchtigkeit: {humidity}% | 💨 Wind: {wind} km/h"
-        )
-    except Exception as e:
-        logger.warning(f"Wetter-Fehler: {e}")
-        return "Wetter nicht verfügbar."
+    providers = (("Open-Meteo", _fetch_open_meteo), ("Brightsky", _fetch_brightsky))
+    for attempt in range(1, _WEATHER_RETRIES + 1):
+        for name, fetch in providers:
+            try:
+                async with httpx.AsyncClient(timeout=6) as client:
+                    return await fetch(client)
+            except Exception as e:
+                logger.warning(f"Wetter-Fehler {name} (Versuch {attempt}/{_WEATHER_RETRIES}): {e}")
+        if attempt < _WEATHER_RETRIES:
+            await asyncio.sleep(_WEATHER_RETRY_DELAY)
+    return "Wetter nicht verfügbar."
 
 
 def _get_calendar_today() -> str:
