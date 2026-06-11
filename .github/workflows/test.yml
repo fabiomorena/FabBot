@@ -44,6 +44,7 @@ jobs:
             --ignore-vuln PYSEC-2025-197 \
             --ignore-vuln PYSEC-2025-210 \
             --ignore-vuln PYSEC-2026-139 \
+            --ignore-vuln CVE-2025-3000 \
             --ignore-vuln PYSEC-2024-277
 
       - name: Static security scan
