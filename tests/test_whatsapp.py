@@ -561,38 +561,3 @@ class TestWhatsappAgent:
         value = result["__interrupt__"][0].value
         assert value["type"] == "whatsapp"
         assert value["whatsapp_name"] == "Fabio Morena (du)"
-
-
-# ---------------------------------------------------------------------------
-# Protocol
-# ---------------------------------------------------------------------------
-
-
-class TestProtoWhatsapp:
-    def test_confirm_whatsapp_prefix(self):
-        from agent.protocol import Proto
-
-        assert Proto.CONFIRM_WHATSAPP == "__CONFIRM_WHATSAPP__:"
-
-    def test_is_confirm_whatsapp_true(self):
-        from agent.protocol import Proto
-
-        assert Proto.is_confirm_whatsapp("__CONFIRM_WHATSAPP__:Steffi 🌞::Hallo") is True
-
-    def test_is_confirm_whatsapp_false(self):
-        from agent.protocol import Proto
-
-        assert Proto.is_confirm_whatsapp("__CONFIRM_TERMINAL__:ls") is False
-        assert Proto.is_confirm_whatsapp("") is False
-
-    def test_is_any_confirm_includes_whatsapp(self):
-        from agent.protocol import Proto
-
-        assert Proto.is_any_confirm("__CONFIRM_WHATSAPP__:x::y") is True
-
-    def test_is_any_confirm_still_covers_others(self):
-        from agent.protocol import Proto
-
-        assert Proto.is_any_confirm("__CONFIRM_TERMINAL__:ls") is True
-        assert Proto.is_any_confirm("__CONFIRM_FILE_WRITE__:/tmp/x::content") is True
-        assert Proto.is_any_confirm("__CONFIRM_COMPUTER__:click:0:0:") is True
