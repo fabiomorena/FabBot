@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 223_
+_Letzte Aktualisierung: Phase 225_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -56,6 +56,7 @@ Reihenfolge in `supervisor_node()`:
    - AI-Message → `FINISH`
    - Vision-Followup → `chat_agent`
    - YouTube-URL → `youtube_agent`
+   - Negierte Erinnerungen `_pre_route_reminder` → reminder_agent („Vergiss nicht X", Guard gegen Profil-Fakten, #286)
    - Prefix-Tabelle `_PRE_ROUTING_RULES` → spezifischer Prefix → direkter Agent
    - Word-Trigger `_WORD_TRIGGER_RULES` → eindeutige Mehrwort-Phrasen wortgrenzen-basiert auch mitten im Satz (#280)
 
