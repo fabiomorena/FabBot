@@ -52,7 +52,6 @@ from bot.tts import speak_and_send, set_tts_enabled, is_tts_enabled, stop_speaki
 from agent.security import sanitize_input_async, check_action_rate_limit
 from agent.audit import log_action, log_blocked
 from agent.protocol import Proto
-from agent.agents.calendar import calendar_event_create
 from agent.agents.computer import computer_agent_execute, _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
@@ -307,6 +306,18 @@ async def _handle_interrupt(interrupt_value: dict, bot: Bot, chat_id: int) -> di
             "content": content,
         }
 
+    if action_type == "create_event":
+        display = interrupt_value.get("display", "Neuer Termin")
+        confirmed = await request_confirmation(bot, chat_id, "calendar_agent", display)
+        if not confirmed:
+            return {"confirmed": False}
+        return {
+            "confirmed": True,
+            "title": interrupt_value.get("title", ""),
+            "start_time": interrupt_value.get("start_time", ""),
+            "end_time": interrupt_value.get("end_time", ""),
+        }
+
     logger.warning(f"_handle_interrupt: unbekannter Typ {action_type!r} – ablehnen")
     return {"confirmed": False}
 
@@ -437,22 +448,6 @@ async def _handle_confirm_computer(response_msg: str, bot: Bot, chat_id: int, **
         log_action("computer_agent", action, "user rejected", chat_id, status="rejected")
 
 
-async def _handle_confirm_create_event(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_CREATE_EVENT) :].split("::")
-    title = parts[0] if len(parts) > 0 else ""
-    start_time = parts[1] if len(parts) > 1 else ""
-    end_time = parts[2] if len(parts) > 2 else ""
-    confirmed = await request_confirmation(bot, chat_id, "calendar_agent", f"Neuer Termin: {title} am {start_time}")
-    if confirmed:
-        output = calendar_event_create(title, start_time, end_time, chat_id)
-        await bot.send_message(chat_id=chat_id, text=output)
-        if len(output) <= _TTS_MAX_HITL_OUTPUT:
-            await speak_and_send(output, bot, chat_id)
-        await _update_memory(chat_id, f"Kalendereintrag erstellt: {title} um {start_time}\nErgebnis: {output}")
-    else:
-        log_action("calendar_agent", "create_event", f"user rejected: {title}", chat_id, status="rejected")
-
-
 async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
     parts = response_msg[len(Proto.CONFIRM_WHATSAPP) :].split("::", 1)
     whatsapp_name = parts[0] if len(parts) > 0 else ""
@@ -482,7 +477,6 @@ async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **
 _RESPONSE_DISPATCH: list[tuple[str, Any]] = [
     (Proto.SCREENSHOT, _handle_screenshot),
     (Proto.CONFIRM_COMPUTER, _handle_confirm_computer),
-    (Proto.CONFIRM_CREATE_EVENT, _handle_confirm_create_event),
     (Proto.CONFIRM_WHATSAPP, _handle_confirm_whatsapp),
 ]
 

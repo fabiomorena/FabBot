@@ -3,10 +3,10 @@ import json
 import subprocess
 from datetime import datetime, timedelta, date
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langgraph.types import interrupt
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
-from agent.protocol import Proto
 from agent.utils import extract_llm_text
 
 
@@ -233,11 +233,37 @@ async def calendar_agent(state: AgentState) -> AgentState:
         if end_time:
             confirm_text += f" bis {end_time}"
 
+        # Phase 223 (Issue #274): HITL via LangGraph interrupt() statt Magic-String-Return.
+        # bot.py erkennt den Interrupt, holt Bestätigung und resumed via Command(resume=...).
+        # Defensive: Werte aus decision lesen (Source of Truth post-resume, Node läuft neu).
+        decision = interrupt(
+            {
+                "type": "create_event",
+                "title": title,
+                "start_time": start_time,
+                "end_time": end_time,
+                "display": confirm_text,
+            }
+        )
+
+        if not isinstance(decision, dict) or not decision.get("confirmed"):
+            log_action(
+                "calendar_agent",
+                "create_event",
+                f"user rejected: {title}",
+                state.get("telegram_chat_id"),
+                status="rejected",
+            )
+            msg = "Termin abgebrochen."
+            return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "calendar_agent"}
+
+        c_title = decision.get("title", title)
+        c_start = decision.get("start_time", start_time)
+        c_end = decision.get("end_time", end_time)
+        output = calendar_event_create(c_title, c_start, c_end, state.get("telegram_chat_id") or 0)
         return {
-            "messages": [AIMessage(content=f"{Proto.CONFIRM_CREATE_EVENT}{title}::{start_time}::{end_time}")],
-            "next_agent": None,
-            "_confirm_display": confirm_text,
-            "last_agent_result": None,
+            "messages": [AIMessage(content=output)],
+            "last_agent_result": output,
             "last_agent_name": "calendar_agent",
         }
 
