@@ -56,7 +56,6 @@ from agent.agents.computer import _screenshot_to_telegram_bytes
 from agent.agents.clip_agent import clip_agent, clip_agent_write
 from agent.agents.vision_agent import analyze_image_direct
 from bot.whatsapp import (
-    send_whatsapp_message,
     is_session_ready,
     add_whatsapp_contact,
     remove_whatsapp_contact,
@@ -68,8 +67,6 @@ from bot.whatsapp import (
 )
 
 logger = logging.getLogger(__name__)
-
-_TTS_MAX_HITL_OUTPUT = 300
 
 # Phase 91: Task-Registry für Background-Tasks in cmd_clip.
 _background_tasks: set[asyncio.Task] = set()
@@ -321,6 +318,19 @@ async def _handle_interrupt(interrupt_value: dict, bot: Bot, chat_id: int) -> di
             "text": interrupt_value.get("text", ""),
         }
 
+    if action_type == "whatsapp":
+        display = interrupt_value.get("display", "WhatsApp senden")
+        confirmed = await request_confirmation(bot, chat_id, "whatsapp_agent", display)
+        if not confirmed:
+            return {"confirmed": False}
+        rate_limit_ok = check_action_rate_limit(chat_id, "destructive")
+        return {
+            "confirmed": True,
+            "rate_limit_ok": rate_limit_ok,
+            "whatsapp_name": interrupt_value.get("whatsapp_name", ""),
+            "message": interrupt_value.get("message", ""),
+        }
+
     if action_type == "create_event":
         display = interrupt_value.get("display", "Neuer Termin")
         confirmed = await request_confirmation(bot, chat_id, "calendar_agent", display)
@@ -443,35 +453,8 @@ async def _handle_screenshot(response_msg: str, bot: Bot, chat_id: int, **_) -> 
     # bei Follow-up-Fragen den Screenshot-Kontext kennt.
 
 
-async def _handle_confirm_whatsapp(response_msg: str, bot: Bot, chat_id: int, **_) -> None:
-    parts = response_msg[len(Proto.CONFIRM_WHATSAPP) :].split("::", 1)
-    whatsapp_name = parts[0] if len(parts) > 0 else ""
-    message_text = parts[1] if len(parts) > 1 else ""
-    confirmed = await request_confirmation(
-        bot, chat_id, "whatsapp_agent", f"WhatsApp an {whatsapp_name}:\n{message_text}"
-    )
-    if confirmed:
-        if not check_action_rate_limit(chat_id, "destructive"):
-            await bot.send_message(chat_id=chat_id, text="⚠️ Rate Limit: zu viele Aktionen – bitte kurz warten.")
-            log_action("whatsapp_agent", "send", f"action-rate-limited: {whatsapp_name}", chat_id, status="blocked")
-            return
-        success, detail = await send_whatsapp_message(whatsapp_name, message_text)
-        await bot.send_message(chat_id=chat_id, text=detail)
-        await _update_memory(chat_id, f"WhatsApp gesendet an {whatsapp_name}: {message_text}")
-        log_action(
-            "whatsapp_agent",
-            "send",
-            f"to={whatsapp_name} len={len(message_text)}",
-            chat_id,
-            status="executed" if success else "error",
-        )
-    else:
-        log_action("whatsapp_agent", "send", f"user rejected: {whatsapp_name}", chat_id, status="rejected")
-
-
 _RESPONSE_DISPATCH: list[tuple[str, Any]] = [
     (Proto.SCREENSHOT, _handle_screenshot),
-    (Proto.CONFIRM_WHATSAPP, _handle_confirm_whatsapp),
 ]
 
 
