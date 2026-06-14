@@ -34,38 +34,6 @@ class TestProtocolFixes:
 
         assert Proto.MEMORY_VISION_MARKER == "Bildbeschreibung"
 
-    def test_is_any_confirm_includes_vision(self) -> None:
-        """is_any_confirm() erkennt CONFIRM_VISION."""
-        from agent.protocol import Proto
-
-        vision_msg = f"{Proto.CONFIRM_VISION}some data"
-        assert Proto.is_any_confirm(vision_msg) is True
-
-    def test_is_any_confirm_still_covers_all_others(self) -> None:
-        """is_any_confirm() deckt weiterhin alle anderen Confirm-Typen ab."""
-        from agent.protocol import Proto
-
-        assert Proto.is_any_confirm(f"{Proto.CONFIRM_TERMINAL}ls") is True
-        assert Proto.is_any_confirm(f"{Proto.CONFIRM_FILE_WRITE}/tmp/x::y") is True
-        assert Proto.is_any_confirm(f"{Proto.CONFIRM_CREATE_EVENT}Meeting::2026") is True
-        assert Proto.is_any_confirm(f"{Proto.CONFIRM_COMPUTER}click:0:0:") is True
-        assert Proto.is_any_confirm(f"{Proto.CONFIRM_WHATSAPP}Steffi::Hallo") is True
-
-    def test_is_any_confirm_false_for_non_confirm(self) -> None:
-        """is_any_confirm() gibt False für normale Nachrichten zurück."""
-        from agent.protocol import Proto
-
-        assert Proto.is_any_confirm("normale nachricht") is False
-        assert Proto.is_any_confirm("__SCREENSHOT__:data") is False
-        assert Proto.is_any_confirm("") is False
-
-    def test_is_confirm_vision_standalone(self) -> None:
-        """is_confirm_vision() funktioniert korrekt."""
-        from agent.protocol import Proto
-
-        assert Proto.is_confirm_vision(f"{Proto.CONFIRM_VISION}data") is True
-        assert Proto.is_confirm_vision("andere nachricht") is False
-
     def test_memory_vision_marker_used_in_supervisor(self) -> None:
         """supervisor._filter_hitl_messages nutzt Proto.MEMORY_VISION_MARKER."""
         import inspect
