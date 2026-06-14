@@ -3,6 +3,7 @@ import base64
 import subprocess
 from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.types import interrupt
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
@@ -137,39 +138,54 @@ async def computer_agent(state: AgentState) -> AgentState:
     elif action == "click":
         x = parsed.get("x", 0)
         y = parsed.get("y", 0)
-        return {
-            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}click:{x}:{y}:")],
-            "next_agent": None,
-            "last_agent_result": None,
-            "last_agent_name": "computer_agent",
-        }
+        text = ""
+        display = f"click @ ({x}, {y})"
 
     elif action == "type":
         text = parsed.get("text", "")
+        x = y = 0
         valid, reason = _validate_typewrite_text(text)
         if not valid:
             return _err(f"Ungültiger Text: {reason}")
-        return {
-            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}type:0:0:{text}")],
-            "next_agent": None,
-            "last_agent_result": None,
-            "last_agent_name": "computer_agent",
-        }
+        display = f"type: {text}"
 
     elif action == "open_app":
         app = parsed.get("app", "")
+        x = y = 0
         valid, clean_app = _validate_app_name(app)
         if not valid:
             return _err(f"Ungültiger App-Name: {clean_app}")
-        return {
-            "messages": [AIMessage(content=f"{Proto.CONFIRM_COMPUTER}open_app:0:0:{clean_app}")],
-            "next_agent": None,
-            "last_agent_result": None,
-            "last_agent_name": "computer_agent",
-        }
+        text = clean_app
+        display = f"open_app: {clean_app}"
 
     else:
         return _err(f"Unbekannte Aktion: {action}")
+
+    # Phase 224 (Issue #274): HITL via LangGraph interrupt() statt Magic-String-Return.
+    # bot.py erkennt den Interrupt, holt Bestätigung + Rate-Limit und resumed via Command(resume=...).
+    # Defensive: Werte aus decision lesen (Source of Truth post-resume, Node läuft neu).
+    decision = interrupt({"type": "computer", "action": action, "x": x, "y": y, "text": text, "display": display})
+
+    if not isinstance(decision, dict) or not decision.get("confirmed"):
+        log_action("computer_agent", action, "user rejected", state.get("telegram_chat_id"), status="rejected")
+        msg = "Aktion abgebrochen."
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "computer_agent"}
+
+    if not decision.get("rate_limit_ok", True):
+        log_action("computer_agent", action, "action-rate-limited", state.get("telegram_chat_id"), status="blocked")
+        msg = "Rate Limit: zu viele Aktionen – bitte kurz warten."
+        return {"messages": [AIMessage(content=msg)], "last_agent_result": msg, "last_agent_name": "computer_agent"}
+
+    c_action = decision.get("action", action)
+    c_x = decision.get("x", x)
+    c_y = decision.get("y", y)
+    c_text = decision.get("text", text)
+    output = computer_agent_execute(c_action, c_x, c_y, c_text, state.get("telegram_chat_id") or 0)
+    return {
+        "messages": [AIMessage(content=output)],
+        "last_agent_result": output,
+        "last_agent_name": "computer_agent",
+    }
 
 
 def computer_agent_execute(action: str, x: int, y: int, text: str, chat_id: int) -> str:
