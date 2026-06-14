@@ -8,10 +8,10 @@ import logging
 import re
 
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langgraph.types import interrupt
 from agent.state import AgentState
 from agent.audit import log_action
 from agent.llm import get_llm
-from agent.protocol import Proto
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def _make_result(msg: str) -> AgentState:
 
 async def whatsapp_agent(state: AgentState) -> AgentState:
     """Phase 99: last_agent_result in allen Returns."""
-    from bot.whatsapp import find_contact, is_session_ready
+    from bot.whatsapp import find_contact, is_session_ready, send_whatsapp_message
 
     if not is_session_ready():
         return _make_result("WhatsApp nicht eingerichtet. Bitte /wa_setup ausführen.")
@@ -114,10 +114,42 @@ async def whatsapp_agent(state: AgentState) -> AgentState:
         status="pending",
     )
 
-    return {
-        "messages": [AIMessage(content=f"{Proto.CONFIRM_WHATSAPP}{whatsapp_name}::{message_text}")],
-        "next_agent": None,
-        "_confirm_display": f"WhatsApp an {contact_name}: {message_text}",
-        "last_agent_result": None,
-        "last_agent_name": "whatsapp_agent",
-    }
+    # Phase 225 (Issue #274): HITL via LangGraph interrupt() statt Magic-String-Return.
+    # Besonderheit: Versand (async I/O) passiert hier im Node NACH dem Resume –
+    # bot.py liefert nur Confirmation + Rate-Limit. Defensive: Werte aus decision.
+    display = f"WhatsApp an {contact_name}: {message_text}"
+    decision = interrupt(
+        {"type": "whatsapp", "whatsapp_name": whatsapp_name, "message": message_text, "display": display}
+    )
+
+    if not isinstance(decision, dict) or not decision.get("confirmed"):
+        log_action(
+            "whatsapp_agent",
+            "send",
+            f"user rejected: {whatsapp_name}",
+            state.get("telegram_chat_id"),
+            status="rejected",
+        )
+        return _make_result("WhatsApp abgebrochen.")
+
+    if not decision.get("rate_limit_ok", True):
+        log_action(
+            "whatsapp_agent",
+            "send",
+            f"action-rate-limited: {whatsapp_name}",
+            state.get("telegram_chat_id"),
+            status="blocked",
+        )
+        return _make_result("Rate Limit: zu viele Aktionen – bitte kurz warten.")
+
+    c_name = decision.get("whatsapp_name", whatsapp_name)
+    c_message = decision.get("message", message_text)
+    success, detail = await send_whatsapp_message(c_name, c_message)
+    log_action(
+        "whatsapp_agent",
+        "send",
+        f"to={c_name} len={len(c_message)}",
+        state.get("telegram_chat_id"),
+        status="executed" if success else "error",
+    )
+    return _make_result(detail)

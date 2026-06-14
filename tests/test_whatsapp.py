@@ -429,6 +429,22 @@ def _state(text: str) -> dict:
     }
 
 
+async def _run_agent(text: str, thread_id: str) -> dict:
+    """Phase 225: whatsapp_agent nutzt interrupt() – braucht Runnable-Kontext.
+    Läuft den Agent über einen Single-Node-Graph bis zum Interrupt."""
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.graph import StateGraph, START, END
+    from agent.agents.whatsapp_agent import whatsapp_agent
+    from agent.state import AgentState
+
+    g = StateGraph(AgentState)
+    g.add_node("agent", whatsapp_agent)
+    g.add_edge(START, "agent")
+    g.add_edge("agent", END)
+    app = g.compile(checkpointer=MemorySaver())
+    return await app.ainvoke(_state(text), {"configurable": {"thread_id": thread_id}})
+
+
 _CONTACTS = [
     {"name": "Steffi", "whatsapp_name": "Steffi 🌞"},
     {"name": "Amalia", "whatsapp_name": "Amalia"},
@@ -464,9 +480,6 @@ class TestWhatsappAgent:
         assert "erlaubte kontakte" not in content.lower()
 
     async def test_valid_contact_returns_hitl(self):
-        from agent.agents.whatsapp_agent import whatsapp_agent
-        from agent.protocol import Proto
-
         llm_response = AIMessage(content='{"contact": "Steffi", "message": "Ich komme später"}')
         contact = {"name": "Steffi", "whatsapp_name": "Steffi 🌞"}
         with (
@@ -476,11 +489,11 @@ class TestWhatsappAgent:
             patch("agent.agents.whatsapp_agent.log_action"),
         ):
             mock_llm.return_value.ainvoke = AsyncMock(return_value=llm_response)
-            result = await whatsapp_agent(_state("Schick Steffi dass ich später komme"))
-        content = result["messages"][-1].content
-        assert content.startswith(Proto.CONFIRM_WHATSAPP)
-        assert "Steffi 🌞" in content
-        assert "Ich komme später" in content
+            result = await _run_agent("Schick Steffi dass ich später komme", "wa-valid")
+        value = result["__interrupt__"][0].value
+        assert value["type"] == "whatsapp"
+        assert value["whatsapp_name"] == "Steffi 🌞"
+        assert "Ich komme später" in value["message"]
 
     async def test_empty_contact_asks_user(self):
         from agent.agents.whatsapp_agent import whatsapp_agent
@@ -522,8 +535,6 @@ class TestWhatsappAgent:
         assert "anschreiben" in content.lower()
 
     async def test_whatsapp_name_with_emoji(self):
-        from agent.agents.whatsapp_agent import whatsapp_agent
-
         llm_response = AIMessage(content='{"contact": "Steffi", "message": "Test"}')
         contact = {"name": "Steffi", "whatsapp_name": "Steffi 🌞"}
         with (
@@ -533,13 +544,10 @@ class TestWhatsappAgent:
             patch("agent.agents.whatsapp_agent.log_action"),
         ):
             mock_llm.return_value.ainvoke = AsyncMock(return_value=llm_response)
-            result = await whatsapp_agent(_state("Schick Steffi Test"))
-        assert "Steffi 🌞" in result["messages"][-1].content
+            result = await _run_agent("Schick Steffi Test", "wa-emoji")
+        assert result["__interrupt__"][0].value["whatsapp_name"] == "Steffi 🌞"
 
     async def test_fabio_self_send(self):
-        from agent.agents.whatsapp_agent import whatsapp_agent
-        from agent.protocol import Proto
-
         llm_response = AIMessage(content='{"contact": "Fabio", "message": "Test 123"}')
         contact = {"name": "Fabio", "whatsapp_name": "Fabio Morena (du)"}
         with (
@@ -549,10 +557,10 @@ class TestWhatsappAgent:
             patch("agent.agents.whatsapp_agent.log_action"),
         ):
             mock_llm.return_value.ainvoke = AsyncMock(return_value=llm_response)
-            result = await whatsapp_agent(_state("Schick mir selbst Test 123"))
-        content = result["messages"][-1].content
-        assert content.startswith(Proto.CONFIRM_WHATSAPP)
-        assert "Fabio Morena (du)" in content
+            result = await _run_agent("Schick mir selbst Test 123", "wa-self")
+        value = result["__interrupt__"][0].value
+        assert value["type"] == "whatsapp"
+        assert value["whatsapp_name"] == "Fabio Morena (du)"
 
 
 # ---------------------------------------------------------------------------
