@@ -283,11 +283,73 @@ _PRE_ROUTING_RULES: list[tuple[tuple[str, ...], str, str]] = [
 ]
 
 
+# Phase 223 (#280): Eindeutige Mehrwort-Phrasen, die auch mitten im Satz greifen
+# sollen ("Hey FabBot, wie viel cpu ..."). Bewusst eine kuratierte, sichere
+# Teilmenge – nackte Tokens wie "cpu"/"ram" bleiben prefix-only, da sie als
+# Substring False-Positives erzeugen ("Instagram", "wie funktioniert eine CPU").
+_WORD_TRIGGER_RULES: list[tuple[tuple[str, ...], str, str]] = [
+    (
+        (
+            "wie viel cpu",
+            "wie viel ram",
+            "wie viel arbeitsspeicher",
+            "wie viel speicher",
+            "wie viel disk",
+            "system status",
+            "systemstatus",
+            "system-status",
+            "speicher auslastung",
+            "speicherauslastung",
+        ),
+        "system_agent",
+        "system-stats-trigger-word",
+    ),
+    (
+        (
+            "was denkst du",
+            "was hälst du",
+            "was haelst du",
+            "was findest du",
+            "wie findest du",
+            "deine meinung",
+            "was ist deine meinung",
+            "dein urteil",
+            "magst du",
+            "gefällt dir",
+            "gefaellt dir",
+        ),
+        "chat_agent",
+        "opinion-trigger-word",
+    ),
+]
+
+
+def _compile_word_triggers(
+    rules: list[tuple[tuple[str, ...], str, str]],
+) -> list[tuple[re.Pattern[str], str, str]]:
+    """Kompiliert Phrasen-Gruppen zu wortgrenzen-basierten Regex-Patterns."""
+    return [
+        (re.compile(r"\b(?:" + "|".join(re.escape(p) for p in phrases) + r")\b"), agent, label)
+        for phrases, agent, label in rules
+    ]
+
+
+_WORD_TRIGGER_PATTERNS = _compile_word_triggers(_WORD_TRIGGER_RULES)
+
+
 def _match_pre_routing(text: str) -> tuple[str, str] | None:
-    """Gibt (agent_name, log_label) zurück wenn eine Prefix-Rule greift, sonst None."""
+    """Gibt (agent_name, log_label) zurück wenn eine Rule greift, sonst None.
+
+    Zwei Schichten: zuerst Prefix-Rules (Satzanfang, Reihenfolge spezifisch→generisch,
+    Issue #96), dann wortgrenzen-basierte Word-Trigger für eindeutige Phrasen mitten
+    im Satz (Issue #280).
+    """
     lower = text.strip().strip("\"'").lower()
     for prefixes, agent, label in _PRE_ROUTING_RULES:
         if any(lower.startswith(p) for p in prefixes):
+            return agent, label
+    for pattern, agent, label in _WORD_TRIGGER_PATTERNS:
+        if pattern.search(lower):
             return agent, label
     return None
 
