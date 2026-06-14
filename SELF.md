@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 222_
+_Letzte Aktualisierung: Phase 223_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -57,6 +57,7 @@ Reihenfolge in `supervisor_node()`:
    - Vision-Followup → `chat_agent`
    - YouTube-URL → `youtube_agent`
    - Prefix-Tabelle `_PRE_ROUTING_RULES` → spezifischer Prefix → direkter Agent
+   - Word-Trigger `_WORD_TRIGGER_RULES` → eindeutige Mehrwort-Phrasen wortgrenzen-basiert auch mitten im Satz (#280)
 
 2. **LLM-Routing** (Fallback, wenn kein Pre-Route-Match):
    - `SUPERVISOR_PROMPT` als SystemMessage mit `cache_control: ephemeral`
