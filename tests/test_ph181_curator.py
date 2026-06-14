@@ -117,7 +117,11 @@ class TestIdleDetection:
     def test_returns_seconds_since_mtime(self, memory_db):
         from agent.proactive.curator import get_idle_seconds
 
-        with patch("agent.proactive.curator._MEMORY_DB", memory_db):
+        # focus_mode (activity.json) vorrangig – für den mtime-Fallback ausschalten
+        with (
+            patch("agent.proactive.focus_mode.get_idle_seconds", return_value=0.0),
+            patch("agent.proactive.curator._MEMORY_DB", memory_db),
+        ):
             idle = get_idle_seconds()
         assert idle >= 0
 
@@ -127,6 +131,7 @@ class TestIdleDetection:
         nonexistent = tmp_path / "no.db"
         nonexistent_log = tmp_path / "no.log"
         with (
+            patch("agent.proactive.focus_mode.get_idle_seconds", return_value=0.0),
             patch("agent.proactive.curator._MEMORY_DB", nonexistent),
             patch("agent.proactive.curator._FABBOT_LOG", nonexistent_log),
         ):
@@ -142,7 +147,10 @@ class TestIdleDetection:
         db.write_bytes(b"")
         old_time = time.time() - 7200  # 2h ago
         os.utime(db, (old_time, old_time))
-        with patch("agent.proactive.curator._MEMORY_DB", db):
+        with (
+            patch("agent.proactive.focus_mode.get_idle_seconds", return_value=0.0),
+            patch("agent.proactive.curator._MEMORY_DB", db),
+        ):
             idle = get_idle_seconds()
         assert idle >= 7000
 

@@ -175,13 +175,19 @@ class TestAuditSetupLogger:
 
         assert callable(setup_audit_logger)
 
+    @staticmethod
+    def _file_handlers(audit_module) -> list:
+        """Nur FileHandler – ignoriert pytest-eigene LogCaptureHandler.
+        pytest haengt wegen propagate=False seine caplog-Handler direkt an
+        fabbot.audit; die sind fuer diese Tests irrelevant (CI-Flake-Quelle)."""
+        return [h for h in audit_module.audit_logger.handlers if isinstance(h, logging.FileHandler)]
+
     def test_no_filehandler_on_import(self) -> None:
         """Beim Import von agent.audit wird kein FileHandler geöffnet."""
         import agent.audit as audit_module
 
-        # Nach setup_method sind alle Handler entfernt und Flag False
-        # → kein Handler sollte vorhanden sein
-        assert len(audit_module.audit_logger.handlers) == 0
+        # Nach setup_method ist kein FileHandler vorhanden (Flag False)
+        assert self._file_handlers(audit_module) == []
 
     def test_setup_adds_handler(self, tmp_path) -> None:
         """setup_audit_logger() fügt einen FileHandler hinzu."""
@@ -192,8 +198,9 @@ class TestAuditSetupLogger:
         with patch("agent.audit.AUDIT_LOG_PATH", log_path):
             setup_audit_logger()
 
-        assert len(audit_module.audit_logger.handlers) == 1
-        assert isinstance(audit_module.audit_logger.handlers[0], logging.FileHandler)
+        file_handlers = self._file_handlers(audit_module)
+        assert len(file_handlers) == 1
+        assert isinstance(file_handlers[0], logging.FileHandler)
 
     def test_setup_idempotent(self, tmp_path) -> None:
         """Mehrfache Aufrufe von setup_audit_logger() fügen keinen zweiten Handler hinzu."""
@@ -206,7 +213,7 @@ class TestAuditSetupLogger:
             setup_audit_logger()
             setup_audit_logger()
 
-        assert len(audit_module.audit_logger.handlers) == 1
+        assert len(self._file_handlers(audit_module)) == 1
 
     def test_initialized_flag_set(self, tmp_path) -> None:
         """_audit_initialized wird nach setup auf True gesetzt."""
