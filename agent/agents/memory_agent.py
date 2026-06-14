@@ -469,6 +469,11 @@ async def _extract_with_skill(messages: list, category: str, action: str, profil
             content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
         content = _strip_json_fences(content)
         logger.debug(f"MemoryAgent Extractor raw ({category}): {content[:120]}")
+        if not content.strip():
+            # Extractor erkennt korrekt: nichts zu speichern (z.B. "Vergiss nicht X" ist
+            # eine Erinnerungs-Bitte, kein Profil-Eintrag). Kein Fehler, sondern noop.
+            logger.info(f"MemoryAgent Extractor: leere Antwort ({category}) – nichts zu extrahieren (noop)")
+            return {"action": "noop"}
         parsed = json.loads(content)
         if not isinstance(parsed, dict) or "action" not in parsed:
             return {"action": "error"}
@@ -476,6 +481,9 @@ async def _extract_with_skill(messages: list, category: str, action: str, profil
     except FileNotFoundError:
         logger.error(f"MemoryAgent Extractor: Skill-Datei fehlt für category={category}")
         return {"action": "error"}
+    except json.JSONDecodeError as e:
+        logger.info(f"MemoryAgent Extractor: kein gültiges JSON ({category}) – nichts zu extrahieren (noop): {e}")
+        return {"action": "noop"}
     except Exception as e:
         logger.error(f"MemoryAgent Extractor Fehler ({category}): {e!r}")
         return {"action": "error"}
@@ -1132,6 +1140,12 @@ async def memory_agent(state: AgentState) -> AgentState:
         action = parsed.get("action", "error")
         category = parsed.get("category", "custom")
         data = parsed.get("data", {})
+
+        if action == "noop":
+            return _make_result(
+                "Das habe ich nicht als etwas zum Merken erkannt. Wenn du daran erinnert werden "
+                "möchtest, sag z.B.: 'Erinnere mich morgen um 10 ans Meeting'."
+            )
 
         if action == "error" or not data:
             return _make_result(
