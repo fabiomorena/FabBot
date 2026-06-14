@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 221_
+_Letzte Aktualisierung: Phase 222_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -132,7 +132,7 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 ## Sicherheits-Architektur
 
 - **Security Guard** (`agent/security.py`): Zweistufig – Regex-Check + LLM-Guard via Haiku. Fail-closed.
-- **HITL**: Pflicht bei terminal_agent, file_agent (write), calendar_agent (create), computer_agent, whatsapp_agent.
+- **HITL**: Pflicht bei terminal_agent, file_agent (write), calendar_agent (create), computer_agent, whatsapp_agent. Graph-nativ über LangGraph `interrupt()` – der Node unterbricht, `bot._handle_interrupt()` holt die Bestätigung, Resume via `Command(resume=...)`. Keine Magic-String-Bypässe mehr (Phase 222).
 - **Prompt Injection**: `_sanitize_routing_content()` im Supervisor, Homoglyph-Normalisierung.
 - **At-Rest-Encryption**: personal_profile.yaml via Fernet + macOS Keychain fuer den Key.
 - **Audit-Log**: Tamper-evident. Alle destruktiven Aktionen geloggt.
