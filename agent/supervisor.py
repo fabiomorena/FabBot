@@ -98,11 +98,14 @@ Verfuegbare Agenten:
         'ich war gestern in Hamburg', 'heute war schoenes Wetter')
   NEIN: Transiente Sozialereignisse mit Namen ohne biographische Beziehung ('Max und Anka kommen
         heute zum Essen', 'ich treffe gleich Steffi', 'wir fahren nachher zu Mario')
+  NEIN: Negierte Erinnerungen ('vergiss nicht X', 'vergiss morgen nicht das Meeting',
+        'nicht vergessen: X', 'denk dran X') → reminder_agent, KEIN Loeschbefehl
   NEIN: Fragen ueber gespeicherte Notizen, Sessions oder Wissen
   ZWEIFEL: Wenn unklar ob temporaer oder dauerhaft → chat_agent
 
 - calendar_agent: Kalendertermine lesen oder erstellen
-- reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr')
+- reminder_agent: Erinnerungen setzen, auflisten oder loeschen (z.B. 'Erinnere mich um 18 Uhr',
+  'Vergiss nicht X', 'Denk dran: X', 'Nicht vergessen: X')
 - file_agent: Dateien und Ordner lesen, auflisten oder schreiben
 - system_agent: CPU, RAM, Disk-Auslastung abfragen – NUR fuer Systemmetriken, kein Shell-Zugriff
 - terminal_agent: Shell-Befehle, Prozesse – NUR technische Systemabfragen, NICHT fuer CPU/RAM/Disk, NICHT fuer Datum/Uhrzeit
@@ -470,11 +473,33 @@ def _pre_route_youtube(_state: AgentState, _messages: list, routing: list) -> st
     return None
 
 
+# Phase 225 (#286): Negierte Erinnerungen ("Vergiss nicht X", "Nicht vergessen: X",
+# "Denk dran: X") deterministisch → reminder_agent, statt sie dem nicht-deterministischen
+# LLM-Routing zu überlassen (das mal memory_agent, mal reminder_agent wählte).
+_NEGATION_REMINDER_RE = re.compile(r"\bvergiss\b.{0,15}?\bnicht\b|\bnicht\s+vergessen\b|\bdenk\b.{0,8}?\bda?ran\b")
+# Guard: echte Profil-Fakten ("Vergiss nicht dass ich Jazz mag") sind keine Erinnerung.
+_MEMORY_FACT_RE = re.compile(r"\bdass\s+(?:ich|mir|mein|meine)\b")
+
+
+def _pre_route_reminder(_state: AgentState, _messages: list, routing: list) -> str | None:
+    if not routing:
+        return None
+    last_content = routing[-1].content if hasattr(routing[-1], "content") else ""
+    if isinstance(last_content, list):
+        last_content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in last_content)
+    text = last_content.lower()
+    if _NEGATION_REMINDER_RE.search(text) and not _MEMORY_FACT_RE.search(text):
+        logger.info("supervisor: Pre-Routing → reminder_agent (negation-reminder)")
+        return "reminder_agent"
+    return None
+
+
 _PRE_ROUTE_PIPELINE = [
     _pre_route_image_data,
     _pre_route_ai_message,
     _pre_route_vision_followup,
     _pre_route_youtube,
+    _pre_route_reminder,
     _pre_route_table,
 ]
 
