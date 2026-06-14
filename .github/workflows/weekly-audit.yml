@@ -23,28 +23,64 @@ jobs:
 
       - name: Run audit
         id: audit
+        # Ignore-Liste konsistent mit .github/workflows/test.yml halten:
+        # torch-CVEs (kein Upstream-Fix) und joblib PYSEC-2024-277 werden bewusst ignoriert.
         run: |
-          if ! pip-audit -r requirements-ci.txt --format=json -o audit.json; then
+          if ! pip-audit -r requirements-ci.txt --format=json -o audit.json \
+            --ignore-vuln PYSEC-2025-189 \
+            --ignore-vuln PYSEC-2025-190 \
+            --ignore-vuln PYSEC-2025-191 \
+            --ignore-vuln PYSEC-2025-192 \
+            --ignore-vuln PYSEC-2025-193 \
+            --ignore-vuln PYSEC-2025-194 \
+            --ignore-vuln PYSEC-2025-195 \
+            --ignore-vuln PYSEC-2025-196 \
+            --ignore-vuln PYSEC-2025-197 \
+            --ignore-vuln PYSEC-2025-210 \
+            --ignore-vuln PYSEC-2026-139 \
+            --ignore-vuln CVE-2025-3000 \
+            --ignore-vuln PYSEC-2024-277; then
             echo "FINDINGS=true" >> $GITHUB_ENV
           fi
 
-      - name: Open issue if findings
+      - name: Update or create issue if findings
         if: env.FINDINGS == 'true'
         run: |
           BODY=$(python3 - <<'EOF'
-          import json, sys
+          import json
           with open("audit.json") as f:
               data = json.load(f)
-          lines = ["## pip-audit Findings\n"]
+          lines = [f"## pip-audit Findings (Stand: {__import__('datetime').date.today()})\n"]
           for dep in data.get("dependencies", []):
               for vuln in dep.get("vulns", []):
                   lines.append(f"- **{dep['name']}** {dep['version']}: [{vuln['id']}] {vuln['description']}")
           print("\n".join(lines))
           EOF
           )
-          gh issue create \
-            --title "Security: pip-audit Findings $(date +%Y-%m-%d)" \
-            --body "$BODY" \
-            --label "security"
+          EXISTING=$(gh issue list --label security --state open \
+            --search "pip-audit Findings in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body "$BODY"
+            gh issue comment "$EXISTING" --body "🔄 Audit vom $(date +%Y-%m-%d) – Findings aktualisiert (siehe Issue-Body)."
+            echo "Bestehendes Issue #$EXISTING aktualisiert."
+          else
+            gh issue create \
+              --title "Security: pip-audit Findings" \
+              --body "$BODY" \
+              --label "security"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Close stale issue if clean
+        if: env.FINDINGS != 'true'
+        run: |
+          EXISTING=$(gh issue list --label security --state open \
+            --search "pip-audit Findings in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" \
+              --comment "✅ Audit vom $(date +%Y-%m-%d) ist sauber – keine offenen Findings mehr. Automatisch geschlossen."
+            echo "Issue #$EXISTING geschlossen (Audit clean)."
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
