@@ -144,6 +144,32 @@ def _compute_profile_hash(profile: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()[:16]
 
 
+def _validate_profile(loaded: dict[str, Any]) -> dict[str, Any]:
+    """
+    Issue #198: Weiche Pydantic-Validierung des geladenen Profils.
+
+    - Erfolg → model_dump(exclude_unset=True). exclude_unset verhindert, dass
+      None-Defaults für nicht gesetzte Felder eingefügt werden; so bleibt der
+      Profil-Hash (für Optimistic-Concurrency in write_profile) stabil.
+      extra="allow"-Felder gelten als gesetzt und bleiben im Dump erhalten.
+    - Unbekannte Top-Level-Felder → DEBUG-Log, kein Fehler.
+    - Typfehler (z.B. name: 123) → WARNING-Log + Fallback auf das Roh-dict.
+    """
+    from pydantic import ValidationError
+
+    from agent.profile_schema import PersonalProfile
+
+    try:
+        model = PersonalProfile.model_validate(loaded)
+        unknown = set(loaded) - set(PersonalProfile.model_fields)
+        if unknown:
+            logger.debug(f"Profil: unbekannte Felder (extra=allow): {sorted(unknown)}")
+        return model.model_dump(exclude_unset=True)
+    except ValidationError as e:
+        logger.warning(f"Profil-Validierung fehlgeschlagen, Fallback auf Rohwert: {e}")
+        return loaded
+
+
 def load_profile() -> dict[str, Any]:
     """
     Lädt personal_profile.yaml. Cached nach erstem Aufruf.
@@ -177,7 +203,8 @@ def load_profile() -> dict[str, Any]:
                     _migration_done = True
                     logger.info("Migration abgeschlossen – Profil ist jetzt verschlüsselt.")
         loaded = yaml.safe_load(yaml_text)
-        _profile_cache = loaded if isinstance(loaded, dict) else {}
+        loaded = _validate_profile(loaded) if isinstance(loaded, dict) else {}
+        _profile_cache = loaded
         logger.info(f"Persönliches Profil geladen: {_PROFILE_PATH}")
         return copy.deepcopy(_profile_cache)
     except Exception as e:
