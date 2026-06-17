@@ -18,7 +18,7 @@ cffi==2.0.0
 charset-normalizer==3.4.6
 chromadb==1.5.5
 click==8.3.1
-cryptography==46.0.7
+cryptography==48.0.1
 cyclonedx-python-lib==11.7.0
 defusedxml==0.7.1
 distro==1.9.0
@@ -184,5 +184,5 @@ xxhash==3.6.0
 yarl==1.23.0
 zipp==3.23.0
 youtube-transcript-api==1.2.4
-yt-dlp>=2026.3.17
+yt-dlp>=2026.6.9
 zstandard==0.25.0
