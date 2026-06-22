@@ -204,6 +204,10 @@ class TestRunHeartbeat:
             patch("bot.heartbeat_scheduler.is_on_cooldown", return_value=False),
             patch("bot.heartbeat_scheduler.is_muted", return_value=False),
             patch("bot.heartbeat_scheduler.is_quiet_hours", return_value=False),
+            # is_focus_muted wird lokal in _run_heartbeat importiert und liest sonst
+            # die echte ~/.fabbot/activity.json → Test war flaky (HARD_MUTE bei
+            # veralteter Aktivität → früher Return, keine Nachricht). Quelle patchen.
+            patch("agent.proactive.focus_mode.is_focus_muted", return_value=False),
             patch("bot.heartbeat_scheduler.run_api_health_check", new_callable=AsyncMock),
             patch("bot.heartbeat_scheduler.get_pending_items", return_value=pending),
             patch("bot.heartbeat_scheduler.evaluate_time_triggers", return_value=[trigger]),
