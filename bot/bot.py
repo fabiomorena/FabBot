@@ -30,6 +30,8 @@ Phase 84 Änderungen: handle_message_text aufgeteilt, _delete_thinking mit suppr
 import contextlib
 import logging
 import asyncio
+import os
+import signal
 from typing import Any
 from collections import deque, OrderedDict
 from datetime import datetime
@@ -1477,8 +1479,13 @@ def build_bot() -> Application:
 
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         if isinstance(context.error, Conflict):
-            logger.warning("Telegram Conflict: andere Bot-Instanz aktiv – beende diese Instanz.")
-            asyncio.create_task(context.application.stop())
+            # SIGTERM löst PTBs graceful Shutdown (inkl. _post_shutdown) aus und
+            # beendet den Prozess wirklich → launchd startet sauber neu
+            # (ThrottleInterval=30 schützt vor Crash-Loops). application.stop()
+            # allein stoppte nur das Polling, ließ den Prozess aber als Zombie
+            # weiterlaufen – Scheduler liefen, eingehende Nachrichten nicht mehr.
+            logger.warning("Telegram Conflict: andere Bot-Instanz aktiv – beende Prozess für launchd-Neustart.")
+            os.kill(os.getpid(), signal.SIGTERM)
         elif isinstance(context.error, (TimedOut, NetworkError)):
             logger.debug(f"Telegram Netzwerkfehler (ignoriert): {context.error}")
         else:
