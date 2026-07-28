@@ -44,7 +44,7 @@ cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.6
     # via requests
-chromadb==1.5.7
+chromadb==1.5.9
     # via -r requirements.txt
 click==8.3.3
     # via
