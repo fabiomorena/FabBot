@@ -46,7 +46,7 @@ charset-normalizer==3.4.6
     # via requests
 chromadb==1.5.7
     # via -r requirements.txt
-click==8.3.2
+click==8.3.3
     # via
     #   typer
     #   uvicorn
