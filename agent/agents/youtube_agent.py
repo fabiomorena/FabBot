@@ -43,9 +43,9 @@ async def _fetch_transcript(video_id: str) -> str | None:
         loop = asyncio.get_event_loop()
         entries = await loop.run_in_executor(
             None,
-            lambda: YouTubeTranscriptApi.get_transcript(video_id, languages=["de", "en", "en-US", "de-DE"]),  # type: ignore[attr-defined]
+            lambda: YouTubeTranscriptApi().fetch(video_id, languages=["de", "en", "en-US", "de-DE"]),
         )
-        text = " ".join(e["text"] for e in entries)
+        text = " ".join(snippet.text for snippet in entries)
         logger.info(f"youtube_agent: Transcript geladen ({len(text)} Zeichen)")
         return text[:_TRANSCRIPT_MAX_CHARS]
     except Exception as e:
