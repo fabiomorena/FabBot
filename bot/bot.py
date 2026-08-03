@@ -32,6 +32,7 @@ import logging
 import asyncio
 import os
 import signal
+import time
 from typing import Any
 from collections import deque, OrderedDict
 from datetime import datetime
@@ -177,6 +178,16 @@ async def _is_duplicate(update: Update) -> bool:
 
 
 _scheduler_tasks: list = []
+
+# Phase 297: Ein einzelner Telegram-Conflict ist meist transient – nach einem
+# Netzwerkabbruch oder einem Sleep/Wake des Macs hält Telegram die alte
+# getUpdates-Verbindung noch kurz offen. Phase 295 beendete den Prozess schon
+# beim ersten Conflict; zusammen mit launchd KeepAlive führte das nachts zu
+# Neustarts im Viertelstundentakt, jeweils mit "Bot gestartet."-Nachricht.
+# Eine echte Zweitinstanz pollt dauerhaft und erzeugt darum binnen Sekunden
+# mehrere Conflicts – erst die lösen den Exit aus.
+_CONFLICT_EXIT_THRESHOLD = 3
+_CONFLICT_WINDOW_SECONDS = 120.0
 
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 2.0
@@ -1477,8 +1488,25 @@ def build_bot() -> Application:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
 
+    conflict_times: list[float] = []
+
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         if isinstance(context.error, Conflict):
+            # Phase 297: Erst wiederholte Conflicts innerhalb eines kurzen
+            # Fensters belegen eine echte Zweitinstanz. Einzelne Conflicts nach
+            # Netzwerkabbruch oder Sleep/Wake lösen sich von selbst – PTB pollt
+            # weiter, die verwaiste getUpdates-Verbindung läuft serverseitig ab.
+            now = time.monotonic()
+            conflict_times.append(now)
+            conflict_times[:] = [t for t in conflict_times if now - t <= _CONFLICT_WINDOW_SECONDS]
+            if len(conflict_times) < _CONFLICT_EXIT_THRESHOLD:
+                logger.warning(
+                    "Telegram Conflict (%d/%d in %.0fs) – vermutlich transient, kein Exit.",
+                    len(conflict_times),
+                    _CONFLICT_EXIT_THRESHOLD,
+                    _CONFLICT_WINDOW_SECONDS,
+                )
+                return
             # SIGTERM löst PTBs graceful Shutdown (inkl. _post_shutdown) aus und
             # beendet den Prozess wirklich → launchd startet sauber neu
             # (ThrottleInterval=30 schützt vor Crash-Loops). application.stop()
