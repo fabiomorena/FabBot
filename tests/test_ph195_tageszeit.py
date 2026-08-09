@@ -9,7 +9,7 @@ Testet:
 
 import json
 import pytest
-from datetime import date
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -124,17 +124,20 @@ class TestEveningCheckinAlreadySent:
             assert _already_sent_today() is False
 
     def test_sent_today_returns_true(self, checkin_state_file):
-        from bot.evening_checkin import _already_sent_today
+        from bot.evening_checkin import _TZ_BERLIN, _already_sent_today
 
-        checkin_state_file.write_text(json.dumps({"last_sent_date": date.today().isoformat()}))
+        # Berlin-Datum, nicht date.today() – der CI-Runner läuft in UTC und liegt
+        # zwischen 22:00 und 24:00 UTC einen Tag hinter _already_sent_today().
+        today = datetime.now(_TZ_BERLIN).date().isoformat()
+        checkin_state_file.write_text(json.dumps({"last_sent_date": today}))
         with patch("bot.evening_checkin._CHECKIN_STATE_FILE", checkin_state_file):
             assert _already_sent_today() is True
 
     def test_sent_yesterday_returns_false(self, checkin_state_file):
         from datetime import timedelta
-        from bot.evening_checkin import _already_sent_today
+        from bot.evening_checkin import _TZ_BERLIN, _already_sent_today
 
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(_TZ_BERLIN).date() - timedelta(days=1)).isoformat()
         checkin_state_file.write_text(json.dumps({"last_sent_date": yesterday}))
         with patch("bot.evening_checkin._CHECKIN_STATE_FILE", checkin_state_file):
             assert _already_sent_today() is False
