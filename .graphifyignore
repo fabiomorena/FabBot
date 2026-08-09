@@ -1,0 +1,5 @@
+# Coverage-HTML – generiert, bereits in .gitignore
+htmlcov/
+
+# graphify-eigener Output – würde den alten Report selbst wieder einlesen
+graphify-out/
