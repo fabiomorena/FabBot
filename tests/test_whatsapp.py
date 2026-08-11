@@ -305,6 +305,81 @@ class TestServiceLifecycle:
         assert result is False
 
     @pytest.mark.asyncio
+    async def test_start_service_port_belegt_gesunder_service(self, tmp_path):
+        """Port belegt + /status antwortet → True, kein zweiter Spawn.
+
+        Tritt nach jedem Bot-Neustart auf: der Service läuft noch aus der
+        vorigen Bot-Instanz. _service_process ist dann None (In-Memory-
+        Referenz weg), der Port aber belegt.
+        """
+        server_js = tmp_path / "server.js"
+        server_js.write_text("// stub")
+        (tmp_path / "node_modules").mkdir()
+        import bot.whatsapp as wa_module
+
+        wa_module._service_process = None
+        with (
+            patch("shutil.which", return_value="/usr/bin/node"),
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("bot.whatsapp._is_port_in_use", return_value=True),
+            patch("bot.whatsapp.get_service_status", AsyncMock(return_value={"ok": True})),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            result = await wa_module.start_service()
+
+        assert result is True
+        mock_popen.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_start_service_port_belegt_zombie(self, tmp_path):
+        """Port belegt + /status tot → False, kein Spawn.
+
+        Der Fall vom 11.08.2026: ein verwaister Node-Prozess hielt Port 8767,
+        jeder Startversuch starb sofort und meldete irreführend
+        'Check whatsapp_service/node_modules'.
+        """
+        server_js = tmp_path / "server.js"
+        server_js.write_text("// stub")
+        (tmp_path / "node_modules").mkdir()
+        import bot.whatsapp as wa_module
+
+        wa_module._service_process = None
+        with (
+            patch("shutil.which", return_value="/usr/bin/node"),
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("bot.whatsapp._is_port_in_use", return_value=True),
+            patch("bot.whatsapp.get_service_status", AsyncMock(side_effect=Exception("connection refused"))),
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            result = await wa_module.start_service()
+
+        assert result is False
+        mock_popen.assert_not_called()
+
+    def test_is_port_in_use_freier_port(self):
+        """Ein nicht gebundener Port wird als frei erkannt."""
+        import socket
+
+        from bot.whatsapp import _is_port_in_use
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            freier_port = s.getsockname()[1]
+        # Socket ist hier wieder zu → Port frei
+        assert _is_port_in_use(freier_port) is False
+
+    def test_is_port_in_use_belegter_port(self):
+        """Ein gebundener, lauschender Port wird als belegt erkannt."""
+        import socket
+
+        from bot.whatsapp import _is_port_in_use
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            s.listen(1)
+            assert _is_port_in_use(s.getsockname()[1]) is True
+
+    @pytest.mark.asyncio
     async def test_stop_service_no_process(self):
         """stop_service() ohne laufenden Prozess → kein Crash."""
         import bot.whatsapp as wa_module

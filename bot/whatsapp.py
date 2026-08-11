@@ -32,6 +32,7 @@ import logging
 import os
 import secrets
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 
@@ -53,7 +54,16 @@ _HTTP_TIMEOUT = 10
 _STARTUP_POLL_INTERVAL = 0.5  # Sekunden zwischen Versuchen
 _STARTUP_POLL_ATTEMPTS = 20  # max 10 Sekunden warten (20 × 0.5s)
 
+_PORT_CHECK_TIMEOUT = 0.5  # Sekunden für den TCP-Connect beim Port-Check
+
 _service_process: subprocess.Popen | None = None
+
+
+def _is_port_in_use(port: int) -> bool:
+    """Prüft ob auf 127.0.0.1:<port> bereits ein Dienst lauscht."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(_PORT_CHECK_TIMEOUT)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
 # ── Token Management ──────────────────────────────────────────────────────
@@ -107,6 +117,26 @@ async def start_service() -> bool:
     if _service_process and _service_process.poll() is None:
         logger.debug("WhatsApp Service läuft bereits.")
         return True
+
+    # Port-Check vor dem Spawn: Nach einem Bot-Neustart ist _service_process
+    # None, ein Service aus der vorigen Instanz kann den Port aber noch halten.
+    # Der Spawn stirbt dann sofort (EADDRINUSE) und meldete früher irreführend
+    # "Check whatsapp_service/node_modules".
+    if _is_port_in_use(_SERVICE_PORT):
+        try:
+            status = await get_service_status()
+        except Exception as e:
+            logger.debug(f"Port {_SERVICE_PORT} belegt, /status nicht erreichbar: {e}")
+            status = {}
+        if status.get("ok"):
+            logger.info(f"WhatsApp Service läuft bereits auf Port {_SERVICE_PORT} – übernehme ihn.")
+            return True
+        logger.error(
+            f"Port {_SERVICE_PORT} ist belegt, aber /status antwortet nicht – "
+            f"vermutlich ein verwaister Prozess. Ermitteln mit: "
+            f"lsof -nP -iTCP:{_SERVICE_PORT} -sTCP:LISTEN"
+        )
+        return False
 
     try:
         env = {**os.environ, "FABBOT_WA_TOKEN": _SERVICE_TOKEN}
