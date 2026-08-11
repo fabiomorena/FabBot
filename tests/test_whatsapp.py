@@ -356,6 +356,124 @@ class TestServiceLifecycle:
         assert result is False
         mock_popen.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_start_service_zombie_wird_geraeumt(self, tmp_path):
+        """Eigener verwaister server.js auf dem Port → wird beendet, dann Spawn."""
+        server_js = tmp_path / "server.js"
+        server_js.write_text("// stub")
+        (tmp_path / "node_modules").mkdir()
+        import bot.whatsapp as wa_module
+
+        wa_module._service_process = None
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        # Port erst belegt (Zombie), nach dem Räumen frei
+        with (
+            patch("shutil.which", return_value="/usr/bin/node"),
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("bot.whatsapp._is_port_in_use", side_effect=[True, False]),
+            # 1. Aufruf: Zombie-Check → tot. 2. Aufruf: Polling nach dem Spawn → ok.
+            patch("bot.whatsapp.get_service_status", AsyncMock(side_effect=[Exception("tot"), {"ok": True}])),
+            patch("bot.whatsapp._find_orphan_service_pid", return_value=4711),
+            patch("bot.whatsapp._terminate_orphan", return_value=True) as mock_term,
+            patch("subprocess.Popen", return_value=mock_proc),
+        ):
+            result = await wa_module.start_service()
+
+        mock_term.assert_called_once_with(4711)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_start_service_fremder_prozess_wird_nicht_gekillt(self, tmp_path):
+        """Fremder Dienst auf dem Port → kein Kill, kein Spawn, False."""
+        server_js = tmp_path / "server.js"
+        server_js.write_text("// stub")
+        (tmp_path / "node_modules").mkdir()
+        import bot.whatsapp as wa_module
+
+        wa_module._service_process = None
+        with (
+            patch("shutil.which", return_value="/usr/bin/node"),
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("bot.whatsapp._is_port_in_use", return_value=True),
+            patch("bot.whatsapp.get_service_status", AsyncMock(side_effect=Exception("tot"))),
+            patch("bot.whatsapp._find_orphan_service_pid", return_value=None),
+            patch("bot.whatsapp._terminate_orphan") as mock_term,
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            result = await wa_module.start_service()
+
+        mock_term.assert_not_called()
+        mock_popen.assert_not_called()
+        assert result is False
+
+    def test_find_orphan_pid_nur_bei_passender_cmdline_und_port(self, tmp_path):
+        """Nur ein eigener server.js, der auf dem Port lauscht, wird gemeldet."""
+        import psutil
+
+        import bot.whatsapp as wa_module
+
+        server_js = tmp_path / "server.js"
+
+        def _proc(pid, cmdline, listen_port):
+            p = MagicMock()
+            p.info = {"pid": pid, "cmdline": cmdline}
+            conn = MagicMock()
+            conn.status = psutil.CONN_LISTEN
+            conn.laddr.port = listen_port
+            p.net_connections.return_value = [conn]
+            return p
+
+        fremd = _proc(1, ["/usr/bin/postgres", "-D", "/data"], 8767)  # fremd, hält Port
+        falscher_port = _proc(2, ["node", str(server_js)], 9999)  # unserer, anderer Port
+        treffer = _proc(3, ["node", str(server_js)], 8767)  # unserer, unser Port
+
+        with (
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("psutil.process_iter", return_value=[fremd, falscher_port, treffer]),
+        ):
+            assert wa_module._find_orphan_service_pid(8767) == 3
+
+    def test_find_orphan_pid_ignoriert_fremden_dienst(self, tmp_path):
+        """Hält ein fremder Dienst den Port, wird None gemeldet (kein Kill)."""
+        import psutil
+
+        import bot.whatsapp as wa_module
+
+        p = MagicMock()
+        p.info = {"pid": 99, "cmdline": ["/usr/local/bin/redis-server", "*:8767"]}
+        conn = MagicMock()
+        conn.status = psutil.CONN_LISTEN
+        conn.laddr.port = 8767
+        p.net_connections.return_value = [conn]
+
+        with (
+            patch("bot.whatsapp._NODE_SERVICE", tmp_path / "server.js"),
+            patch("psutil.process_iter", return_value=[p]),
+        ):
+            assert wa_module._find_orphan_service_pid(8767) is None
+
+    def test_terminate_orphan_beendet_auch_kindprozesse(self):
+        """Kindprozesse (puppeteer-Chrome) müssen mit sterben.
+
+        Sonst hält ein verwaister Chrome den SingletonLock der Session und
+        der frisch gespawnte Service scheitert erneut.
+        """
+        import bot.whatsapp as wa_module
+
+        kind = MagicMock()
+        parent = MagicMock()
+        parent.children.return_value = [kind]
+
+        with (
+            patch("psutil.Process", return_value=parent),
+            patch("psutil.wait_procs", return_value=([], [])),
+        ):
+            assert wa_module._terminate_orphan(4711) is True
+
+        parent.terminate.assert_called_once()
+        kind.terminate.assert_called_once()
+
     def test_is_port_in_use_freier_port(self):
         """Ein nicht gebundener Port wird als frei erkannt."""
         import socket

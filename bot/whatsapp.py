@@ -37,6 +37,7 @@ import subprocess
 from pathlib import Path
 
 import httpx
+import psutil
 
 from agent.config import get_settings
 
@@ -55,6 +56,7 @@ _STARTUP_POLL_INTERVAL = 0.5  # Sekunden zwischen Versuchen
 _STARTUP_POLL_ATTEMPTS = 20  # max 10 Sekunden warten (20 × 0.5s)
 
 _PORT_CHECK_TIMEOUT = 0.5  # Sekunden für den TCP-Connect beim Port-Check
+_ORPHAN_TERM_TIMEOUT = 5  # Sekunden auf SIGTERM warten, bevor SIGKILL folgt
 
 _service_process: subprocess.Popen | None = None
 
@@ -64,6 +66,59 @@ def _is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(_PORT_CHECK_TIMEOUT)
         return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _find_orphan_service_pid(port: int) -> int | None:
+    """PID eines verwaisten eigenen server.js, der auf <port> lauscht.
+
+    Bewusst streng: Nur Prozesse, deren Kommandozeile unseren _NODE_SERVICE-Pfad
+    enthält UND die selbst auf dem Port lauschen. Ein fremder Dienst auf
+    demselben Port wird nie zurückgegeben und damit nie beendet.
+
+    psutil.net_connections() systemweit erfordert auf macOS root; pro Prozess
+    geht es für eigene Prozesse ohne Sonderrechte – daher die Iteration.
+    """
+    service_path = str(_NODE_SERVICE)
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            if not any(service_path in arg for arg in cmdline):
+                continue
+            for conn in proc.net_connections(kind="tcp"):
+                if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
+                    return int(proc.info["pid"])
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return None
+
+
+def _terminate_orphan(pid: int) -> bool:
+    """Beendet den verwaisten Service samt Kindprozessen.
+
+    Die puppeteer-Chrome-Kinder müssen mit sterben – sonst hält ein verwaister
+    Chrome den SingletonLock des Session-Verzeichnisses und der frisch
+    gespawnte Service scheitert erneut.
+    """
+    try:
+        parent = psutil.Process(pid)
+        gruppe = [parent, *parent.children(recursive=True)]
+        for p in gruppe:
+            try:
+                p.terminate()
+            except psutil.NoSuchProcess:
+                continue
+        _, am_leben = psutil.wait_procs(gruppe, timeout=_ORPHAN_TERM_TIMEOUT)
+        for p in am_leben:
+            try:
+                p.kill()
+            except psutil.NoSuchProcess:
+                continue
+        return True
+    except psutil.NoSuchProcess:
+        return True
+    except Exception as e:
+        logger.error(f"Verwaisten WhatsApp Service (PID {pid}) konnte nicht beendet werden: {e}")
+        return False
 
 
 # ── Token Management ──────────────────────────────────────────────────────
@@ -131,12 +186,23 @@ async def start_service() -> bool:
         if status.get("ok"):
             logger.info(f"WhatsApp Service läuft bereits auf Port {_SERVICE_PORT} – übernehme ihn.")
             return True
-        logger.error(
-            f"Port {_SERVICE_PORT} ist belegt, aber /status antwortet nicht – "
-            f"vermutlich ein verwaister Prozess. Ermitteln mit: "
-            f"lsof -nP -iTCP:{_SERVICE_PORT} -sTCP:LISTEN"
-        )
-        return False
+
+        # /status tot, Port belegt: nur räumen, wenn es nachweislich unser
+        # eigener server.js ist – sonst würde ein fremder Dienst abgeschossen.
+        orphan_pid = _find_orphan_service_pid(_SERVICE_PORT)
+        if orphan_pid is None:
+            logger.error(
+                f"Port {_SERVICE_PORT} ist belegt, aber /status antwortet nicht und der "
+                f"Prozess ist nicht unser server.js – kein automatisches Beenden. "
+                f"Ermitteln mit: lsof -nP -iTCP:{_SERVICE_PORT} -sTCP:LISTEN"
+            )
+            return False
+
+        logger.warning(f"Verwaister WhatsApp Service (PID {orphan_pid}) hält Port {_SERVICE_PORT} – wird beendet.")
+        if not _terminate_orphan(orphan_pid) or _is_port_in_use(_SERVICE_PORT):
+            logger.error(f"Port {_SERVICE_PORT} ließ sich nicht freiräumen – Start abgebrochen.")
+            return False
+        logger.info(f"Port {_SERVICE_PORT} freigeräumt – starte Service neu.")
 
     try:
         env = {**os.environ, "FABBOT_WA_TOKEN": _SERVICE_TOKEN}
