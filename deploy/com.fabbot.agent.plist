@@ -6,7 +6,7 @@
     <string>com.fabbot.agent</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/.venv/bin/python</string>
+        <string>/Users/fmorena/.venvs/fabbot/bin/python</string>
         <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/main.py</string>
     </array>
     <key>WorkingDirectory</key>
@@ -31,9 +31,9 @@
         <key>HOME</key>
         <string>/Users/fmorena</string>
         <key>PYTHONPATH</key>
-        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/.venv/lib/python3.11/site-packages</string>
+        <string>/Users/fmorena/.venvs/fabbot/lib/python3.11/site-packages</string>
         <key>VIRTUAL_ENV</key>
-        <string>/Volumes/McAir SSD/fmorena/PythonProject/FabBot/.venv</string>
+        <string>/Users/fmorena/.venvs/fabbot</string>
     </dict>
 </dict>
 </plist>
