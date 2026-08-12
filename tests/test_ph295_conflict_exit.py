@@ -5,6 +5,10 @@ Regressionsschutz: Bei einem Telegram-Conflict muss der _error_handler den
 Prozess tatsächlich beenden (SIGTERM), damit launchd sauber neu startet –
 statt nur das Polling zu stoppen und als Zombie weiterzulaufen.
 
+Ergänzt am 12.08.2026: Beendet wird erst bei Häufung (STANDARD_SCHWELLE), da
+ein einzelner Conflict meist transient ist. Der Prozess-Exit als solcher
+bleibt Pflicht – siehe test_wiederholter_conflict_loest_sigterm_aus.
+
 Hintergrund: Vorher rief der Handler asyncio.create_task(application.stop())
 auf. Das stoppte nur das Polling; der Prozess lebte weiter, die Scheduler
 liefen, eingehende Nachrichten wurden nicht mehr verarbeitet (tagelang).
@@ -34,15 +38,35 @@ def _build_app_with_token():
 
 
 @pytest.mark.asyncio
-async def test_conflict_loest_sigterm_aus():
-    """Conflict → der Prozess wird via SIGTERM beendet (launchd-Neustart)."""
+async def test_wiederholter_conflict_loest_sigterm_aus():
+    """Conflict in Häufung → der Prozess wird via SIGTERM beendet (launchd-Neustart).
+
+    Seit dem 12.08.2026 erst ab STANDARD_SCHWELLE statt beim ersten Conflict –
+    der Prozess-Exit als solcher bleibt aber Pflicht (Zombie-Schutz, s.o.).
+    """
+    from bot.conflict_tracker import STANDARD_SCHWELLE
+
+    app, error_handler = _build_app_with_token()
+    context = SimpleNamespace(error=Conflict("terminated by other getUpdates"), application=app)
+
+    with patch("bot.bot.os.kill") as mock_kill, patch("bot.bot.os.getpid", return_value=4242):
+        for _ in range(STANDARD_SCHWELLE):
+            await error_handler(object(), context)
+
+    mock_kill.assert_called_once_with(4242, signal.SIGTERM)
+
+
+@pytest.mark.asyncio
+async def test_einzelner_conflict_beendet_prozess_nicht():
+    """Ein transienter Conflict (eigene alte getUpdates-Verbindung) darf den
+    Prozess NICHT beenden – sonst entsteht die Neustart-Schleife vom 12.08.2026."""
     app, error_handler = _build_app_with_token()
     context = SimpleNamespace(error=Conflict("terminated by other getUpdates"), application=app)
 
     with patch("bot.bot.os.kill") as mock_kill, patch("bot.bot.os.getpid", return_value=4242):
         await error_handler(object(), context)
 
-    mock_kill.assert_called_once_with(4242, signal.SIGTERM)
+    mock_kill.assert_not_called()
 
 
 @pytest.mark.asyncio
