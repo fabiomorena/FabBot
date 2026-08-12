@@ -14,6 +14,8 @@ und test_stop_service_running_process auf async umgestellt, da stop_service()
 jetzt async def ist.
 """
 
+import subprocess
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
@@ -473,6 +475,64 @@ class TestServiceLifecycle:
 
         parent.terminate.assert_called_once()
         kind.terminate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_start_service_schreibt_node_log(self, tmp_path):
+        """stdout/stderr des Node-Prozesses landen in einer Logdatei, nicht in DEVNULL.
+
+        Ohne diese Logs war am 12.08.2026 nicht feststellbar, warum der Service
+        auf ready:false hing – es gab schlicht keine Spur.
+        """
+        server_js = tmp_path / "server.js"
+        server_js.write_text("// stub")
+        (tmp_path / "node_modules").mkdir()
+        log_path = tmp_path / "whatsapp_service.log"
+        import bot.whatsapp as wa_module
+
+        wa_module._service_process = None
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        with (
+            patch("shutil.which", return_value="/usr/bin/node"),
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("bot.whatsapp._SERVICE_LOG_PATH", log_path),
+            patch("bot.whatsapp._is_port_in_use", return_value=False),
+            patch("bot.whatsapp.get_service_status", AsyncMock(return_value={"ok": True})),
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+        ):
+            result = await wa_module.start_service()
+
+        assert result is True
+        kwargs = mock_popen.call_args.kwargs
+        assert kwargs["stdout"] is not subprocess.DEVNULL
+        assert kwargs["stderr"] is subprocess.STDOUT
+        assert log_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_service_log_wird_bei_ueberlaenge_gekuerzt(self, tmp_path):
+        """Zu große Logdatei wird beim Start gekürzt – kein unbegrenztes Wachstum."""
+        server_js = tmp_path / "server.js"
+        server_js.write_text("// stub")
+        (tmp_path / "node_modules").mkdir()
+        log_path = tmp_path / "whatsapp_service.log"
+        log_path.write_bytes(b"x" * 2048)
+        import bot.whatsapp as wa_module
+
+        wa_module._service_process = None
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        with (
+            patch("shutil.which", return_value="/usr/bin/node"),
+            patch("bot.whatsapp._NODE_SERVICE", server_js),
+            patch("bot.whatsapp._SERVICE_LOG_PATH", log_path),
+            patch("bot.whatsapp._SERVICE_LOG_MAX_BYTES", 1024),
+            patch("bot.whatsapp._is_port_in_use", return_value=False),
+            patch("bot.whatsapp.get_service_status", AsyncMock(return_value={"ok": True})),
+            patch("subprocess.Popen", return_value=mock_proc),
+        ):
+            await wa_module.start_service()
+
+        assert log_path.stat().st_size < 2048
 
     def test_is_port_in_use_freier_port(self):
         """Ein nicht gebundener Port wird als frei erkannt."""
