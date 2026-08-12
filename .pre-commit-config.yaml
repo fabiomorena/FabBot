@@ -30,3 +30,11 @@ repos:
         types: [python]
         args: [-lll, -q, --exclude, .venv,tests]
         pass_filenames: false
+
+      # .git/config ist nicht versioniert – daher always_run statt types/files.
+      - id: no-token-in-remote
+        name: Kein Token in der Git-Remote-URL
+        entry: .venv/bin/python git_remote_guard.py
+        language: system
+        always_run: true
+        pass_filenames: false
