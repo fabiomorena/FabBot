@@ -58,6 +58,11 @@ _STARTUP_POLL_ATTEMPTS = 20  # max 10 Sekunden warten (20 × 0.5s)
 _PORT_CHECK_TIMEOUT = 0.5  # Sekunden für den TCP-Connect beim Port-Check
 _ORPHAN_TERM_TIMEOUT = 5  # Sekunden auf SIGTERM warten, bevor SIGKILL folgt
 
+# stdout/stderr des Node-Prozesses. Vorher DEVNULL – dadurch war am 12.08.2026
+# nicht feststellbar, warum der Service auf ready:false hing.
+_SERVICE_LOG_PATH = Path.home() / ".fabbot" / "whatsapp_service.log"
+_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
+
 _service_process: subprocess.Popen | None = None
 
 
@@ -66,6 +71,21 @@ def _is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(_PORT_CHECK_TIMEOUT)
         return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _open_service_log():
+    """Öffnet die Node-Logdatei zum Anhängen, gekürzt wenn sie zu groß ist.
+
+    Gekürzt wird nur beim Start – der bisherige Inhalt konnte bis dahin
+    ausgewertet werden, und so wächst die Datei nicht unbegrenzt.
+    """
+    _SERVICE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if _SERVICE_LOG_PATH.stat().st_size > _SERVICE_LOG_MAX_BYTES:
+            return _SERVICE_LOG_PATH.open("w", encoding="utf-8")
+    except FileNotFoundError:
+        pass
+    return _SERVICE_LOG_PATH.open("a", encoding="utf-8")
 
 
 def _find_orphan_service_pid(port: int) -> int | None:
@@ -206,13 +226,16 @@ async def start_service() -> bool:
 
     try:
         env = {**os.environ, "FABBOT_WA_TOKEN": _SERVICE_TOKEN}
-        _service_process = subprocess.Popen(
-            [node_bin, str(_NODE_SERVICE)],
-            env=env,
-            cwd=str(_NODE_SERVICE.parent),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # Der Child-Prozess erbt eine eigene Kopie des Deskriptors; das Handle
+        # im Parent darf danach zugehen.
+        with _open_service_log() as log_handle:
+            _service_process = subprocess.Popen(
+                [node_bin, str(_NODE_SERVICE)],
+                env=env,
+                cwd=str(_NODE_SERVICE.parent),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+            )
     except Exception as e:
         logger.error(f"WhatsApp Service Start fehlgeschlagen: {e}")
         return False
