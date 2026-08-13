@@ -275,20 +275,41 @@ async def start_service() -> bool:
 
 async def stop_service() -> None:
     """
-    Stoppt den Node.js WhatsApp Service sauber.
+    Stoppt den Node.js WhatsApp Service samt Kindprozessen.
 
     Phase 95c (Issue #7): sync → async.
     Vorher: _post_shutdown() rief stop_service() sync auf – schlechtes Pattern
     im async Shutdown-Hook, blockiert den Event Loop und verhindert künftige
     await-Erweiterungen (z.B. graceful drain, HTTP-Goodbye-Call).
     Jetzt: await stop_service() in _post_shutdown() – konsistent async.
-    subprocess.terminate() ist non-blocking, kein run_in_executor nötig.
+
+    Nachtrag: _service_process.terminate() erreichte nur den Node-Prozess. Die
+    puppeteer-Chrome-Kinder überlebten den Bot-Neustart, hielten den
+    SingletonLock des Session-Verzeichnisses, und der neu gespawnte Service
+    blieb nach `authenticated` auf ready:false stehen – ohne QR. Deshalb hier
+    dieselbe Aufräumlogik wie beim verwaisten Service: _terminate_orphan()
+    nimmt die gesamte Prozessgruppe mit (SIGTERM, warten, SIGKILL).
     """
     global _service_process
-    if _service_process and _service_process.poll() is None:
-        _service_process.terminate()
-        logger.info("WhatsApp Service gestoppt.")
-    _service_process = None
+    proc, _service_process = _service_process, None
+
+    # Bereits beendet: kein Aufräumen – die PID kann inzwischen neu vergeben sein.
+    if proc is None or proc.poll() is not None:
+        return
+
+    # _terminate_orphan() wartet bis zu _ORPHAN_TERM_TIMEOUT Sekunden auf
+    # SIGTERM – im Thread, damit der async Shutdown-Hook den Event Loop nicht
+    # für diese Zeit anhält.
+    beendet = await asyncio.to_thread(_terminate_orphan, proc.pid)
+    proc.poll()  # Exitstatus einsammeln, sonst bleibt ein Zombie zurück
+
+    if beendet:
+        logger.info("WhatsApp Service gestoppt (inkl. Chrome-Kindprozessen).")
+    else:
+        logger.warning(
+            f"WhatsApp Service (PID {proc.pid}) ließ sich nicht sauber beenden – "
+            f"Reste prüfen mit: pgrep -fl whatsapp_wwebjs/session"
+        )
 
 
 # ── Session Status (sync) ─────────────────────────────────────────────────

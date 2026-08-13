@@ -11,7 +11,7 @@ Testet:
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -34,16 +34,18 @@ def test_stop_service_is_coroutine():
 
 @pytest.mark.asyncio
 async def test_stop_service_terminates_process():
-    """stop_service() ruft terminate() auf einem laufenden Prozess auf."""
+    """stop_service() beendet einen laufenden Prozess samt Kindprozessen."""
     import bot.whatsapp as wa
 
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None  # Prozess läuft
+    mock_proc.pid = 4711
 
     wa._service_process = mock_proc
-    await wa.stop_service()
+    with patch("bot.whatsapp._terminate_orphan", return_value=True) as mock_term:
+        await wa.stop_service()
 
-    mock_proc.terminate.assert_called_once()
+    mock_term.assert_called_once_with(4711)
     assert wa._service_process is None
 
 
@@ -59,10 +61,12 @@ async def test_stop_service_idempotent():
 
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
+    mock_proc.pid = 4711
 
     wa._service_process = mock_proc
-    await wa.stop_service()
-    await wa.stop_service()  # Zweiter Aufruf – _service_process ist jetzt None
+    with patch("bot.whatsapp._terminate_orphan", return_value=True):
+        await wa.stop_service()
+        await wa.stop_service()  # Zweiter Aufruf – _service_process ist jetzt None
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +95,11 @@ async def test_stop_service_clears_process():
 
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
+    mock_proc.pid = 4711
     wa._service_process = mock_proc
 
-    await wa.stop_service()
+    with patch("bot.whatsapp._terminate_orphan", return_value=True):
+        await wa.stop_service()
     assert wa._service_process is None
 
 

@@ -569,18 +569,24 @@ class TestServiceLifecycle:
 
     @pytest.mark.asyncio
     async def test_stop_service_running_process(self):
-        """stop_service() mit laufendem Prozess → terminate() aufgerufen."""
+        """stop_service() mit laufendem Prozess → Prozessgruppe wird beendet.
+
+        Nicht nur der Node-Prozess: _terminate_orphan() nimmt die
+        puppeteer-Chrome-Kinder mit, sonst halten sie das Session-Verzeichnis.
+        """
         import bot.whatsapp as wa_module
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # läuft noch
+        mock_proc.pid = 4711
         wa_module._service_process = mock_proc
 
         from bot.whatsapp import stop_service
 
-        await stop_service()
+        with patch("bot.whatsapp._terminate_orphan", return_value=True) as mock_term:
+            await stop_service()
 
-        mock_proc.terminate.assert_called_once()
+        mock_term.assert_called_once_with(4711)
         assert wa_module._service_process is None
 
 
