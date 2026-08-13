@@ -170,6 +170,31 @@ app.get('/qr', requireAuth, (req, res) => {
     res.json({ ok: true, qr: currentQR });
 });
 
+// Liefert die echten WhatsApp-Kontakte – nötig, um die Whitelist in
+// personal_profile.yaml (whatsapp_contacts) mit den exakten Anzeigenamen zu
+// füllen. /send sucht genau über diese Namen.
+app.get('/contacts', requireAuth, async (req, res) => {
+    if (!isReady) {
+        return res.status(503).json({ ok: false, error: 'WhatsApp nicht verbunden.' });
+    }
+    try {
+        const contacts = await client.getContacts();
+        const liste = contacts
+            .filter(c => c.isMyContact && !c.isGroup)
+            .map(c => ({
+                name:     c.name     || null,
+                pushname: c.pushname || null,
+                number:   c.number   || null,
+            }))
+            .filter(c => c.name || c.pushname)
+            .sort((a, b) => (a.name || a.pushname).localeCompare(b.name || b.pushname));
+        res.json({ ok: true, count: liste.length, contacts: liste });
+    } catch (err) {
+        logErr('Contacts-Fehler:', err.message);
+        res.status(500).json({ ok: false, error: err.message || 'Kontakte konnten nicht geladen werden.' });
+    }
+});
+
 app.post('/send', requireAuth, async (req, res) => {
     const { to, message } = req.body || {};
 
