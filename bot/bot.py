@@ -39,6 +39,8 @@ from pathlib import Path
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError, RetryAfter, Conflict
+
+from bot.conflict_tracker import STANDARD_SCHWELLE, ConflictTracker
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
@@ -1477,14 +1479,29 @@ def build_bot() -> Application:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message, block=False))
     register_confirmation_handler(app)
 
+    conflict_tracker = ConflictTracker()
+
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         if isinstance(context.error, Conflict):
+            # Ein einzelner Conflict ist meist transient: nach einem Neustart
+            # hält Telegram die getUpdates-Verbindung der eigenen alten Instanz
+            # noch ~60s offen. Sofortiges Beenden machte daraus eine
+            # Neustart-Schleife (12.08.2026, zweimal ~70s nach dem Start).
+            # Erst bei Häufung liegt eine echte Zweitinstanz vor.
+            if not conflict_tracker.registriere():
+                logger.warning(
+                    f"Telegram Conflict ({conflict_tracker.anzahl_im_fenster}/{STANDARD_SCHWELLE} "
+                    f"im Fenster) – vermutlich transient, Polling läuft weiter."
+                )
+                return
             # SIGTERM löst PTBs graceful Shutdown (inkl. _post_shutdown) aus und
             # beendet den Prozess wirklich → launchd startet sauber neu
             # (ThrottleInterval=30 schützt vor Crash-Loops). application.stop()
             # allein stoppte nur das Polling, ließ den Prozess aber als Zombie
             # weiterlaufen – Scheduler liefen, eingehende Nachrichten nicht mehr.
-            logger.warning("Telegram Conflict: andere Bot-Instanz aktiv – beende Prozess für launchd-Neustart.")
+            logger.warning(
+                "Telegram Conflict wiederholt: andere Bot-Instanz aktiv – beende Prozess für launchd-Neustart."
+            )
             os.kill(os.getpid(), signal.SIGTERM)
         elif isinstance(context.error, (TimedOut, NetworkError)):
             logger.debug(f"Telegram Netzwerkfehler (ignoriert): {context.error}")
