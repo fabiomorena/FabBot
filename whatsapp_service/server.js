@@ -29,8 +29,28 @@ const TOKEN       = process.env.FABBOT_WA_TOKEN;
 const DATA_PATH   = path.join(os.homedir(), '.fabbot', 'whatsapp_wwebjs');
 const STATUS_FILE = path.join(os.homedir(), '.fabbot', 'wa_ready');
 
+// ── Logging ───────────────────────────────────────────────────────────────
+// Mit Zeitstempel, seit die Ausgabe in ~/.fabbot/whatsapp_service.log landet:
+// ohne ihn ist nicht erkennbar, wie lange der Client in einem Zustand hängt.
+function ts() {
+    // Lokalzeit, nicht UTC – sonst lassen sich die Einträge nicht mit
+    // ~/.fabbot/fabbot.log korrelieren, das in Lokalzeit schreibt.
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+         + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function log(...args) {
+    console.log(`${ts()} [FabBot-WA]`, ...args);
+}
+
+function logErr(...args) {
+    console.error(`${ts()} [FabBot-WA]`, ...args);
+}
+
 if (!TOKEN) {
-    console.error('[FabBot-WA] FABBOT_WA_TOKEN nicht gesetzt – beende.');
+    logErr('FABBOT_WA_TOKEN nicht gesetzt – beende.');
     process.exit(1);
 }
 
@@ -78,12 +98,23 @@ client.on('qr', (qr) => {
     currentQR = qr;
     isReady   = false;
     setStatusFile(false);
-    console.log('[FabBot-WA] QR-Code bereit – bitte /wa_setup in Telegram ausführen.');
+    log('QR-Code bereit – bitte /wa_setup in Telegram ausführen.');
 });
 
 client.on('authenticated', () => {
-    console.log('[FabBot-WA] Authentifiziert.');
+    log('Authentifiziert.');
     currentQR = null;
+});
+
+// Zwischen 'authenticated' und 'ready' lädt der Client Chats und Kontakte.
+// Genau dort blieb der Service am 12./13.08.2026 stehen – ohne diese beiden
+// Handler war im Log nur zu sehen, DASS 'ready' ausblieb, nicht woran.
+client.on('loading_screen', (percent, message) => {
+    log(`Laden: ${percent}% – ${message}`);
+});
+
+client.on('change_state', (state) => {
+    log('Zustandswechsel:', state);
 });
 
 client.on('ready', () => {
@@ -91,21 +122,21 @@ client.on('ready', () => {
     currentQR = null;
     lastError = null;
     setStatusFile(true);
-    console.log('[FabBot-WA] Bereit – WhatsApp verbunden.');
+    log('Bereit – WhatsApp verbunden.');
 });
 
 client.on('auth_failure', (msg) => {
     lastError = `Auth fehlgeschlagen: ${msg}`;
     isReady   = false;
     setStatusFile(false);
-    console.error('[FabBot-WA] Auth-Fehler:', msg);
+    logErr('Auth-Fehler:', msg);
 });
 
 client.on('disconnected', (reason) => {
     isReady   = false;
     currentQR = null;
     setStatusFile(false);
-    console.log('[FabBot-WA] Getrennt:', reason);
+    log('Getrennt:', reason);
 });
 
 // Cleanup bei Prozess-Ende
@@ -117,7 +148,7 @@ process.on('SIGTERM', cleanup);
 process.on('SIGINT',  cleanup);
 
 client.initialize().catch((err) => {
-    console.error('[FabBot-WA] Initialize fehlgeschlagen:', err.message);
+    logErr('Initialize fehlgeschlagen:', err.message);
     lastError = err.message;
 });
 
@@ -191,12 +222,12 @@ app.post('/send', requireAuth, async (req, res) => {
         res.json({ ok: true, detail: `✅ Gesendet an ${displayName}` });
 
     } catch (err) {
-        console.error('[FabBot-WA] Send-Fehler:', err.message);
+        logErr('Send-Fehler:', err.message);
         res.json({ ok: false, error: err.message || 'Unbekannter Fehler beim Senden.' });
     }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(PORT, '127.0.0.1', () => {
-    console.log(`[FabBot-WA] HTTP-Server läuft auf http://127.0.0.1:${PORT}`);
+    log(`HTTP-Server läuft auf http://127.0.0.1:${PORT}`);
 });
