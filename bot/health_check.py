@@ -50,6 +50,29 @@ except Exception:
 _CHECK_TIMEOUT = 10  # Sekunden
 
 
+def _fehlertext(e: BaseException) -> str:
+    """Kurzer Grund für den Report – nie leer.
+
+    httpx.ReadTimeout/ConnectTimeout erben nicht von asyncio.TimeoutError und
+    ihr str() ist leer. Mit `str(e)[:80]` stand im Report deshalb nur
+    "❌ TTS: " ohne Grund (14.08.2026, 06:00). Fällt darum auf den
+    Klassennamen zurück und weist Timeouts explizit als solche aus.
+    """
+    try:
+        import httpx
+
+        if isinstance(e, httpx.TimeoutException):
+            return f"Timeout ({type(e).__name__})"
+    except ImportError:
+        pass
+
+    if isinstance(e, asyncio.TimeoutError):
+        return "Timeout"
+
+    text = str(e).strip()
+    return text[:80] if text else type(e).__name__
+
+
 # ---------------------------------------------------------------------------
 # Einzelne Check-Funktionen
 # ---------------------------------------------------------------------------
@@ -74,7 +97,7 @@ async def _check_terminal() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_anthropic() -> tuple[bool, str]:
@@ -94,7 +117,7 @@ async def _check_anthropic() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_web() -> tuple[bool, str]:
@@ -126,7 +149,7 @@ async def _check_web() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_calendar() -> tuple[bool, str]:
@@ -148,7 +171,7 @@ async def _check_calendar() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_profile() -> tuple[bool, str]:
@@ -162,7 +185,7 @@ async def _check_profile() -> tuple[bool, str]:
             return True, f"Profil geladen (User: {name})"
         return False, "Profil leer oder nicht gefunden"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_memory_db() -> tuple[bool, str]:
@@ -182,7 +205,7 @@ async def _check_memory_db() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_disk_space() -> tuple[bool, str]:
@@ -212,7 +235,7 @@ async def _check_disk_space() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_chromadb() -> tuple[bool, str]:
@@ -233,7 +256,7 @@ async def _check_chromadb() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_whatsapp() -> tuple[bool, str]:
@@ -259,7 +282,7 @@ async def _check_audit_log() -> tuple[bool, str]:
         size_kb = audit_path.stat().st_size // 1024 if audit_path.exists() else 0
         return True, f"audit.log schreibbar ({size_kb} KB)"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 def _audit_write_check(path: Path) -> None:
@@ -280,7 +303,7 @@ async def _check_heartbeat() -> tuple[bool, str]:
             return True, "Heartbeat aktiv (Cooldown läuft)"
         return True, "Heartbeat aktiv (bereit)"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_schedulers() -> tuple[bool, str]:
@@ -295,7 +318,7 @@ async def _check_schedulers() -> tuple[bool, str]:
             return False, f"Gestorben: {', '.join(dead)}"
         return True, f"{len(_scheduler_tasks)} Scheduler aktiv"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 async def _check_tts() -> tuple[bool, str]:
@@ -320,7 +343,7 @@ async def _check_tts() -> tuple[bool, str]:
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, _fehlertext(e)
 
 
 # ---------------------------------------------------------------------------
@@ -371,27 +394,34 @@ async def run_health_check(bot, chat_id: int) -> None:
         ]
 
         lines = ["🤖 *FabBot Health Check*\n"]
-        all_ok = True
+        probleme: list[str] = []
 
         for label, result in zip(labels, checks):
             if isinstance(result, BaseException):
                 # asyncio.gather hat eine Exception gefangen
-                ok, detail = False, str(result)[:80]
+                ok, detail = False, _fehlertext(result)
             else:
                 ok, detail = result
 
             icon = "✅" if ok else "❌"
             lines.append(f"{icon} {label}: {detail}")
             if not ok:
-                all_ok = False
+                probleme.append(f"{label}: {detail}")
 
+        all_ok = not probleme
         now = datetime.now().strftime("%d.%m.%Y, %H:%M Uhr")
         lines.append(f"\n{'✅ Alle Systeme normal' if all_ok else '⚠️ Probleme erkannt'}")
         lines.append(f"_{now}_")
 
         message = "\n".join(lines)
         await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-        logger.info(f"Health Check abgeschlossen – {'OK' if all_ok else 'PROBLEME'}")
+
+        # Der Report geht nur per Telegram raus – ohne diese Zeile ist nachher
+        # nicht mehr feststellbar, welcher Check gescheitert war (14.08.2026).
+        if probleme:
+            logger.warning(f"Health Check abgeschlossen – PROBLEME: {' | '.join(probleme)}")
+        else:
+            logger.info("Health Check abgeschlossen – OK")
 
     except Exception as e:
         # Letzter Fallback – auch wenn das Senden scheitert
