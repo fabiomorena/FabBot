@@ -1,5 +1,5 @@
 """
-tests/test_ph296_youtube_transcript_api.py – Phase 296 (#301)
+tests/test_ph228_youtube_transcript_api.py – Phase 228 (#301)
 
 Testet _fetch_transcript gegen die instanzbasierte youtube-transcript-api 1.x:
 - Kontrakt gegen die installierte Bibliothek (schlägt bei Breaking Changes an)

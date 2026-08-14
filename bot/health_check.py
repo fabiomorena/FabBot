@@ -332,7 +332,7 @@ async def _check_tts() -> tuple[bool, str]:
     Rund 15% der Requests an api.openai.com hängen komplett (gemessen
     14.08.2026, auch außerhalb des Bots) – ohne Retry war damit etwa jeder
     6. Morgen-Report bei TTS rot, ohne dass etwas kaputt war. Erst die Häufung
-    ist ein echtes Problem, analog zum ConflictTracker aus Phase 297.
+    ist ein echtes Problem, analog zum ConflictTracker aus Phase 229.
     """
     try:
         import httpx

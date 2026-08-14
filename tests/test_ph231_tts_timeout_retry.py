@@ -1,5 +1,5 @@
 """
-tests/test_ph299_tts_timeout_retry.py – Phase 299 (Issue #321)
+tests/test_ph231_tts_timeout_retry.py – Phase 231 (Issue #321)
 
 Rund 15 % der Requests an api.openai.com hängen (gemessen 14.08.2026: 5 von 33,
 reproduziert mit curl und httpx außerhalb des Bots). TCP-Connect gelingt, danach
