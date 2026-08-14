@@ -1,5 +1,5 @@
 """
-tests/test_ph298_health_check_fehlertext.py – Phase 298 (Issue #319)
+tests/test_ph230_health_check_fehlertext.py – Phase 230 (Issue #319)
 
 Regressionsschutz gegen Health-Report-Zeilen ohne Fehlergrund.
 

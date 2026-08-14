@@ -1,5 +1,5 @@
 """
-tests/test_ph295_conflict_exit.py – Phase 295 (Issue #295)
+tests/test_ph227_conflict_exit.py – Phase 227 (Issue #295)
 
 Regressionsschutz: Bei einem Telegram-Conflict muss der _error_handler den
 Prozess tatsächlich beenden (SIGTERM), damit launchd sauber neu startet –
