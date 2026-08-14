@@ -49,6 +49,11 @@ except Exception:
 # Timeout für einzelne Checks
 _CHECK_TIMEOUT = 10  # Sekunden
 
+# TTS gegen api.openai.com: zwei kurze Versuche statt einem langen. Das Produkt
+# bleibt bei _CHECK_TIMEOUT, der Report dauert also nicht länger als vorher.
+_TTS_CHECK_TIMEOUT = 5.0
+_TTS_CHECK_VERSUCHE = 2
+
 
 def _fehlertext(e: BaseException) -> str:
     """Kurzer Grund für den Report – nie leer.
@@ -322,7 +327,13 @@ async def _check_schedulers() -> tuple[bool, str]:
 
 
 async def _check_tts() -> tuple[bool, str]:
-    """Prüft ob OpenAI TTS konfiguriert und der Endpoint erreichbar ist."""
+    """Prüft ob OpenAI TTS konfiguriert und der Endpoint erreichbar ist.
+
+    Rund 15% der Requests an api.openai.com hängen komplett (gemessen
+    14.08.2026, auch außerhalb des Bots) – ohne Retry war damit etwa jeder
+    6. Morgen-Report bei TTS rot, ohne dass etwas kaputt war. Erst die Häufung
+    ist ein echtes Problem, analog zum ConflictTracker aus Phase 297.
+    """
     try:
         import httpx
 
@@ -330,16 +341,25 @@ async def _check_tts() -> tuple[bool, str]:
         if not api_key:
             return False, "OPENAI_API_KEY nicht gesetzt"
 
-        async with httpx.AsyncClient(timeout=_CHECK_TIMEOUT) as client:
-            resp = await client.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-            if resp.status_code == 200:
-                return True, "OpenAI TTS erreichbar"
-            if resp.status_code == 401:
-                return False, "API-Key ungültig (401)"
-            return True, f"OpenAI erreichbar (HTTP {resp.status_code})"
+        async with httpx.AsyncClient(timeout=_TTS_CHECK_TIMEOUT) as client:
+            for versuch in range(_TTS_CHECK_VERSUCHE):
+                try:
+                    resp = await client.get(
+                        "https://api.openai.com/v1/models",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                    )
+                except httpx.TimeoutException:
+                    if versuch + 1 < _TTS_CHECK_VERSUCHE:
+                        continue
+                    return False, f"Timeout ({_TTS_CHECK_VERSUCHE} Versuche à {_TTS_CHECK_TIMEOUT:.0f}s)"
+
+                if resp.status_code == 200:
+                    return True, "OpenAI TTS erreichbar"
+                if resp.status_code == 401:
+                    return False, "API-Key ungültig (401)"
+                return True, f"OpenAI erreichbar (HTTP {resp.status_code})"
+
+        return False, "Kein Ergebnis"
     except asyncio.TimeoutError:
         return False, "Timeout"
     except Exception as e:

@@ -47,6 +47,13 @@ OPENAI_TTS_MODEL = get_settings().openai_tts_model
 _TTS_RETRY_STATUS = {429, 503}
 _TTS_RETRY_DELAY = 0.5
 
+# Rund 15% der Requests an api.openai.com haengen komplett (gemessen 14.08.2026:
+# 5 von 33, auch mit curl ausserhalb des Bots). Mit den vorherigen 30s wartete
+# der Nutzer bei jedem siebten Versuch eine halbe Minute, bevor die schlechtere
+# edge-tts-Stimme einsprang. 12s reichen fuer die Synthese und halbieren die
+# Wartezeit; zusammen mit dem Timeout-Retry greift der Fallback nur noch selten.
+_TTS_TIMEOUT = 12.0
+
 
 def _get_openai_api_key() -> str:
     return get_settings().openai_api_key.get_secret_value()
@@ -136,16 +143,26 @@ async def _synthesize_openai(text: str) -> bytes | None:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=_TTS_TIMEOUT) as client:
             for attempt in range(2):
-                resp = await client.post(
-                    "https://api.openai.com/v1/audio/speech",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={"model": model, "input": text, "voice": voice},
-                )
+                try:
+                    resp = await client.post(
+                        "https://api.openai.com/v1/audio/speech",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={"model": model, "input": text, "voice": voice},
+                    )
+                except httpx.TimeoutException as e:
+                    # Der Haenger ist transient und unabhaengig vom naechsten
+                    # Versuch – anders als bei 429 waere ein Backoff hier nur
+                    # zusaetzliche Wartezeit.
+                    if attempt == 0:
+                        logger.warning(f"OpenAI TTS Timeout ({type(e).__name__}) – zweiter Versuch...")
+                        continue
+                    logger.warning("OpenAI TTS: Timeout auch im zweiten Versuch – Fallback zu edge-tts")
+                    return None
 
                 if resp.status_code == 200:
                     logger.info(f"OpenAI TTS: {len(resp.content)} bytes, voice={voice}, model={model}")
