@@ -26,7 +26,7 @@ You → Telegram (text or voice or photo) → Security Guard → Supervisor (Hai
 
 **Security** – Two-stage prompt injection guard (pattern + LLM-Guard via Haiku, fail-closed), content isolation for web/clip agents, tamper-evident audit log, at-rest encryption (`personal_profile.yaml` via Fernet + macOS Keychain), SSRF + DNS-Rebinding protection (IPv4 + IPv6 via `getaddrinfo`), SSL validation, path/symlink traversal prevention, subprocess env isolation (no API-key leakage)
 
-**Operations** – GitHub Actions CI (1834 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 20), Whisper preload at startup, daily health check (06:00, 11 components), proactive heartbeat (hourly, 6h cooldown, focus-mode aware), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`)
+**Operations** – GitHub Actions CI (1956 tests), 529 retry (exponential backoff 2s/4s/8s), prompt caching (claude.md + sessions + profile, TTL 60s), context trim (`CHAT_CONTEXT_WINDOW`, default 20), Whisper preload at startup, daily health check (06:00, 13 components), proactive heartbeat (hourly, 6h cooldown, focus-mode aware), model config via `.env` (`ANTHROPIC_MODEL_SONNET/HAIKU`), Telegram `Conflict` debouncing against restart loops, WhatsApp sidecar supervision (port check, orphan cleanup, child-aware shutdown)
 
 ---
 
@@ -41,8 +41,11 @@ FabBot/
 ├── requirements-ci.txt      # CI dependencies (no macOS-only packages)
 ├── .env.example             # Environment variable template
 ├── review_log.sh            # Daily log summary script
+├── git_remote_guard.py      # pre-commit hook – blocks credentials in git remote URLs
+├── deploy/
+│   └── com.fabbot.agent.plist  # Launch Agent (absolute paths, venv on internal disk)
 ├── .github/workflows/test.yml
-├── tests/                   # pytest suite (1834 tests)
+├── tests/                   # pytest suite (1956 tests)
 ├── agent/
 │   ├── supervisor.py        # Supervisor – Haiku routing, AsyncSqliteSaver, _PRE_ROUTING_RULES
 │   ├── state.py             # LangGraph AgentState
@@ -77,21 +80,25 @@ FabBot/
 │       ├── reminder_agent.py
 │       ├── whatsapp_agent.py# WhatsApp via whatsapp-web.js, HITL
 │       └── clip_agent.py    # Knowledge Clipper → Obsidian
-└── bot/
-    ├── bot.py               # Telegram handler, HITL, retry logic, exception handler
-    ├── auth.py              # User-Whitelist (fail-closed, RuntimeError if empty)
-    ├── confirm.py           # HITL confirmation (full UUID)
-    ├── transcribe.py        # Local Whisper transcription
-    ├── tts.py               # OpenAI TTS (primary) + edge-tts (fallback)
-    ├── search.py            # Local knowledge search
-    ├── briefing.py          # Morning Briefing Scheduler (07:30)
-    ├── reminders.py         # Reminder storage + proactive delivery
-    ├── heartbeat_scheduler.py # Hourly proactivity scheduler
-    ├── health_check.py      # Daily health check (06:00, 11 components)
-    ├── session_summary.py   # Daily session summary (23:30), TOCTOU-safe
-    ├── party_report.py      # Weekend party report (Wednesday 20:00)
-    ├── whatsapp.py          # WhatsApp bridge (Node.js process, QR via Telegram)
-    └── local_api.py         # Local bot API (status, diagnostics)
+├── bot/
+│   ├── bot.py               # Telegram handler, HITL, retry logic, exception handler
+│   ├── conflict_tracker.py  # Debounces Telegram Conflicts (3 within 300s → exit)
+│   ├── auth.py              # User-Whitelist (fail-closed, RuntimeError if empty)
+│   ├── confirm.py           # HITL confirmation (full UUID)
+│   ├── transcribe.py        # Local Whisper transcription
+│   ├── tts.py               # OpenAI TTS (primary) + edge-tts (fallback)
+│   ├── search.py            # Local knowledge search
+│   ├── briefing.py          # Morning Briefing Scheduler (07:30)
+│   ├── reminders.py         # Reminder storage + proactive delivery
+│   ├── heartbeat_scheduler.py # Hourly proactivity scheduler
+│   ├── health_check.py      # Daily health check (06:00, 13 components)
+│   ├── session_summary.py   # Daily session summary (23:30), TOCTOU-safe
+│   ├── party_report.py      # Weekend party report (Wednesday 20:00)
+│   ├── whatsapp.py          # WhatsApp bridge (port check, orphan cleanup, child-aware stop)
+│   └── local_api.py         # Local bot API (status, diagnostics)
+└── whatsapp_service/        # Node.js sidecar (whatsapp-web.js + puppeteer)
+    ├── server.js            # Bearer-authed HTTP API on 127.0.0.1:8767 – /status, /qr, /send, /contacts
+    └── package.json         # whatsapp-web.js 1.34.7+ (earlier versions freeze after auth)
 ```
 
 **Stack:**
@@ -159,9 +166,15 @@ Derived state, logs and runtime tokens – not part of the semantic memory, but 
 |-------|------|---------|
 | Audit Log | `~/.fabbot/audit.log` | Tamper-evident action log (`agent/audit.py`) |
 | Main Log | `~/.fabbot/fabbot.log` | Application log, daily rotation (7 days) |
+| WhatsApp Service Log | `~/.fabbot/whatsapp_service.log` | Node sidecar stdout/stderr, truncated at start above 5 MB |
+| Watchdog Log | `~/.fabbot/watchdog.log` | Output of `watchdog.py` (cron, every 5 min) |
 | Chroma Metadata | `~/.fabbot/chroma_meta.json` | Profile-change checksum for embedding refresh |
 | Watchdog State | `~/.fabbot/watchdog_state.json` | launchd health snapshot |
 | API Health State | `~/.fabbot/api_health_state.json` | Heartbeat status for Anthropic / Tavily / Brave |
+| Activity | `~/.fabbot/activity.json` | Last user activity – drives curator idle-detection and focus mode |
+| Curator State | `~/.fabbot/curator_state.json` | Last run of the weekly profile consolidation |
+| Heartbeat Cooldown | `~/.fabbot/proactive_cooldown.json` | 6 h cooldown for proactive messages |
+| Evening Check-in | `~/.fabbot/evening_checkin_state.json` | `last_sent_date` guard against duplicate check-ins |
 | WhatsApp Token | `~/.fabbot/wa_service_token` | WhatsApp session secret |
 | Local API Token | `~/.fabbot/local_api_token` | Auth for bot status API |
 
@@ -178,11 +191,13 @@ Derived state, logs and runtime tokens – not part of the semantic memory, but 
 ```bash
 git clone https://github.com/fabiomorena/FabBot.git
 cd FabBot
-python -m venv .venv
-source .venv/bin/activate
+python -m venv ~/.venvs/fabbot          # see warning below
+source ~/.venvs/fabbot/bin/activate
 pip install -r requirements.lock
 brew install ffmpeg
 ```
+
+> **Keep the venv on an internal disk.** If the repo lives on an external drive, do *not* create the venv inside it. macOS cuts power to the USB bus in standby; the volume disappears and Python takes **SIGBUS** while paging in its mmap'd `.so` files. This killed 18 processes in a single night before it was diagnosed (#308) — SIGBUS bypasses every Python handler, so there is no traceback, only `KeepAlive` restarting the bot over and over.
 
 ### Configuration
 
@@ -201,10 +216,12 @@ cp personal_profile.yaml.example personal_profile.yaml   # then edit with your d
 FabBot runs as a background process and needs explicit permissions to access files and folders.
 
 **Full Disk Access** (for `/search`, `file_agent`, `terminal_agent`):
-`System Settings → Privacy & Security → Full Disk Access → + → .venv/bin/python`
+`System Settings → Privacy & Security → Full Disk Access → + → ~/.venvs/fabbot/bin/python`
+
+If the repo sits on an external volume, the terminal you launch tools from needs the same access — including IDE-embedded terminals, which inherit the IDE's permissions rather than the shell's.
 
 **Calendar Access** (for `calendar_agent`, `briefing`):
-Start the bot once directly from Terminal (`python main.py`) and send a calendar request via Telegram to trigger the permission dialog.
+Start the bot once directly from Terminal (`~/.venvs/fabbot/bin/python main.py`) and send a calendar request via Telegram to trigger the permission dialog.
 
 **Prevent idle sleep** (to keep bot running while away):
 ```bash
@@ -215,18 +232,24 @@ Note: closing the laptop lid will still suspend the bot. Keep lid open or connec
 ### Run
 
 ```bash
-python main.py        # start bot
-.venv/bin/python -m pytest tests/ -v      # Run tests (1834 tests)
+~/.venvs/fabbot/bin/python main.py                    # start bot (foreground, for debugging)
+~/.venvs/fabbot/bin/python -m pytest tests/ -v        # run tests (1956 tests)
 ```
+
+Once the Launch Agent is installed, use `launchctl` instead — starting `main.py` by hand next to the agent gives two pollers on the same Telegram token and triggers `Conflict`.
 
 ### Run as Launch Agent
 
 ```bash
-cp com.fabbot.agent.plist ~/Library/LaunchAgents/
+cp deploy/com.fabbot.agent.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.fabbot.agent.plist
 launchctl start com.fabbot.agent
 tail -f ~/.fabbot/fabbot.log
+
+launchctl kickstart -k gui/$(id -u)/com.fabbot.agent  # restart after changes
 ```
+
+Adjust the absolute paths in the plist (`ProgramArguments`, `WorkingDirectory`) to your checkout.
 
 ---
 
@@ -263,7 +286,8 @@ tail -f ~/.fabbot/fabbot.log
 
 **Commands:**
 ```
-/start /ask /clip /search /remember /briefing /done /mute_proactive /tts on|off /stop /status /auditlog
+/start /ask /clip /search /remember /briefing /done /mute_proactive /tts on|off /stop
+/status /health /auditlog /reindex /curator /wa_setup /wa_contact
 ```
 
 ---
@@ -338,10 +362,13 @@ User whitelist · Homoglyph normalization · Rate limiting · Terminal allowlist
 Logs are written to `~/.fabbot/fabbot.log` with daily rotation (7 days kept).
 
 ```bash
-tail -f ~/.fabbot/fabbot.log      # live log
-./review_log.sh                   # today's summary
-./review_log.sh 2026-03-25        # specific date summary
+tail -f ~/.fabbot/fabbot.log            # live log
+tail -f ~/.fabbot/whatsapp_service.log  # Node sidecar (truncated at start above 5 MB)
+./review_log.sh                         # today's summary
+./review_log.sh 2026-03-25              # specific date summary
 ```
+
+Failed health checks are logged at WARNING with their reason, so a red report stays diagnosable after the Telegram message is gone.
 
 ---
 
@@ -372,6 +399,7 @@ tail -f ~/.fabbot/fabbot.log      # live log
 - **Phase 226** ✅ Soft Pydantic validation for personal_profile.yaml – `agent/profile_schema.py` with `PersonalProfile` root model (`extra="allow"`, all core fields optional), `_validate_profile()` hooked into `load_profile()` returning `model_dump(exclude_unset=True)`; unknown fields → DEBUG, type errors → WARNING + raw fallback, no crash, no YAML breaking change; live smoke test surfaced real `people` shape (single dict, not list) → schema accepts dict-or-list, hash stays stable for write_profile concurrency (#198); 1879 tests green
 - **Phase 295** ✅ Conflict-Handler beendet Prozess statt Zombie – on Telegram `Conflict` the `_error_handler` now calls `os.kill(os.getpid(), signal.SIGTERM)` instead of `application.stop()`; SIGTERM triggers PTB graceful shutdown incl. `_post_shutdown` (WhatsApp/caffeinate cleanup) → launchd restarts cleanly (`ThrottleInterval=30` guards crash-loops). Previously `application.stop()` only halted polling while the process lived on as a zombie: schedulers kept firing (briefings went out) but incoming messages were dropped for days, and `KeepAlive` never recovered it (#295); 1882 tests green
 - **Phase 296** ✅ youtube_agent Transcript-API 1.x Breaking Change – `youtube-transcript-api==1.2.4` dropped the static API (only instance-based `fetch`/`list` remain), so `_fetch_transcript` raised `AttributeError: type object 'YouTubeTranscriptApi' has no attribute 'get_transcript'` on **every** video and always fell through to the Whisper fallback: ~10 min of yt-dlp audio download, then failure on `no_speech_prob=0.66`. Fix: `YouTubeTranscriptApi().fetch(video_id, languages=[...])` + snippet objects (`.text`) instead of dicts, stale `# type: ignore[attr-defined]` removed (it had silenced mypy and hid the break). New `tests/test_ph296_youtube_transcript_api.py` tests `_fetch_transcript` for real instead of mocking it away as `test_ph190` did, incl. contract tests against the installed library that fail on the next upstream API change; verified live against the production video (6870 chars) (#301); 1893 tests green
+- **Infrastructure block 11.–13.08.2026** ✅ Incident response, not phase work – nine PRs, no phase numbers. **Crash cause (#308):** the venv lived on the external SSD; in standby the USB bus loses power, the volume disappears, and Python takes **SIGBUS** paging in its mmap'd `.so` files — 95 of 153 loaded libraries sat on `/Volumes/`. 18 Python processes died in one night, each wake correlating within 1–2 s; `KeepAlive` restarted the bot every time, which is why it was a chain rather than a single crash. venv moved to `~/.venvs/fabbot` on the internal disk, plist moved to `deploy/`. **WhatsApp chain:** a service orphaned by those crashes held port 8767 for ~10 h unnoticed, so `start_service()` now checks the port and identifies the owner before spawning (#310); Node's stdout went to `DEVNULL`, leaving no trace when the service hung 22 h on `ready:false`, now logged to `~/.fabbot/whatsapp_service.log` with start-time truncation above 5 MB (#311); with those logs the freeze became visible as total silence after `Authentifiziert` and was fixed by whatsapp-web.js 1.34.6→1.34.7, whose changelog names exactly *Frozen WhatsApp Start or Auth Timeout* — ready in 15 s instead of never (#314, #315); `stop_service()` only sent SIGTERM to the Node process, so puppeteer-Chrome children survived, held the session `SingletonLock` and blocked the next start at `authenticated` — now reusing `_terminate_orphan()` from #310 (parent + children SIGTERM, 5 s, then SIGKILL) (#317); new `GET /contacts` endpoint to read the real WhatsApp display names instead of guessing them for the `whatsapp_contacts` whitelist, verified against the live session with 433 contacts (#316). **Security:** all 10 open Dependabot alerts closed, incl. `langgraph-checkpoint-sqlite` 3.0.3→3.1.1, which affects the main graph's checkpointer directly (#309); a GitHub PAT sat in cleartext in the git remote URL and was surfaced by every `git remote -v` — new `git_remote_guard.py` pre-commit hook blocks credentials in remotes (`always_run`, since `.git/config` is not versioned) and masks the credential in its own error output (#312); 1929 tests green
 - **Phase 297** ✅ Conflict exit debounced – stops the self-feeding restart loop – Phase 295 killed the process on the **first** Telegram `Conflict`. But a Conflict is usually transient: after a restart Telegram keeps the `getUpdates` connection of the bot's *own* previous instance open for about a minute. Together with launchd `KeepAlive` that turned every blip into a loop (exit → launchd restarts → old connection still open → Conflict → exit → …), each iteration announcing "🔄 Bot gestartet."; observed on 12.08.2026 at 21:41:39 and 21:42:55, both ~70 s after start, with only **one** instance actually running (only PID 60549 held connections to `149.154.166.110`). Fix: new `bot/conflict_tracker.py` with `ConflictTracker.registriere()` counting conflicts in a sliding window (`STANDARD_SCHWELLE=3` within `STANDARD_FENSTER_SEKUNDEN=300`, injectable `zeitgeber` for tests); the tracker is instantiated per `build_bot()` call, not globally, and resets its window after firing. Below the threshold the handler only logs and polling continues. The Phase 295 anti-zombie guarantee is preserved — a real second poller keeps polling and trips the threshold within seconds — while isolated conflicts spread over hours no longer accumulate into a restart. New `tests/test_conflict_tracker.py` (7 tests: window boundaries, reset after firing, no accumulation, `schwelle=1` reproducing the old behaviour), `tests/test_ph295_conflict_exit.py` adapted to the threshold instead of removed (#313); 1921 tests green
 - **Phase 298** ✅ Health Check without a reason – `❌ TTS: ` – the report of 14.08.2026 06:00 flagged TTS as failed but printed no cause, and the log held only `Health Check abgeschlossen – PROBLEME`. Two causes: (a) `httpx.ReadTimeout`/`ConnectTimeout` do **not** inherit from `asyncio.TimeoutError` and their `str()` is empty, so the `except asyncio.TimeoutError` branch in `_check_tts` was dead code for httpx failures and `return False, str(e)[:80]` yielded an empty string (check runtime 05:59:59,979 → 06:00:10,541 = 10.5 s at `_CHECK_TIMEOUT=10` confirms a timeout against `api.openai.com`); (b) `run_health_check` logged only OK/PROBLEME, so with the report going out via Telegram only, nothing was left to diagnose from. Fix: new `_fehlertext()` helper falling back to the exception class name so a reason is never empty, labelling `httpx.TimeoutException` explicitly as `Timeout (ReadTimeout)`, applied to all 12 check branches plus the `asyncio.gather` branch; failed checks are now logged with their detail at WARNING. New `tests/test_ph298_health_check_fehlertext.py` (16 tests incl. the inheritance assumption itself, so the timeout branch cannot regress) (#319); 1945 tests green
 - **Phase 299** ✅ TTS survives the OpenAI hangs – the timeout Phase 298 made visible turned out to be external: **~15 % of all requests to `api.openai.com` hang outright** (measured 14.08.2026, 5 of 33; TCP connect succeeds in ~15 ms, then not a single byte arrives). Reproduced with curl *and* httpx outside the bot; ruled out: bot process, event loop (max 0.13 s blocked), API key (HTTP 200, 130 models), proxy, fd leak, IPv6 (no AAAA record), MTU (1472 B with DF-bit clean), a single bad Cloudflare IP (both target IPs equally affected) — and host-specific, with `cloudflare.com` and `api.anthropic.com` at 8/8 OK. Two consequences fixed: (a) `bot/tts.py:_synthesize_openai()` only retried on `{429, 503}`, so a hang fell straight through to the edge-tts fallback after the full 30 s client timeout — roughly every seventh voice output left the user waiting half a minute for the worse voice; now `_TTS_TIMEOUT=12.0` with `httpx.TimeoutException` in the retry path and no backoff (unlike 429, a hang is independent of the next attempt); (b) `_check_tts()` had no retry, colouring roughly every 6th morning report red for nothing — now 2 attempts à `_TTS_CHECK_TIMEOUT=5.0`, so the product stays at `_CHECK_TIMEOUT` and the report takes no longer than before. Live against the real API, 12 runs: 4 hit a hang, the retry caught 3 of them, 1 stayed red (was 4). New `tests/test_ph299_tts_timeout_retry.py` (11 tests, incl. 429 backoff preserved and non-timeout errors still falling through unretried) (#321); 1956 tests green
