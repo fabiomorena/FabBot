@@ -16,7 +16,7 @@ darf keine Nachricht mehr verschlucken – bei den proaktiven Nachrichten merkt
 es sonst niemand.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram.error import BadRequest
@@ -157,3 +157,39 @@ def test_keine_ungeschuetzten_markdown_sends():
                 treffer.append(f"{pfad.relative_to(wurzel)}:{nr}")
 
     assert not treffer, "ungeschützter Markdown-Versand:\n  " + "\n  ".join(treffer)
+
+
+# ---------------------------------------------------------------------------
+# Log-Reihenfolge: "gesendet" erst, wenn es gesendet ist
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cmd_briefing_loggt_gesendet_erst_nach_dem_senden():
+    """cmd_briefing loggte "Briefing gesendet", BEVOR gesendet wurde.
+
+    Am 16.08.2026 kam ein /briefing nicht an, im Log stand trotzdem "gesendet" –
+    die Zeile hat die Diagnose in die Irre geführt, weil sie Erfolg suggerierte,
+    der noch gar nicht feststand.
+    """
+    import bot.bot as bot_mod
+    from bot.auth import ALLOWED_IDS
+
+    erlaubt = next(iter(ALLOWED_IDS)) if ALLOWED_IDS else 4242
+    update = MagicMock()
+    update.effective_user.id = erlaubt
+    update.message.reply_text = AsyncMock(side_effect=RuntimeError("Zustellung gescheitert"))
+
+    protokoll: list[str] = []
+
+    with (
+        patch("bot.auth.ALLOWED_IDS", frozenset([erlaubt])),
+        patch("bot.briefing.generate_briefing", new=AsyncMock(return_value="*Briefing*")),
+        patch.object(bot_mod.logger, "info", side_effect=lambda m, *a: protokoll.append(str(m))),
+    ):
+        with pytest.raises(RuntimeError):
+            await bot_mod.cmd_briefing(update, MagicMock())
+
+    assert not any("gesendet" in z for z in protokoll), (
+        f"'gesendet' geloggt, obwohl der Versand scheiterte: {protokoll}"
+    )
