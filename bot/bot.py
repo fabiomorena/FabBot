@@ -611,8 +611,8 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     from bot.briefing import generate_briefing
 
     briefing = await generate_briefing()
-    logger.info("cmd_briefing: Briefing gesendet")
     await mit_markdown_fallback(update.message.reply_text, briefing)
+    logger.info("cmd_briefing: Briefing gesendet")
     try:
         from agent.supervisor import get_graph
 
