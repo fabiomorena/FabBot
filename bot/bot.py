@@ -41,6 +41,7 @@ from telegram.ext import Application, ApplicationBuilder, CommandHandler, Messag
 from telegram.error import TimedOut, NetworkError, RetryAfter, Conflict
 
 from bot.conflict_tracker import STANDARD_SCHWELLE, ConflictTracker
+from bot.telegram_markdown import mit_markdown_fallback
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from anthropic import RateLimitError, APIStatusError, APIConnectionError
@@ -611,7 +612,7 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     briefing = await generate_briefing()
     logger.info("cmd_briefing: Briefing gesendet")
-    await update.message.reply_text(briefing, parse_mode="Markdown")
+    await mit_markdown_fallback(update.message.reply_text, briefing)
     try:
         from agent.supervisor import get_graph
 
@@ -747,7 +748,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.effective_chat is not None
     chat_id = update.effective_chat.id
     result = list_knowledge() if not ctx.args else search_knowledge(" ".join(ctx.args))
-    await update.message.reply_text(result, parse_mode="Markdown")
+    await mit_markdown_fallback(update.message.reply_text, result)
     log_action("search", "search_knowledge", " ".join(ctx.args or []), chat_id, status="executed")
 
 
@@ -780,7 +781,7 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         report, debug_info = await _debug_dry_run(force=True)
         if report:
             try:
-                await thinking.edit_text(report, parse_mode="Markdown")
+                await mit_markdown_fallback(thinking.edit_text, report)
             except Exception:
                 await thinking.edit_text(report)
         else:
@@ -802,7 +803,7 @@ async def cmd_curator(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     elif sub == "status":
         from agent.proactive.curator import get_status
 
-        await update.message.reply_text(get_status(), parse_mode="Markdown")
+        await mit_markdown_fallback(update.message.reply_text, get_status())
 
     else:
         await update.message.reply_text(
@@ -1004,7 +1005,7 @@ async def _handle_document_audio(update, ctx, doc, chat_id, user_id) -> None:
         if not text:
             await update.message.reply_text("Transkription fehlgeschlagen.")
             return
-        await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+        await mit_markdown_fallback(thinking.edit_text, f"_{text}_")
         thinking = None
         message_text = f"{caption}\n\n[Audio-Transkription]\n{text}" if caption else text
         await handle_message_text(update, ctx.bot, message_text)
@@ -1069,7 +1070,7 @@ async def on_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not text:
             await update.message.reply_text("Transkription fehlgeschlagen.")
             return
-        await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+        await mit_markdown_fallback(thinking.edit_text, f"_{text}_")
         thinking = None
         await handle_message_text(update, ctx.bot, text)
     except (TimedOut, NetworkError) as e:
@@ -1101,7 +1102,7 @@ async def on_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not text:
             await update.message.reply_text("Transkription fehlgeschlagen.")
             return
-        await thinking.edit_text(f"_{text}_", parse_mode="Markdown")
+        await mit_markdown_fallback(thinking.edit_text, f"_{text}_")
         thinking = None
         await handle_message_text(update, ctx.bot, text)
     except NoSpeechDetectedError:

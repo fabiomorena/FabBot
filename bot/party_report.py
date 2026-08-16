@@ -30,6 +30,7 @@ from agent.config import get_settings
 
 
 import httpx
+from bot.telegram_markdown import mit_markdown_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -505,7 +506,7 @@ async def run_party_report_scheduler(bot, chat_id: int) -> None:
 
         try:
             report = await generate_party_report()
-            await bot.send_message(chat_id=chat_id, text=report, parse_mode="Markdown")
+            await mit_markdown_fallback(bot.send_message, report, chat_id=chat_id)
             logger.info("Party Report erfolgreich gesendet.")
         except Exception as e:
             logger.error(f"Party Report Fehler: {e}")

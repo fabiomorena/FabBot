@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from agent.config import get_settings
+from bot.telegram_markdown import mit_markdown_fallback
 
 
 logger = logging.getLogger(__name__)
@@ -434,7 +435,9 @@ async def run_health_check(bot, chat_id: int) -> None:
         lines.append(f"_{now}_")
 
         message = "\n".join(lines)
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        # Die Detailmeldungen enthalten Exception-Texte – Markdown darin darf
+        # den Report nicht verschlucken (#326).
+        await mit_markdown_fallback(bot.send_message, message, chat_id=chat_id)
 
         # Der Report geht nur per Telegram raus – ohne diese Zeile ist nachher
         # nicht mehr feststellbar, welcher Check gescheitert war (14.08.2026).

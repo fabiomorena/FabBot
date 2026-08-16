@@ -19,6 +19,7 @@ from langchain_core.runnables import RunnableConfig
 from agent.config import get_settings
 from agent.proactive.pending import get_pending_items
 from agent.proactive.briefing_agent import orchestrate_briefing
+from bot.telegram_markdown import mit_markdown_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +376,16 @@ async def generate_briefing() -> str:
     return briefing
 
 
+async def _sende_briefing(bot, chat_id: int, briefing: str) -> None:
+    """Versendet das fertige Briefing.
+
+    Der Text besteht fast nur aus Fremdtext (RSS-Titel, Kalendertermine,
+    Pending Items) – ein einzelnes `_` darin ließ Telegram am 16.08.2026 die
+    ganze Nachricht ablehnen, das Briefing war dann verloren (#326).
+    """
+    await mit_markdown_fallback(bot.send_message, briefing, chat_id=chat_id)
+
+
 async def run_briefing_scheduler(bot, chat_id: int) -> None:
     """Läuft als Background-Task und sendet täglich das Briefing."""
     logger.info(f"Morning Briefing Scheduler gestartet – täglich um {BRIEFING_TIME} Uhr")
@@ -394,11 +405,7 @@ async def run_briefing_scheduler(bot, chat_id: int) -> None:
         try:
             logger.info("Erstelle Morning Briefing...")
             briefing = await generate_briefing()
-            await bot.send_message(
-                chat_id=chat_id,
-                text=briefing,
-                parse_mode="Markdown",
-            )
+            await _sende_briefing(bot, chat_id, briefing)
             from bot.tts import speak_and_send, is_tts_enabled
 
             if is_tts_enabled():

@@ -8,6 +8,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from bot.telegram_markdown import mit_markdown_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +91,12 @@ async def run_reminder_scheduler(bot, chat_id: int) -> None:
             pending = get_pending_reminders()
             for reminder in pending:
                 try:
-                    await bot.send_message(
+                    # Der Erinnerungstext stammt wörtlich vom User – ein "_"
+                    # darin ließ Telegram die ganze Nachricht ablehnen (#326).
+                    await mit_markdown_fallback(
+                        bot.send_message,
+                        f"⏰ *Erinnerung:* {reminder['text']}",
                         chat_id=reminder["chat_id"],
-                        text=f"⏰ *Erinnerung:* {reminder['text']}",
-                        parse_mode="Markdown",
                     )
                     mark_sent(reminder["id"])
                     logger.info(f"Erinnerung gesendet: id={reminder['id']} text={reminder['text'][:50]}")
