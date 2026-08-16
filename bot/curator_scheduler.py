@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 from agent.proactive.curator import run_dry_run, should_run
+from bot.telegram_markdown import mit_markdown_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def run_curator_scheduler(bot, chat_id: int) -> None:
                 continue
             report = await run_dry_run()
             if report:
-                await bot.send_message(chat_id=chat_id, text=report, parse_mode="Markdown")
+                await mit_markdown_fallback(bot.send_message, report, chat_id=chat_id)
                 logger.info("Curator Dry-Run-Report gesendet.")
         except Exception as e:
             logger.error(f"Curator Scheduler Fehler: {e}")
