@@ -1238,7 +1238,12 @@ async def _post_init(app: Application) -> None:
     from bot.caffeinate import start as _caff_start, monitor as _caff_monitor
 
     _caff_start()
-    asyncio.create_task(_caff_monitor())
+    # Referenz halten und registrieren: der Monitor läuft endlos. Ohne Eintrag
+    # in _scheduler_tasks wurde er beim Shutdown nicht gecancelt und hinterließ
+    # jedes Mal ein "Task was destroyed but it is pending!" im Log; zudem darf
+    # der GC einen Task ohne gehaltene Referenz mitten im Betrieb einsammeln.
+    task_caffeinate = asyncio.create_task(_caff_monitor(), name="caffeinate:monitor")
+    _scheduler_tasks.append(task_caffeinate)
     _register_bot_send(app.bot.send_message)
 
     # Whisper-Modell vorladen – verzögert damit ChromaDB-Init abgeschlossen ist.

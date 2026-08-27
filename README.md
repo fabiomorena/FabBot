@@ -251,6 +251,14 @@ launchctl kickstart -k gui/$(id -u)/com.fabbot.agent  # restart after changes
 
 Adjust the absolute paths in the plist (`ProgramArguments`, `WorkingDirectory`) to your checkout.
 
+### Auto-restart after merges (optional)
+
+```bash
+cp deploy/hooks/post-merge .git/hooks/ && chmod +x .git/hooks/post-merge
+```
+
+Restarts the agent after a merge — but only when the merge touched code. Documentation-only merges are skipped, since a restart costs ~15 s of downtime reloading the Whisper model. `.git/hooks/` is not versioned, so re-copy the file after changing it in `deploy/hooks/`.
+
 ---
 
 ## Usage
