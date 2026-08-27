@@ -20,6 +20,7 @@ from agent.config import get_settings
 from agent.proactive.pending import get_pending_items
 from agent.proactive.briefing_agent import orchestrate_briefing
 from bot.telegram_markdown import mit_markdown_fallback
+from telegram.helpers import escape_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,14 @@ async def generate_briefing() -> str:
         pending_fn=_pending_fn,
         news_fn=lambda: _fetch_web(""),
     )
+
+    # Alle vier Sections sind Fremdtext: RSS-Schlagzeilen, Kalendertitel,
+    # Pending Items, Wetter-API. Keine davon erzeugt absichtlich Markdown – die
+    # Formatierung kommt ausschließlich aus dem Template unten. Ohne Escaping
+    # brach ein Pending Item namens "youtube_agent" ab dem 16.08.2026 jeden
+    # Morgen das Markdown; der Fallback aus Phase 232 stellte zwar zu, aber
+    # unformatiert (#329).
+    sections = {name: escape_markdown(text, version=1) for name, text in sections.items()}
 
     pending_section = f"\n📋 *Offene Punkte:*\n{sections['pending']}\n" if sections["pending"] else ""
 
