@@ -1,0 +1,41 @@
+#!/bin/bash
+# FabBot: startet den Bot nach einem Merge neu – aber nur, wenn Code betroffen ist.
+#
+# Frueher lief hier bei JEDEM Merge ein "launchctl stop; sleep 2; launchctl start".
+# Zwei Probleme:
+#   1. stop/start ist nicht atomar – zwischen beiden Schritten kann der Job in
+#      einem halben Zustand haengen. launchctl kickstart -k macht dasselbe in
+#      einem Zug.
+#   2. Auch reine Doku-Merges starteten den Bot neu. Das kostet rund 15 s
+#      Ausfall (Whisper-Modell neu laden), ohne dass sich am Verhalten etwas
+#      aendert – vier README-PRs im August haben den Bot grundlos durchgestartet.
+#
+# Versioniert unter deploy/hooks/post-merge; nach Aenderungen dort erneut
+# nach .git/hooks/ kopieren (.git/hooks wird nicht mitversioniert).
+
+set -u
+
+LABEL="com.fabbot.agent"
+
+# Dateien, bei denen sich ein Neustart lohnt. Alles andere (README, Doku,
+# .github/, SELF.md) laeuft ohne Neustart durch.
+RELEVANT='\.py$|\.js$|\.plist$|^whatsapp_service/|^requirements|\.env\.example$'
+
+if ! geaendert=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null); then
+    # Ohne ORIG_HEAD (z.B. erster Merge nach Klon) lieber neu starten als raten.
+    geaendert=""
+    echo "ℹ️  FabBot: ORIG_HEAD nicht verfügbar – starte sicherheitshalber neu."
+elif [ -z "$geaendert" ]; then
+    exit 0
+elif ! printf '%s\n' "$geaendert" | grep -qE "$RELEVANT"; then
+    anzahl=$(printf '%s\n' "$geaendert" | grep -c .)
+    echo "📄 FabBot: $anzahl Datei(en) geändert, kein Code – kein Neustart nötig."
+    exit 0
+fi
+
+echo "🔄 FabBot: Code-Änderung erkannt – Bot wird neu gestartet..."
+if launchctl kickstart -k "gui/$(id -u)/${LABEL}" 2>/dev/null; then
+    echo "✅ FabBot neu gestartet."
+else
+    echo "⚠️  FabBot: kickstart fehlgeschlagen – läuft der Launch Agent? (launchctl list ${LABEL})"
+fi
