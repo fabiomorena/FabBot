@@ -31,6 +31,7 @@ Design-Prinzipien:
 """
 
 import asyncio
+import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -61,6 +62,16 @@ try:
     assert MIN_HUMAN_MESSAGES >= 1
 except Exception:
     MIN_HUMAN_MESSAGES = 10
+
+# Wie viele Nachrichten pro Chat bereits zusammengefasst wurden.
+#
+# Ohne diese Marke las der Summarizer jeden Abend den kompletten Thread-State
+# und fasste `messages[-_MESSAGE_WINDOW:]` zusammen – bei tagelanger Funkstille
+# also immer denselben alten Dialog. Folge: alle vier September-Sessions
+# beschrieben Themen vom 15. August, und 65 von 153 Dateien enthielten nur
+# "Keine neuen Informationen" (#333). LangChain-Messages tragen keinen
+# Zeitstempel, eine Filterung nach Datum scheidet damit aus.
+_HOCHWASSERMARKE_DATEI = Path.home() / ".fabbot" / "session_summary_state.json"
 
 _MESSAGE_WINDOW = 80
 MAX_SESSIONS_LOAD = 7
@@ -120,6 +131,41 @@ def _is_safe_session_path(path: Path) -> bool:
 
 def _session_path(target_date: date) -> Path:
     return SESSIONS_DIR / f"{target_date.isoformat()}.md"
+
+
+def _lade_hochwassermarke(chat_id: int) -> int:
+    """Anzahl der zuletzt zusammengefassten Nachrichten. 0 wenn unbekannt."""
+    try:
+        daten = json.loads(_HOCHWASSERMARKE_DATEI.read_text())
+        return int(daten.get(str(chat_id), 0))
+    except (FileNotFoundError, ValueError, TypeError, AttributeError):
+        return 0
+
+
+def _speichere_hochwassermarke(chat_id: int, anzahl: int) -> None:
+    try:
+        _HOCHWASSERMARKE_DATEI.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            daten = json.loads(_HOCHWASSERMARKE_DATEI.read_text())
+        except (FileNotFoundError, ValueError):
+            daten = {}
+        daten[str(chat_id)] = anzahl
+        _HOCHWASSERMARKE_DATEI.write_text(json.dumps(daten))
+    except OSError as e:
+        logger.warning(
+            f"SessionSummary: Hochwassermarke nicht speicherbar ({e}) – nächster Lauf fasst erneut zusammen."
+        )
+
+
+def _neue_nachrichten(messages: list, marke: int) -> list:
+    """Nachrichten ab der Marke.
+
+    Ist der State kleiner als die Marke, wurde er zwischenzeitlich bereinigt
+    oder zurückgesetzt – dann ist die Marke wertlos und alles gilt als neu.
+    """
+    if marke <= 0 or marke > len(messages):
+        return messages
+    return messages[marke:]
 
 
 async def _get_messages_from_state(chat_id: int) -> list:
@@ -274,7 +320,15 @@ async def summarize_session(
         logger.debug("SessionSummary: Keine Messages im State – skip")
         return False
 
-    filtered = _filter_messages(messages)
+    # Nur was seit der letzten Zusammenfassung dazugekommen ist. Ohne diesen
+    # Schnitt beschrieb die Datei den alten Dialog mit dem heutigen Datum (#333).
+    marke = _lade_hochwassermarke(chat_id)
+    neue = _neue_nachrichten(messages, marke)
+    if not neue:
+        logger.info(f"SessionSummary: keine neuen Nachrichten seit der letzten Zusammenfassung ({marke}) – skip")
+        return False
+
+    filtered = _filter_messages(neue)
     human_count = _count_human_messages(filtered)
 
     if human_count < MIN_HUMAN_MESSAGES:
@@ -301,6 +355,9 @@ async def summarize_session(
 
     # Phase 95: Prompt-Cache invalidieren – außerhalb des _summary_write_lock.
     if success:
+        # Erst nach dem Schreiben fortschreiben: scheitert der LLM-Call oder der
+        # Write, muss der Dialog beim nächsten Lauf erneut drankommen.
+        _speichere_hochwassermarke(chat_id, len(messages))
         try:
             from agent.agents.chat_agent import invalidate_chat_cache
 
