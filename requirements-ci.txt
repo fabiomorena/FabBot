@@ -16,7 +16,7 @@ anthropic==0.96.0
     # via
     #   -r requirements.txt
     #   langchain-anthropic
-anyio==4.12.1
+anyio==4.14.2
     # via
     #   anthropic
     #   httpx
