@@ -78,6 +78,18 @@ def reset_settings_cache():
 
 
 @pytest.fixture(autouse=True)
+def isolierte_hochwassermarke(tmp_path, monkeypatch):
+    """Biegt die Session-Summary-Hochwassermarke auf tmp_path um (Issue #339).
+    Ohne das schreiben summarize_session()-Tests in die echte
+    ~/.fabbot/session_summary_state.json – der zweite lokale Lauf sieht dann
+    die Marke aus dem ersten und findet "keine neuen Nachrichten".
+    """
+    import bot.session_summary as ss
+
+    monkeypatch.setattr(ss, "_HOCHWASSERMARKE_DATEI", tmp_path / "session_summary_state.json")
+
+
+@pytest.fixture(autouse=True)
 def reset_confirm_pending():
     """Leert den HITL-Pending-Dict vor und nach jedem Test.
     Verhindert dass hängende Futures aus einem Test den nächsten blockieren.
