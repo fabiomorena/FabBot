@@ -635,7 +635,10 @@ async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     query = " ".join(ctx.args or []).strip()
     if not query:
-        await update.message.reply_text("Verwendung: /done <Name oder Teil des Namens>")
+        await update.message.reply_text("Verwendung: /done <Name oder Teil des Namens> oder /done all")
+        return
+    if query.lower() == "all":
+        await _done_all(update, ctx)
         return
     matched = await asyncio.to_thread(mark_done, query)
     if not matched:
@@ -645,6 +648,31 @@ async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         names = "\n".join(f"✅ {n}" for n in matched)
         await update.message.reply_text(f"Erledigt:\n{names}")
+
+
+async def _done_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase 235 (Issue #338): /done all – alle offenen Punkte erledigen, nach HITL-Rückfrage."""
+    assert update.message is not None
+    assert update.effective_chat is not None
+    from agent.proactive.pending import mark_all_done
+
+    confirmed = await request_confirmation(
+        ctx.bot,
+        update.effective_chat.id,
+        "pending",
+        "Alle offenen Punkte als erledigt markieren – sie verschwinden aus dem Briefing",
+    )
+    if not confirmed:
+        return  # Button-Callback meldet bereits "Abgelehnt" bzw. "Timeout"
+    erledigt = await asyncio.to_thread(mark_all_done)
+    if erledigt is None:
+        await update.message.reply_text("⚠️ Erledigen fehlgeschlagen – ChromaDB-Fehler, siehe Log.")
+        return
+    if not erledigt:
+        await update.message.reply_text("Nichts offen – es gab keine Punkte zu erledigen.")
+        return
+    einheit = "offener Punkt" if len(erledigt) == 1 else "offene Punkte"
+    await update.message.reply_text(f"✅ {len(erledigt)} {einheit} erledigt.")
 
 
 @restricted

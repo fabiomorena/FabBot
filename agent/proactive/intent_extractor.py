@@ -105,27 +105,25 @@ async def extract_intentions(user_message: str) -> None:
         if collection is None:
             return
 
+        from agent.proactive.collector import _existing_metadata, _inherit_from_existing
+
         now = datetime.now(timezone.utc).isoformat()
         ids, documents, metadatas = [], [], []
 
         for intent in intentions:
             eid = _intent_id(intent["name"])
 
-            try:
-                existing = collection.get(ids=[eid])
-                mention_count = int(existing["metadatas"][0].get("mention_count", 0)) + 1 if existing["ids"] else 1
-            except Exception:
-                mention_count = 1
-
-            metadata = {
-                "entity_type": "intent",
-                "name": intent["name"],
-                "status": "open",
-                "created_at": now,
-                "last_mentioned_at": now,
-                "mention_count": mention_count,
-                "source_context": intent["context"][:200],
-            }
+            metadata = _inherit_from_existing(
+                _existing_metadata(collection, eid),
+                {
+                    "entity_type": "intent",
+                    "name": intent["name"],
+                    "status": "open",
+                    "created_at": now,
+                    "last_mentioned_at": now,
+                    "source_context": intent["context"][:200],
+                },
+            )
             if intent.get("due_date"):
                 metadata["due_date"] = intent["due_date"]
 

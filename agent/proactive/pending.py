@@ -106,6 +106,35 @@ def mark_done(name_query: str) -> list[str]:
     return matched_names
 
 
+def mark_all_done() -> list[str] | None:
+    """Markiert alle offenen Entitäten als 'done' – ein Batch-Update.
+
+    Phase 235 (Issue #338): Grundlage für /done all. Gibt die Namen der
+    erledigten Einträge zurück; None bei ChromaDB-Fehler, damit der Aufrufer
+    "nichts offen" von "fehlgeschlagen" unterscheiden kann.
+    """
+    collection = _get_entities_collection()
+    if collection is None:
+        return None
+    try:
+        result = collection.get(where={"status": "open"}, include=["metadatas"])
+    except Exception as e:
+        logger.warning(f"mark_all_done: ChromaDB-Fehler: {e}")
+        return None
+
+    ids = result.get("ids") or []
+    metadatas = result.get("metadatas") or []
+    if not ids:
+        return []
+
+    try:
+        collection.update(ids=list(ids), metadatas=[{**meta, "status": "done"} for meta in metadatas])
+    except Exception as e:
+        logger.warning(f"mark_all_done: Update-Fehler: {e}")
+        return None
+    return [meta.get("name", "") for meta in metadatas]
+
+
 _STOPWORDS = {
     "nach",
     "beim",
