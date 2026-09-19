@@ -85,6 +85,34 @@ def _entity_id(entity_type: str, normalized_name: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
+def _existing_metadata(collection, eid: str) -> dict | None:
+    """Metadaten der bestehenden Entität oder None, wenn es sie noch nicht gibt."""
+    try:
+        existing = collection.get(ids=[eid])
+        metas = existing.get("metadatas") or []
+        meta = metas[0] if existing.get("ids") and metas else None
+    except Exception:
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def _inherit_from_existing(existing: dict | None, metadata: dict) -> dict:
+    """Übernimmt status, created_at und mention_count vom Bestand.
+
+    Phase 235 (Issue #338): Vorher setzte jeder Upsert hart status="open" und
+    created_at=now. Ein per /done erledigtes Item wurde damit bei der nächsten
+    Erwähnung – auch durch den Löschauftrag selbst – wieder geöffnet.
+    """
+    if existing is None:
+        return {**metadata, "mention_count": 1}
+    return {
+        **metadata,
+        "status": existing.get("status", metadata["status"]),
+        "created_at": existing.get("created_at", metadata["created_at"]),
+        "mention_count": int(existing.get("mention_count", 0)) + 1,
+    }
+
+
 def _parse_entities(raw: str) -> list[dict]:
     # Markdown-Codeblock entfernen falls vorhanden
     raw = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
@@ -143,23 +171,18 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
             normalized = _normalize_name(entity["name"])
             eid = _entity_id(entity["type"], normalized)
 
-            # Existing entry check for mention_count
-            try:
-                existing = collection.get(ids=[eid])
-                mention_count = int(existing["metadatas"][0].get("mention_count", 0)) + 1 if existing["ids"] else 1
-            except Exception:
-                mention_count = 1
-
-            metadata = {
-                "entity_type": entity["type"],
-                "name": entity["name"],
-                "status": "open",
-                "created_at": now,
-                "last_mentioned_at": now,
-                "last_mentioned_at_ts": now_ts,
-                "mention_count": mention_count,
-                "source_context": entity["context"][:200],
-            }
+            metadata = _inherit_from_existing(
+                _existing_metadata(collection, eid),
+                {
+                    "entity_type": entity["type"],
+                    "name": entity["name"],
+                    "status": "open",
+                    "created_at": now,
+                    "last_mentioned_at": now,
+                    "last_mentioned_at_ts": now_ts,
+                    "source_context": entity["context"][:200],
+                },
+            )
             if entity.get("due_date"):
                 metadata["due_date"] = entity["due_date"]
 
