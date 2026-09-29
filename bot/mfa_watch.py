@@ -284,10 +284,10 @@ async def lade_anzeigen(basis_url: str) -> list[dict]:
             try:
                 resp = await client.get(url)
             except httpx.HTTPError as e:
-                raise MfaAbrufFehler(f"Abruf von {url} fehlgeschlagen: {e}") from e
+                raise MfaAbrufFehler(f"Abruf von Seite {seite} fehlgeschlagen: {e}") from e
 
             if resp.status_code != 200:
-                raise MfaAbrufFehler(f"Abruf von {url} lieferte HTTP {resp.status_code}")
+                raise MfaAbrufFehler(f"Abruf von Seite {seite} lieferte HTTP {resp.status_code}")
 
             anzeigen = _parse_anzeigen(resp.text)
             if not anzeigen:
@@ -370,9 +370,10 @@ def _sortierschluessel(datum: str) -> str:
 async def run_mfa_watch_scheduler(bot: Any, channel_id: str | int, fehler_chat_id: str | int) -> None:
     """Background-Task: prüft die Börse im konfigurierten Intervall."""
     intervall = get_settings().mfa_watch_interval
-    # Die Kanal-ID wird bewusst nicht geloggt: CodeQL wertet jeden aus den
-    # Settings stammenden Wert als Geheimnis, und im Log hat sie keinen Nutzen.
-    logger.info(f"MFA-Watch Scheduler gestartet – alle {intervall}s")
+    # Aus den Settings stammende Werte landen bewusst nicht im Log: CodeQL
+    # wertet die gesamte Settings-Quelle als Geheimnis (py/clear-text-logging-
+    # sensitive-data). Intervall, Kanal-ID und Quell-URL stehen in der .env.
+    logger.info("MFA-Watch Scheduler gestartet")
 
     while True:
         await asyncio.sleep(intervall)
