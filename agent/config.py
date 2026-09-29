@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_allowed_user_ids: str = ""
     telegram_chat_id: str = ""
+    telegram_mfa_channel_id: str = ""
 
     # ── Scheduler-Zeiten ──────────────────────────────────────────────────────
     briefing_time: str = "07:30"
@@ -67,6 +68,8 @@ class Settings(BaseSettings):
     party_report_day: int = 2
     party_report_time: str = "20:00"
     evening_checkin_time: str = "21:00"
+    mfa_watch_url: str = "https://www.mfa-in-berlin.de/ausbildungsplatz-finden"
+    mfa_watch_interval: int = 3600
     evening_checkin_enabled: bool = True
     proactive_quiet_start: int = 22
     proactive_quiet_end: int = 8
