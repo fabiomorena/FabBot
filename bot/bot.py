@@ -1426,6 +1426,24 @@ async def _post_init(app: Application) -> None:
         )
     )
 
+    mfa_channel = cfg.telegram_mfa_channel_id.strip()
+    if mfa_channel:
+        from bot.mfa_watch import run_mfa_watch_scheduler
+
+        task_mfa = asyncio.create_task(
+            run_mfa_watch_scheduler(app.bot, mfa_channel, chat_id), name="scheduler:mfa_watch"
+        )
+        _scheduler_tasks.append(task_mfa)
+        task_mfa.add_done_callback(
+            lambda t: (
+                logger.error(f"MFA-Watch Scheduler unerwartet beendet: {t.exception()}")
+                if not t.cancelled() and t.exception()
+                else None
+            )
+        )
+    else:
+        logger.info("TELEGRAM_MFA_CHANNEL_ID nicht gesetzt – MFA-Watch deaktiviert.")
+
     try:
         from agent.retrieval import index_all
 
