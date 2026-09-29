@@ -370,7 +370,9 @@ def _sortierschluessel(datum: str) -> str:
 async def run_mfa_watch_scheduler(bot: Any, channel_id: str | int, fehler_chat_id: str | int) -> None:
     """Background-Task: prüft die Börse im konfigurierten Intervall."""
     intervall = get_settings().mfa_watch_interval
-    logger.info(f"MFA-Watch Scheduler gestartet – alle {intervall}s, Kanal {channel_id}")
+    # Die Kanal-ID wird bewusst nicht geloggt: CodeQL wertet jeden aus den
+    # Settings stammenden Wert als Geheimnis, und im Log hat sie keinen Nutzen.
+    logger.info(f"MFA-Watch Scheduler gestartet – alle {intervall}s")
 
     while True:
         await asyncio.sleep(intervall)
