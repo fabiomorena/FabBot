@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from telegram import LinkPreviewOptions
 from telegram.helpers import escape_markdown
 
 from agent.config import get_settings
@@ -181,7 +182,8 @@ class _AnzeigenParser(HTMLParser):
         return {
             "uid": self._uid,
             "praxis": self._kontakt_frei[0] if self._kontakt_frei else "",
-            "adresse": " ".join(self._kontakt_frei[1:]).strip(),
+            # Strasse und PLZ/Ort stehen als getrennte <br/>-Segmente im Markup.
+            "adresse": ", ".join(t for t in self._kontakt_frei[1:] if t),
             "ansprechperson": label("Ansprechperson"),
             "email": self._email,
             "telefon": label("Telefonnummer"),
@@ -348,7 +350,14 @@ async def pruefe_einmal(bot: Any, channel_id: str | int, fehler_chat_id: str | i
     # Älteste zuerst, damit die Reihenfolge im Kanal der Veröffentlichung folgt.
     for anzeige in sorted(neue, key=lambda a: _sortierschluessel(a.get("veroeffentlicht", ""))):
         text = _formatiere(anzeige, quelle_url)
-        await mit_markdown_fallback(bot.send_message, text, chat_id=channel_id)
+        # Ohne Abschalten haengt Telegram an jede Anzeige dieselbe generische
+        # Vorschaukarte der Boersenseite.
+        await mit_markdown_fallback(
+            bot.send_message,
+            text,
+            chat_id=channel_id,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
         # State pro Anzeige fortschreiben: ein Sendefehler darf die restlichen
         # Anzeigen nicht als gesehen markieren.
         bekannt = {**bekannt, _anzeige_id(anzeige): eintrag(anzeige)}
