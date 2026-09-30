@@ -132,7 +132,7 @@ numpy==2.4.3
     # via
     #   numba
     #   openai-whisper
-oauthlib==3.3.1
+oauthlib==4.0.0
     # via requests-oauthlib
 openai-whisper==20250625
     # via -r requirements.txt
