@@ -41,7 +41,9 @@ _VOID_TAGS = frozenset(
 
 _ITEM_KLASSE = "vd-result-list__item"
 _TITEL_KLASSE = "vd-result-list__item-title"
-_TREFFER_MUSTER = re.compile(r"Ergebnisse:\s*(\d+)")
+# Die Trefferzahl steht als "Ergebnisse: <b>20</b>" im Markup – Tags zwischen
+# Label und Zahl muessen toleriert werden.
+_TREFFER_MUSTER = re.compile(r"Ergebnisse:\s*(?:<[^>]+>\s*)*(\d+)")
 _WHITESPACE = re.compile(r"\s+")
 
 

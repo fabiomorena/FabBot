@@ -105,6 +105,21 @@ def test_gesamttreffer_aus_result_info():
     assert mfa_watch._gesamttreffer("<html></html>") is None
 
 
+def test_gesamttreffer_vertraegt_tags_zwischen_label_und_zahl():
+    """Live-Markup lautet 'Ergebnisse: <b>20</b>' – ohne Tag-Toleranz greift die Regex nicht."""
+    echt = '<div class="vd-result-info vd-result-list--board"><p>Ergebnisse: <b>20</b></p></div>'
+    assert mfa_watch._gesamttreffer(echt) == 20
+
+
+async def test_lade_anzeigen_stoppt_wenn_trefferzahl_erreicht():
+    """Die Börse klemmt Seitenüberläufe auf die letzte Seite – ohne Abbruch entstehen Leerabrufe."""
+    ctx, client = _mock_client(_fixture("mfa_seite1.html"), _fixture("mfa_seite2.html"), _fixture("mfa_seite2.html"))
+    with patch("httpx.AsyncClient", return_value=ctx):
+        anzeigen = await mfa_watch.lade_anzeigen("https://example.org/boerse")
+    assert len(anzeigen) == 3
+    assert client.get.call_count == 2, "dritter Abruf ist überflüssig, sobald die Trefferzahl erreicht ist"
+
+
 def test_anzeige_id_nutzt_uid():
     erste = mfa_watch._parse_anzeigen(_fixture("mfa_seite1.html"))[0]
     assert mfa_watch._anzeige_id(erste) == "uid:3339"
