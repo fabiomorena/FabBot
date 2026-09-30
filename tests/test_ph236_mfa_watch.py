@@ -55,7 +55,7 @@ def test_parser_liest_alle_felder():
     erste = mfa_watch._parse_anzeigen(_fixture("mfa_seite1.html"))[0]
     assert erste["uid"] == "3339"
     assert erste["praxis"] == "MVZ am Bahnhof Spandau"
-    assert erste["adresse"] == "Galenstraße 3 13597 Berlin"
+    assert erste["adresse"] == "Galenstraße 3, 13597 Berlin"
     assert erste["bezirk"] == "Spandau"
     assert erste["email"] == "plueckhahn@mvz-bahnhof-spandau.de"
     assert erste["beginn"] == "01.02.2027"
@@ -229,6 +229,25 @@ async def test_erster_lauf_sendet_nichts():
     bot.send_message.assert_not_called()
     state = json.loads(mfa_watch._STATE_FILE.read_text(encoding="utf-8"))
     assert set(state["seen"]) == {"uid:1", "uid:2"}
+
+
+async def test_adresse_mit_komma_zwischen_strasse_und_ort():
+    """Strasse und PLZ stehen im Markup als getrennte Segmente – ohne Komma liest es sich schlecht."""
+    erste = mfa_watch._parse_anzeigen(_fixture("mfa_seite1.html"))[0]
+    assert erste["adresse"] == "Galenstraße 3, 13597 Berlin"
+
+
+async def test_sendet_ohne_link_vorschau():
+    """Die Vorschaukarte zeigt bei jeder Anzeige dieselbe generische Seitenbeschreibung."""
+    bot = MagicMock()
+    bot.send_message = AsyncMock()
+    with patch.object(mfa_watch, "lade_anzeigen", AsyncMock(return_value=_anzeigen("1"))):
+        await mfa_watch.pruefe_einmal(bot, "-100123", 42)
+    with patch.object(mfa_watch, "lade_anzeigen", AsyncMock(return_value=_anzeigen("1", "2"))):
+        with patch("asyncio.sleep", AsyncMock()):
+            await mfa_watch.pruefe_einmal(bot, "-100123", 42)
+    vorschau = bot.send_message.call_args.kwargs["link_preview_options"]
+    assert vorschau.is_disabled is True
 
 
 async def test_neue_anzeige_wird_gesendet():
