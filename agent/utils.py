@@ -24,9 +24,14 @@ _WEEKDAYS_DE = {
 def extract_llm_text(content) -> str:
     """Normalisiert LLM-Response-Content zu einem einzelnen String.
     Claude gibt manchmal list[dict] statt str zurück (bei extended thinking o.ä.).
+    Phase 237: thinking-Bloecke (Haiku 5.5 denkt standardmaessig) werden uebersprungen.
     """
     if isinstance(content, list):
-        return " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+        return " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b)
+            for b in content
+            if not (isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking"))
+        )
     return content if isinstance(content, str) else str(content)
 
 

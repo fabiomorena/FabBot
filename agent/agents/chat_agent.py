@@ -11,6 +11,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from agent.config import get_settings
 from agent.state import AgentState
 from agent.llm import get_llm
+from agent.utils import extract_llm_text
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +311,7 @@ async def _summarize_overflow(messages: list) -> AIMessage:
             llm.ainvoke([HumanMessage(content=prompt)]),
             timeout=8.0,
         )
-        content = response.content if isinstance(response.content, str) else str(response.content)
+        content = extract_llm_text(response.content)
         return AIMessage(content=f"[Früherer Kontext]\n{content.strip()}")
     except Exception as e:
         logger.debug(f"Overflow-Komprimierung fehlgeschlagen: {e}")

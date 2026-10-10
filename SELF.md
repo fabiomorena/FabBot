@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 225_
+_Letzte Aktualisierung: Phase 237_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -78,22 +78,22 @@ Reihenfolge in `supervisor_node()`:
 - **Verwendet von**: alle Agenten (chat_agent, memory_agent, web_agent, calendar_agent, ...)
 
 ### `get_fast_llm()` – Haiku (Routing)
-- **Modell**: `claude-haiku-4-5-20251001` (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`)
-- **Temperature**: nicht explizit gesetzt
+- **Modell**: `claude-haiku-5-5` (konfigurierbar via `ANTHROPIC_MODEL_HAIKU`, Phase 237)
+- **Temperature**: nicht gesetzt (Haiku 5.5 akzeptiert nur den Default)
+- **Effort**: `low` – Haiku 5.5 denkt standardmäßig, `low` hält das Routing schnell
 - **Typ**: lazy Singleton
 - **Verwendet von**: `supervisor_node` (Routing), `_summarize_overflow` (Context-Window, Phase 216)
 
-### `get_grounding_llm()` – Haiku + temperature=0
-- **Modell**: Haiku (gleich wie get_fast_llm)
-- **Temperature**: **0** (explizit gesetzt, bewusste Entscheidung)
+### `get_grounding_llm()` – Haiku für faktengebundene Texte
+- **Modell**: Haiku (gleich wie get_fast_llm), Effort `low`
+- **Temperature**: nicht gesetzt – `temperature=0` (Phase 204) seit Phase 237 entfernt, Haiku 5.5 lehnt es mit 400 ab; Faktentreue sichert der Halluzinations-Guard
 - **Typ**: KEIN Singleton – jeder Aufruf erstellt eine neue Instanz
 - **Verwendet von**: `bot/evening_checkin.py` (_generate_checkin_question)
-- **Warum temperature=0**: Deterministisches Grounding. Der Evening Check-in generiert eine
-  personalisierte Abend-Frage aus dem Gespraechsverlauf. temperature=0 minimiert Halluzination
-  von Personennamen oder erfundenen Ereignissen. Zweite Sicherheitsschicht: `_has_hallucination()`
-  prueft ob Entitaeten in der Frage vorkommen die nicht im Verlauf erwaehnt wurden. Beide zusammen:
-  Phase 204 (Issue #215).
-- **Warum kein Singleton**: Vermeidet State-Probleme durch gecachte temperature=0-Instanz.
+- **Grounding**: Der Evening Check-in generiert eine personalisierte Abend-Frage aus dem
+  Gespraechsverlauf. Bis Phase 237 minimierte temperature=0 erfundene Namen/Ereignisse; seit Haiku 5.5
+  (lehnt temperature=0 ab) haengt das am Prompt und an `_has_hallucination()`, das Entitaeten
+  verwirft die nicht im Verlauf erwaehnt wurden. Phase 204 (Issue #215), Phase 237 (Issue #351).
+- **Warum kein Singleton**: Eigenstaendige Instanz pro Aufruf, unabhaengig vom Routing-Singleton.
 
 ---
 
@@ -148,16 +148,17 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 |---|---|---|---|
 | Health Check | 06:00 | `bot/health_check.py` | 11 Komponenten geprueft. |
 | Morning Briefing | 07:30 | `bot/briefing.py` | Wetter (Open-Meteo), Kalender, News. |
-| Evening Check-in | 21:00 | `bot/evening_checkin.py` | Personalisierte Frage via `get_grounding_llm()` (temperature=0). |
+| Evening Check-in | 21:00 | `bot/evening_checkin.py` | Personalisierte Frage via `get_grounding_llm()`. |
 | Session Summary | 23:30 | `bot/session_summary.py` | Tages-Summary via `get_fast_llm()`. Rolling-Window-Sessions. |
-| Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown; temperature=0 + Entity Guard (agent/proactive/entity_guard.py); Focus-Mode-Check (agent/proactive/focus_mode.py): SOFT_MUTE ab 15 min, HARD_MUTE ab 60 min Inaktivität. |
+| Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown; Entity Guard (agent/proactive/entity_guard.py); Focus-Mode-Check (agent/proactive/focus_mode.py): SOFT_MUTE ab 15 min, HARD_MUTE ab 60 min Inaktivität. |
 
 ---
 
 ## Wichtige Architektur-Entscheidungen
 
-1. **temperature=0 in `get_grounding_llm()`**: Deterministisches Grounding fuer Evening Check-in.
-   Kombiniert mit Entity Guard (`_has_hallucination()`) als zweite Sicherheitsschicht. Phase 204 (#215).
+1. **Grounding in `get_grounding_llm()`**: Faktengebundene Texte fuer Evening Check-in und Heartbeat,
+   abgesichert durch den Entity Guard (`_has_hallucination()`). Phase 204 (#215); temperature=0 seit
+   Phase 237 (#351) entfernt, weil Haiku 5.5 es ablehnt.
 
 2. **Haiku fuer Supervisor-Routing**: ~4x schneller und guenstiger als Sonnet. Routing ist Klassifikation –
    kein kreatives Reasoning benoetigt. Geschwindigkeit > Qualitaet hier.
@@ -172,8 +173,8 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 5. **clip_agent nicht im Graph**: `/clip` ist ein expliziter Telegram-Befehl, kein natuerlichsprachlicher
    Intent. Direktaufruf aus `bot.py` klarer als Supervisor-Routing.
 
-6. **get_grounding_llm() kein Singleton**: Keine State-Probleme durch gecachte temperature=0-Instanz.
-   get_llm() und get_fast_llm() sind Singletons weil sie zustandslos und Standard-Temperature sind.
+6. **get_grounding_llm() kein Singleton**: Eigenstaendige Instanz pro Aufruf.
+   get_llm() und get_fast_llm() sind Singletons weil sie zustandslos sind.
 
 7. **Fail-closed Security Guard**: Bei Exception im Security Check wird geblockt, nicht durchgelassen.
    Sicherer als Fail-open, auch wenn es zu False Positives fuehren kann.

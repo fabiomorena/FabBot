@@ -6,7 +6,7 @@ Zentraler LLM-Client fuer FabBot.
 
 Phase 71: Modelle via .env konfigurierbar.
 ANTHROPIC_MODEL_SONNET – default: claude-sonnet-4-6
-ANTHROPIC_MODEL_HAIKU  – default: claude-haiku-4-5-20251001
+ANTHROPIC_MODEL_HAIKU  – default: claude-haiku-5-5
 
 Phase 92: _warn_if_unusual() loggt eine Warning bei ungewöhnlichem Modell-String.
 Kein hard crash – dokumentierte Tech-Debt bleibt bestehen, aber ein Tippfehler
@@ -24,10 +24,15 @@ Phase 116: _DEFAULT_SONNET auf claude-sonnet-4-6 aktualisiert (claude-sonnet-4-2
 deprecated seit 14.04.2026, Retirement 15.06.2026).
 _MODEL_PATTERN erweitert: optionales YYYYMMDD-Suffix (neue Modelle wie sonnet-4-6
 und opus-4-7 haben kein Datums-Suffix mehr).
+
+Phase 237 (Issue #351): _DEFAULT_HAIKU auf claude-haiku-5-5. Haiku 5.5 denkt standardmaessig
+(adaptive thinking, Default-Effort medium) – ohne effort="low" waere es langsamer als 4.5.
+temperature != 1 wird mit 400 abgelehnt, daher kein temperature=0 mehr im Grounding-Client.
 """
 
 import logging
 import re
+from typing import Final
 
 from langchain_anthropic import ChatAnthropic
 
@@ -37,7 +42,9 @@ from agent.config import get_settings
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SONNET = "claude-sonnet-4-6"
-_DEFAULT_HAIKU = "claude-haiku-4-5-20251001"
+_DEFAULT_HAIKU = "claude-haiku-5-5"
+# Phase 237: Haiku-Calls sind Routing/Extraktion – wenig Denken, schnelle Antwort.
+_HAIKU_EFFORT: Final = "low"
 
 _llm: ChatAnthropic | None = None
 _fast_llm: ChatAnthropic | None = None
@@ -141,16 +148,18 @@ def get_fast_llm() -> ChatAnthropic:
     model = get_haiku_model()
     if _fast_llm is None or _fast_llm.model != model:
         _warn_if_unusual(model)
-        _fast_llm = ChatAnthropic(model=model)  # type: ignore[call-arg]
+        _fast_llm = ChatAnthropic(model=model, effort=_HAIKU_EFFORT)  # type: ignore[call-arg]
     return _fast_llm
 
 
 def get_grounding_llm() -> ChatAnthropic:
-    """Haiku mit temperature=0 fuer grounding-kritische Calls (kein Singleton).
-    Verwenden wenn deterministisches, faktengebundenes Output wichtiger ist
+    """Haiku fuer grounding-kritische Calls (kein Singleton).
+    Verwenden wenn faktengebundenes Output wichtiger ist
     als kreative Variation – z.B. Evening Check-in, Pending-Zusammenfassung.
     Phase 204 (Issue #215).
+    Phase 237: temperature=0 entfernt – Haiku 5.5 lehnt es mit 400 ab. Die Faktentreue
+    sichern Prompt und Halluzinations-Guard (_has_hallucination).
     """
     model = get_haiku_model()
     _warn_if_unusual(model)
-    return ChatAnthropic(model=model, temperature=0)  # type: ignore[call-arg]
+    return ChatAnthropic(model=model, effort=_HAIKU_EFFORT)  # type: ignore[call-arg]
