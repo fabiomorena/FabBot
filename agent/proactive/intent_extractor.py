@@ -16,6 +16,8 @@ import logging
 import re
 from datetime import datetime, timezone
 
+from agent.utils import extract_llm_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,7 +98,7 @@ async def extract_intentions(user_message: str) -> None:
             user_message=user_message[:500],
         )
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        raw = response.content if isinstance(response.content, str) else str(response.content)
+        raw = extract_llm_text(response.content)
         intentions = _parse_intentions(raw)
         if not intentions:
             return

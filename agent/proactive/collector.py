@@ -15,6 +15,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agent.utils import extract_llm_text
+
 logger = logging.getLogger(__name__)
 
 ENTITY_TYPES = {"person", "place", "event", "task"}
@@ -153,7 +155,7 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
             bot_response=bot_response[:500],
         )
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        raw = response.content if isinstance(response.content, str) else str(response.content)
+        raw = extract_llm_text(response.content)
         entities = _parse_entities(raw)
         if not entities:
             return

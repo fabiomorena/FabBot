@@ -2,7 +2,7 @@
 tests/test_ph204_anti_halluzination_pro.py – Phase 204 (Issues #214, #215, #216)
 
 Testet:
-- get_grounding_llm: temperature=0 (#215)
+- get_grounding_llm: ohne temperature (#215; temperature=0 seit Phase 237 entfernt, Haiku 5.5 → 400)
 - _build_context_word_set: Token-Extraktion
 - _mid_sentence_caps: Satzanfang-Filterung
 - _has_hallucination: Guard erkennt erfundene Namen, lässt Kontext-Namen durch (#214)
@@ -18,13 +18,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestGroundingLlm:
-    def test_temperature_is_zero(self):
-        """get_grounding_llm() muss temperature=0 liefern."""
-        with patch("agent.llm.get_haiku_model", return_value="claude-haiku-4-5-20251001"):
+    def test_temperature_not_set(self):
+        """get_grounding_llm() setzt kein temperature – Haiku 5.5 lehnt temperature=0 ab (Phase 237)."""
+        with patch("agent.llm.get_haiku_model", return_value="claude-haiku-5-5"):
             from agent.llm import get_grounding_llm
 
             llm = get_grounding_llm()
-            assert llm.temperature == 0
+            assert llm.temperature is None
 
     def test_uses_haiku_model(self):
         """get_grounding_llm() nutzt das konfigurierte Haiku-Modell."""
