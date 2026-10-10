@@ -5,7 +5,7 @@ Zentraler LLM-Client fuer FabBot.
 - get_fast_llm()  → Haiku  (Geschwindigkeit, fuer Supervisor-Routing)
 
 Phase 71: Modelle via .env konfigurierbar.
-ANTHROPIC_MODEL_SONNET – default: claude-sonnet-4-6
+ANTHROPIC_MODEL_SONNET – default: claude-sonnet-5-5
 ANTHROPIC_MODEL_HAIKU  – default: claude-haiku-5-5
 
 Phase 92: _warn_if_unusual() loggt eine Warning bei ungewöhnlichem Modell-String.
@@ -28,6 +28,10 @@ und opus-4-7 haben kein Datums-Suffix mehr).
 Phase 237 (Issue #351): _DEFAULT_HAIKU auf claude-haiku-5-5. Haiku 5.5 denkt standardmaessig
 (adaptive thinking, Default-Effort medium) – ohne effort="low" waere es langsamer als 4.5.
 temperature != 1 wird mit 400 abgelehnt, daher kein temperature=0 mehr im Grounding-Client.
+
+Phase 239 (Issue #357): _DEFAULT_SONNET auf claude-sonnet-5-5 mit effort="low" – gemessen schneller
+als 4.6 (Median 4.7s statt 5.5s). max_tokens explizit, weil langchain-anthropic fuer sonnet-5-5
+kein Modellprofil hat und sonst auf 4096 faellt (4.6: 64000) – Thinking zaehlt mit.
 """
 
 import logging
@@ -41,7 +45,10 @@ from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SONNET = "claude-sonnet-4-6"
+_DEFAULT_SONNET = "claude-sonnet-5-5"
+# Phase 239: Chat/Agenten – low ist bei Sonnet 5.5 schneller als 4.6 und versteht besser.
+_SONNET_EFFORT: Final = "low"
+_SONNET_MAX_TOKENS: Final = 16000
 _DEFAULT_HAIKU = "claude-haiku-5-5"
 # Phase 237: Haiku-Calls sind Routing/Extraktion – wenig Denken, schnelle Antwort.
 _HAIKU_EFFORT: Final = "low"
@@ -134,7 +141,9 @@ def get_llm() -> ChatAnthropic:
     model = get_sonnet_model()
     if _llm is None or _llm.model != model:
         _warn_if_unusual(model)
-        _llm = ChatAnthropic(model=model)  # type: ignore[call-arg]
+        _llm = ChatAnthropic(  # type: ignore[call-arg]
+            model=model, effort=_SONNET_EFFORT, max_tokens=_SONNET_MAX_TOKENS
+        )
     return _llm
 
 

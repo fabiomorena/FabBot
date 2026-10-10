@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 237_
+_Letzte Aktualisierung: Phase 239_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -72,8 +72,10 @@ Reihenfolge in `supervisor_node()`:
 ## LLM-Konfiguration (`agent/llm.py`)
 
 ### `get_llm()` – Sonnet (Standard)
-- **Modell**: `claude-sonnet-4-6` (konfigurierbar via `ANTHROPIC_MODEL_SONNET`)
-- **Temperature**: nicht explizit gesetzt (Anthropic-Default)
+- **Modell**: `claude-sonnet-5-5` (konfigurierbar via `ANTHROPIC_MODEL_SONNET`, Phase 239)
+- **Temperature**: nicht gesetzt (Sonnet 5.5 akzeptiert nur den Default)
+- **Effort**: `low` – gemessen schneller als Sonnet 4.6 (Median 4,7 s statt 5,5 s) bei besserem Kontextverständnis
+- **max_tokens**: 16000 explizit – langchain-anthropic kennt kein Profil für sonnet-5-5 und fiele sonst auf 4096; Thinking-Tokens zählen mit
 - **Typ**: lazy Singleton – wird bei Modell-Wechsel via .env invalidiert
 - **Verwendet von**: alle Agenten (chat_agent, memory_agent, web_agent, calendar_agent, ...)
 
