@@ -24,7 +24,7 @@ def _default_knowledge_dir() -> str:
 class Settings(BaseSettings):
     # ── LLM ──────────────────────────────────────────────────────────────────
     # ANTHROPIC_API_KEY wird direkt von langchain-anthropic aus os.environ gelesen.
-    anthropic_model_sonnet: str = "claude-sonnet-4-6"
+    anthropic_model_sonnet: str = "claude-sonnet-5-5"
     anthropic_model_haiku: str = "claude-haiku-5-5"
 
     # ── LangSmith Telemetry ───────────────────────────────────────────────────
