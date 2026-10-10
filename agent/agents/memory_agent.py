@@ -214,6 +214,26 @@ def _flatten_profile_preferences(profile: dict) -> list[tuple[str, str, str]]:
     return result
 
 
+def _resolve_pref_path(prefs: dict, key: str) -> tuple[str | None, str]:
+    """Phase 238 (#352): Löst einen Pfad-Key wie aus _flatten_profile_preferences auf.
+
+    Gibt (subcategory, key) zurück – subcategory nur, wenn der Pfad eine existierende
+    nested Subcategory nennt. Ohne 'preferences.'-Präfix und ohne bekannte Subcategory
+    bleibt der Key unverändert, damit Werte mit Punkt ("v1.2") weiter per Wert matchen.
+    """
+    path = key.removeprefix("preferences.")
+    parts = path.split(".")
+    subcat = next(
+        (k for k, v in prefs.items() if isinstance(v, dict) and k.lower() == parts[0]),
+        None,
+    )
+    if len(parts) == 2 and subcat:
+        return subcat, parts[1]
+    if path != key:
+        return None, parts[-1]
+    return None, key
+
+
 def _build_profile_context_for_parser(profile: dict) -> str:
     lines = []
 
@@ -890,6 +910,19 @@ def _apply_memory_update(profile: dict, action: str, category: str, data: dict) 
                 return _ok(updated)
 
             prefs = updated["preferences"]
+
+            # 0. Pfad-Key (Phase 238, #352): Der Parser sieht Preferences als Pfad und
+            #    liefert z.B. "preferences.lifestyle.ernaehrung" statt "ernaehrung".
+            subcat, key = _resolve_pref_path(prefs, key)
+            if subcat:
+                subdict = prefs[subcat]
+                matched_path = next((k for k in subdict if k.lower() == key), None)
+                if matched_path:
+                    del subdict[matched_path]
+                    if not subdict:
+                        del prefs[subcat]
+                    logger.info(f"MemoryAgent delete preference (path): preferences.{subcat}.{matched_path} entfernt")
+                    return _ok(updated)
 
             # 1. Exakter Key-Match auf flacher Ebene
             matched_flat = next((k for k in prefs if isinstance(prefs[k], str) and k.lower() == key), None)
