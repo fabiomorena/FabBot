@@ -1,0 +1,93 @@
+# Dependabot-Konfiguration – Phase 242 (Issue #365)
+#
+# Vorher gab es diese Datei nicht: es liefen nur Security-Updates aus den
+# Repo-Settings, ungruppiert. Folge am 23.10.2026 (#362): 98 Einzel-Alerts, zu
+# denen Dependabot nur zwei PRs geoeffnet hat – fuer pillow (39 Advisories) und
+# certifi (critical) gar keinen. Und der eine PR, den es gab, konnte nie gruen
+# werden: er hob aiohttp an, ohne das zugehoerige yarl-Pin mitzunehmen
+# (ResolutionImpossible schon beim Install).
+#
+# Zwei Entscheidungen:
+#
+#   1. open-pull-requests-limit: 0 bei pip und npm schaltet die VERSION-Updates
+#      ab. Ohne das wuerde Dependabot fuer die ~265 Pins in requirements.txt
+#      sofort eine Welle aufmachen – und requirements-ci.txt ist ein
+#      pip-compile-Lock daraus, unabhaengige Bumps waeren dort riskant.
+#      Security-Updates sind von diesem Limit laut GitHub-Doku ausdruecklich
+#      NICHT betroffen und laufen weiter.
+#
+#   2. groups mit applies-to: security-updates buendelt alle Sicherheits-Bumps
+#      eines Oekosystems in EINEN PR. Damit kommen zusammengehoerige Pakete
+#      gemeinsam (aiohttp + yarl) und die Resolution geht auf.
+#
+# Bei github-actions bleiben Version-Updates an: drei Actions, geringes Risiko,
+# sonst veralten sie unbemerkt.
+
+version: 2
+updates:
+  # --- Python (requirements.txt + requirements-ci.txt im Repo-Root) ---
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    # 0 = keine Version-Updates; Security-Updates laufen davon unabhaengig.
+    open-pull-requests-limit: 0
+    labels:
+      - dependencies
+      - python
+      - security
+    assignees:
+      - fabiomorena
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      pip-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # --- Node (WhatsApp-Service) ---
+  - package-ecosystem: npm
+    directory: "/whatsapp_service"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 0
+    labels:
+      - dependencies
+      - javascript
+      - security
+    assignees:
+      - fabiomorena
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # --- GitHub Actions (.github/workflows) ---
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    assignees:
+      - fabiomorena
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions-all:
+        patterns:
+          - "*"
