@@ -24,10 +24,22 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-ci.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-ci.txt', 'requirements.txt') }}
 
       - name: Install dependencies
         run: pip install -r requirements-ci.txt
+
+      # Phase 244 (#371): chromadb nur fuer die Integrationstests, bewusst NICHT in
+      # requirements-ci.txt. Dort wuerde pip-audit dessen 5 Funde ohne Fix-Version sehen
+      # (nur Server-API betroffen, FabBot nutzt PersistentClient; dismissed am 10.10.) und
+      # wir braeuchten ignore-vuln-Eintraege, die kuenftig auch eine behebbare chromadb-CVE
+      # verschlucken. Version aus requirements.txt gelesen, damit sie nicht driften kann.
+      - name: Install chromadb (integration tests only)
+        run: |
+          pin=$(grep -E '^chromadb==' requirements.txt)
+          test -n "$pin" || { echo "chromadb-Pin in requirements.txt nicht gefunden"; exit 1; }
+          echo "Installiere $pin"
+          pip install "$pin"
 
       - name: Security audit
         # torch CVEs (no fix version available upstream) and joblib PYSEC-2024-277 ignored
