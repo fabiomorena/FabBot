@@ -27,7 +27,7 @@ durationpy==0.10
 edge-tts==7.2.7
 essentia==2.1b6.dev1389  # arm64-native dev build, kein stable release auf PyPI verfügbar
 elevenlabs==2.41.0
-filelock==3.25.2
+filelock==4.2.1
 flatbuffers==25.12.19
 frozenlist==1.8.0
 fsspec==2026.6.0
@@ -67,7 +67,7 @@ langchain-core==1.4.7
 langchain-protocol==0.0.19
 langgraph==1.2.7
 langgraph-checkpoint==4.1.1
-langgraph-checkpoint-sqlite==3.1.1
+langgraph-checkpoint-sqlite==3.1.2
 langgraph-prebuilt==1.1.0
 langgraph-sdk==0.4.4
 langsmith==0.8.18
