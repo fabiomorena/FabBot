@@ -108,12 +108,18 @@ async def extract_intentions(user_message: str) -> None:
             return
 
         from agent.proactive.collector import _existing_metadata, _inherit_from_existing
+        from agent.proactive.entity_key import build_key_index, index_key, resolve_in_index
 
+        key_index = build_key_index(collection)
         now = datetime.now(timezone.utc).isoformat()
-        ids, documents, metadatas = [], [], []
+        # Phase 245 (#342): pro ID nur EIN Eintrag – ein Batch mit doppelter ID
+        # wird von ChromaDB komplett abgelehnt, siehe collector.collect_entities.
+        gesammelt: dict[str, tuple[str, dict]] = {}
 
         for intent in intentions:
-            eid = _intent_id(intent["name"])
+            # Dieselbe Absicht kann schon als task vorliegen – collect_entities()
+            # und dieser Extraktor benennen sie verschieden.
+            eid = resolve_in_index(key_index, "intent", intent["name"]) or _intent_id(intent["name"])
 
             metadata = _inherit_from_existing(
                 _existing_metadata(collection, eid),
@@ -127,13 +133,20 @@ async def extract_intentions(user_message: str) -> None:
                 },
             )
             if intent.get("due_date"):
-                metadata["due_date"] = intent["due_date"]
+                metadata = {**metadata, "due_date": intent["due_date"]}
 
-            ids.append(eid)
-            documents.append(intent["context"])
-            metadatas.append(metadata)
+            if eid not in gesammelt:
+                gesammelt = {**gesammelt, eid: (intent["context"], metadata)}
+            lookup = index_key("intent", intent["name"])
+            if lookup:
+                key_index = {**key_index, lookup: eid}
 
-        collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+        # Kein await zwischen build_key_index() und diesem upsert – siehe collector.
+        collection.upsert(
+            ids=list(gesammelt),
+            documents=[dokument for dokument, _ in gesammelt.values()],
+            metadatas=[meta for _, meta in gesammelt.values()],
+        )
         logger.info(f"Intent Extractor: {len(intentions)} Absicht(en) gespeichert")
 
     except Exception as e:
