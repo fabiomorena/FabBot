@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agent.proactive.entity_key import build_key_index, index_key, resolve_in_index
 from agent.utils import extract_llm_text
 
 logger = logging.getLogger(__name__)
@@ -104,11 +105,31 @@ def _inherit_from_existing(existing: dict | None, metadata: dict) -> dict:
     Phase 235 (Issue #338): Vorher setzte jeder Upsert hart status="open" und
     created_at=now. Ein per /done erledigtes Item wurde damit bei der nächsten
     Erwähnung – auch durch den Löschauftrag selbst – wieder geöffnet.
+
+    Phase 245 (Issue #342): auch Name und Typ bleiben die des Bestands. Wird ein
+    Eintrag über eine abweichende Schreibweise wiedergefunden, soll der
+    Anzeigename stabil bleiben – sonst trifft `/done <name>` mal die eine, mal
+    die andere Formulierung. Beim Typ ginge sonst ein `task` in ein `intent`
+    über, sobald der Intent-Extraktor dieselbe Sache aufgreift: anderer
+    Prioritätsscore, anderes Briefing-Icon, und das bei jeder Nachricht neu.
     """
     if existing is None:
         return {**metadata, "mention_count": 1}
+    bestandsname = existing.get("name") or ""
+    if existing.get("status") == "done" and bestandsname != metadata["name"]:
+        # Es gibt keinen Reopen-Pfad (Phase 235): einmal erledigt, bleibt
+        # erledigt. Seit dem kanonischen Abgleich erbt auch eine abweichende
+        # Formulierung diesen Status – ohne diese Zeile wäre nicht
+        # nachvollziehbar, warum ein neu klingender Punkt nie auftaucht.
+        logger.info(
+            "Erwähnung '%s' auf erledigten Eintrag '%s' gemappt – bleibt aus dem Briefing",
+            metadata["name"],
+            bestandsname,
+        )
     return {
         **metadata,
+        "name": existing.get("name") or metadata["name"],
+        "entity_type": existing.get("entity_type") or metadata["entity_type"],
         "status": existing.get("status", metadata["status"]),
         "created_at": existing.get("created_at", metadata["created_at"]),
         "mention_count": int(existing.get("mention_count", 0)) + 1,
@@ -164,14 +185,21 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
         if collection is None:
             return
 
+        key_index = build_key_index(collection)
         now_dt = datetime.now(timezone.utc)
         now = now_dt.isoformat()
         now_ts = now_dt.timestamp()
-        ids, documents, metadatas = [], [], []
+
+        # Phase 245 (Issue #342): pro ID nur EIN Eintrag. Seit Varianten auf
+        # dieselbe bestehende ID auflösen, können zwei Entitäten einer Nachricht
+        # dieselbe ID tragen – ChromaDB lehnt einen Batch mit doppelten IDs
+        # komplett ab, und der äußere Guard loggt das als "non-critical": die
+        # unbeteiligten Entitäten derselben Nachricht wären still verloren.
+        gesammelt: dict[str, tuple[str, dict]] = {}
 
         for entity in entities:
             normalized = _normalize_name(entity["name"])
-            eid = _entity_id(entity["type"], normalized)
+            eid = resolve_in_index(key_index, entity["type"], entity["name"]) or _entity_id(entity["type"], normalized)
 
             metadata = _inherit_from_existing(
                 _existing_metadata(collection, eid),
@@ -186,12 +214,23 @@ async def collect_entities(user_message: str, bot_response: str) -> None:
                 },
             )
             if entity.get("due_date"):
-                metadata["due_date"] = entity["due_date"]
+                metadata = {**metadata, "due_date": entity["due_date"]}
 
-            ids.append(eid)
-            documents.append(entity["context"])
-            metadatas.append(metadata)
+            if eid not in gesammelt:
+                gesammelt = {**gesammelt, eid: (entity["context"], metadata)}
+            # Auch frisch vergebene IDs in den Index, sonst entsteht der Bug
+            # aus #342 innerhalb einer einzigen Nachricht neu.
+            lookup = index_key(entity["type"], entity["name"])
+            if lookup:
+                key_index = {**key_index, lookup: eid}
 
+        ids = list(gesammelt)
+        documents = [dokument for dokument, _ in gesammelt.values()]
+        metadatas = [meta for _, meta in gesammelt.values()]
+
+        # Zwischen build_key_index() und diesem upsert darf kein await stehen:
+        # collect_entities und extract_intentions laufen als parallele Tasks,
+        # ein Scheduling-Punkt hier ließe beide denselben Eintrag neu anlegen.
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
         logger.info(f"Context Collector: {len(entities)} Entität(en) gespeichert")
 

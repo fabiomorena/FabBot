@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone
 
 from agent.proactive.collector import _get_entities_collection
+from agent.proactive.entity_key import canonical_key
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,15 @@ def mark_done(name_query: str) -> list[str]:
     matched_names = []
 
     for eid, meta in zip(ids, metadatas):
-        if query not in meta.get("name", "").lower():
+        name = meta.get("name", "")
+        # Phase 245 (Issue #342): Bestandsdubletten tragen abweichende Namen,
+        # von denen keiner Teilstring des anderen ist ("Führungen am
+        # Sowjetischen Ehrenmal" vs. "Führungen Sowjetisches Ehrenmal"). Ohne
+        # den kanonischen Vergleich erledigt /done nur die angezeigte Variante,
+        # und im nächsten Briefing rückt die nächste nach.
+        entity_type = meta.get("entity_type", "")
+        passt_kanonisch = bool(name) and canonical_key(name, entity_type) == canonical_key(name_query, entity_type)
+        if query not in name.lower() and not passt_kanonisch:
             continue
         updated = {**meta, "status": "done"}
         try:
