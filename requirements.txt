@@ -65,7 +65,7 @@ kubernetes==35.0.0
 langchain-anthropic==1.4.6
 langchain-core==1.4.7
 langchain-protocol==0.0.19
-langgraph==1.2.7
+langgraph==1.2.14
 langgraph-checkpoint==4.1.1
 langgraph-checkpoint-sqlite==3.1.1
 langgraph-prebuilt==1.1.0
