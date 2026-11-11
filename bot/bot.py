@@ -628,6 +628,66 @@ async def cmd_briefing(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         logger.warning(f"cmd_briefing state update fehlgeschlagen: {e}")
 
 
+def _done_rueckmeldung(matched: list[str], query: str) -> str:
+    """Antworttext fuer einen Erledigen-Vorgang – gleich fuer /done und Chat."""
+    if not matched:
+        return f'Kein offenes Item gefunden für: "{query}"'
+    if len(matched) == 1:
+        return f"✅ Erledigt: {matched[0]}"
+    names = "\n".join(f"✅ {n}" for n in matched)
+    return f"Erledigt:\n{names}"
+
+
+async def _erledige_aus_chat(user_message: str, update: Update) -> None:
+    """Phase 246 (Issue #375): Löschauftrag im Chat erledigt den Punkt wirklich.
+
+    Vorher erreichte so ein Satz `mark_done()` nie – der Bot bestätigte, und die
+    Extraktoren speicherten den Löschauftrag als *neues* offenes Item. Die Liste
+    wurde durch jeden Versuch länger.
+
+    Gemeldet wird nur, was tatsächlich passiert ist: trifft nichts, sagt der Bot
+    das, statt eine Erledigung zu bestätigen, die es nicht gab.
+    """
+    from agent.proactive.done_intent import detect_done_target
+    from agent.proactive.pending import mark_done
+
+    assert update.message is not None
+    ziel = detect_done_target(user_message)
+    if ziel is None:
+        logger.info("Löschauftrag erkannt, aber kein Punkt benannt – nichts erledigt.")
+        return
+    try:
+        matched = await asyncio.to_thread(mark_done, ziel)
+    except Exception as e:
+        logger.warning(f"Erledigen aus dem Chat fehlgeschlagen: {e}")
+        await update.message.reply_text("⚠️ Erledigen fehlgeschlagen – siehe Log.")
+        return
+    await update.message.reply_text(_done_rueckmeldung(matched, ziel))
+
+
+async def _nachbereitung(user_message: str, bot_response: str, update: Update) -> None:
+    """Was nach dem Senden der Antwort passiert: erledigen ODER extrahieren.
+
+    Ein Löschauftrag darf NICHT extrahiert werden – sonst entsteht aus dem Satz
+    ein neues offenes Item, das der Nutzer als Nächstes löschen will (#375).
+    """
+    from agent.proactive.collector import collect_entities
+    from agent.proactive.done_intent import is_done_request
+    from agent.proactive.intent_extractor import extract_intentions
+
+    if is_done_request(user_message):
+        await _erledige_aus_chat(user_message, update)
+        return
+
+    asyncio.create_task(
+        collect_entities(
+            user_message=user_message,
+            bot_response=bot_response,
+        )
+    )
+    asyncio.create_task(extract_intentions(user_message=user_message))
+
+
 @restricted
 async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
@@ -641,13 +701,7 @@ async def cmd_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _done_all(update, ctx)
         return
     matched = await asyncio.to_thread(mark_done, query)
-    if not matched:
-        await update.message.reply_text(f'Kein offenes Item gefunden für: "{query}"')
-    elif len(matched) == 1:
-        await update.message.reply_text(f"✅ Erledigt: {matched[0]}")
-    else:
-        names = "\n".join(f"✅ {n}" for n in matched)
-        await update.message.reply_text(f"Erledigt:\n{names}")
+    await update.message.reply_text(_done_rueckmeldung(matched, query))
 
 
 async def _done_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1190,16 +1244,7 @@ async def handle_message_text(update: Update, bot: Bot, text: str) -> None:
         await _delete_thinking(thinking)
         await _dispatch_response(response_msg, bot, chat_id, update)
         if response_msg:
-            from agent.proactive.collector import collect_entities
-            from agent.proactive.intent_extractor import extract_intentions
-
-            asyncio.create_task(
-                collect_entities(
-                    user_message=clean_text,
-                    bot_response=response_msg,
-                )
-            )
-            asyncio.create_task(extract_intentions(user_message=clean_text))
+            await _nachbereitung(clean_text, response_msg, update)
 
     except RateLimitError:
         await _delete_thinking(thinking)
