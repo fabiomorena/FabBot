@@ -1489,6 +1489,15 @@ async def _post_init(app: Application) -> None:
     else:
         logger.info("TELEGRAM_MFA_CHANNEL_ID nicht gesetzt – MFA-Watch deaktiviert.")
 
+    # Phase 247: Flug-Bot als zweite Application – im Hintergrund, damit er
+    # FabBots Start weder abbrechen noch verzögern kann.
+    try:
+        from bot.flug.app import starte_im_hintergrund
+
+        starte_im_hintergrund(app.bot, chat_id)
+    except Exception as e:
+        logger.error(f"Flug-Bot nicht gestartet ({type(e).__name__})")
+
     try:
         from agent.retrieval import index_all
 
@@ -1528,6 +1537,15 @@ async def _post_shutdown(app: Application) -> None:
 
     await close_graph()
     logger.info("SqliteSaver-Verbindung geschlossen.")
+
+    # Phase 247: zuletzt und zeitbegrenzt – ein hängender Flug-Handler darf
+    # FabBots eigenes Aufräumen nicht verdrängen (launchd killt nach ~20 s).
+    try:
+        from bot.flug.app import stoppe_flug_bot
+
+        await asyncio.wait_for(stoppe_flug_bot(), timeout=5)
+    except Exception as e:
+        logger.warning(f"Flug-Bot Stop fehlgeschlagen (ignoriert): {type(e).__name__}")
 
 
 # ---------------------------------------------------------------------------

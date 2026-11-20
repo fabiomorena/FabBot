@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
     telegram_mfa_channel_id: str = ""
 
+    # ── Flug-Bot (Phase 247) ──────────────────────────────────────────────────
+    # Eigener Bot-Token + eigene Allowlist: Nutzer des Flug-Bots erreichen nie
+    # Supervisor/Terminal. Ohne FLUG_BOT_TOKEN bleibt der Flug-Bot aus.
+    flug_bot_token: SecretStr = SecretStr("")
+    flug_allowed_user_ids: str = ""
+    travelpayouts_token: SecretStr = SecretStr("")
+    # Bewusst str: ein Tippfehler ("6h") darf Settings() – und damit FabBot –
+    # nicht scheitern lassen; der Watcher parst defensiv.
+    flug_watch_interval: str = "21600"
+
     # ── Scheduler-Zeiten ──────────────────────────────────────────────────────
     briefing_time: str = "07:30"
     health_check_time: str = "06:00"
