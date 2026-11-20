@@ -1,6 +1,6 @@
 # FabBot – Selbstwissen
 
-_Letzte Aktualisierung: Phase 239_
+_Letzte Aktualisierung: Phase 247_
 
 Dieses Dokument beschreibt deine eigene Architektur, Entscheidungen und Konfiguration.
 Nutze es um Fragen ueber dich selbst korrekt zu beantworten.
@@ -44,6 +44,7 @@ Alle registriert in `_AGENTS` dict in `agent/supervisor.py` (Zeile 31).
 ### Nicht im Graph
 
 - **clip_agent** (`agent/agents/clip_agent.py`): URL-Clipper fuer Obsidian/Wissen. Kein LangGraph-Node – wird direkt von `bot.py` via `/clip` aufgerufen.
+- **Flug-Bot** (`bot/flug/`, Phase 247): Flugpreis-Tracker als **eigener Telegram-Bot** (eigener Token `FLUG_BOT_TOKEN`, eigene Allowlist `FLUG_ALLOWED_USER_IDS`) – zweite PTB-Application im selben Prozess. Kein LangGraph-Node, kein LLM: Dialog `/neu`, `/liste`, `/loeschen`, Preise aus der Travelpayouts Data API (gecacht, bis zu einige Tage alt). Nachrichten an den Flug-Bot erreichen nie Supervisor, Terminal- oder File-Agent. Du selbst kannst keine Flugsuchen anlegen; Fabio nutzt dafuer den Flug-Bot.
 
 ---
 
@@ -152,6 +153,7 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 | Morning Briefing | 07:30 | `bot/briefing.py` | Wetter (Open-Meteo), Kalender, News. |
 | Evening Check-in | 21:00 | `bot/evening_checkin.py` | Personalisierte Frage via `get_grounding_llm()`. |
 | Session Summary | 23:30 | `bot/session_summary.py` | Tages-Summary via `get_fast_llm()`. Rolling-Window-Sessions. |
+| Flug-Watch | alle 6h (FLUG_WATCH_INTERVAL) | `bot/flug/watcher.py` | Preisalarme ueber den Flug-Bot, nicht ueber dich. Nach Neustart nur Restzeit seit dem letzten Lauf. Abruffehler ab dem 3. in Folge an Fabios Chat. |
 | Heartbeat | stuendlich | `bot/heartbeat_scheduler.py` | 6h Cooldown; Entity Guard (agent/proactive/entity_guard.py); Focus-Mode-Check (agent/proactive/focus_mode.py): SOFT_MUTE ab 15 min, HARD_MUTE ab 60 min Inaktivität. |
 
 ---
@@ -180,3 +182,8 @@ Der System-Prompt hat zwei Teile (`agent/agents/chat_agent.py`):
 
 7. **Fail-closed Security Guard**: Bei Exception im Security Check wird geblockt, nicht durchgelassen.
    Sicherer als Fail-open, auch wenn es zu False Positives fuehren kann.
+
+8. **Flug-Bot als eigener Bot statt Allowlist-Erweiterung** (Phase 247, #385): Eine zweite Person sollte
+   Flugsuchen starten koennen. In `TELEGRAM_ALLOWED_USER_IDS` haette sie Zugriff auf alle Agenten bekommen.
+   Stattdessen eigener Token + eigene Allowlist + Schranke in Handler-Gruppe -1 (fail-closed). Der Start
+   laeuft im Hintergrund und wirft nie – ohne Token aendert sich an dir nichts.
